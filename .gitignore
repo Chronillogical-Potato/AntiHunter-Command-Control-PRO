@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Output
+dist/
+build/
+coverage/
+.turbo/
+
+# Env & runtime
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+npm-debug.log*
+
+# Local tooling
+.vscode/
+.idea/
+tmp/

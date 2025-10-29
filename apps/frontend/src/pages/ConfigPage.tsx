@@ -1,0 +1,1312 @@
+﻿import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { apiClient } from '../api/client';
+import type {
+  AlarmConfig,
+  AlarmLevel,
+  AppSettings,
+  SerialConfig,
+  SerialState,
+  SiteSummary,
+  MqttSiteConfig,
+} from '../api/types';
+import { useAlarm } from '../providers/alarm-provider';
+import { useTheme } from '../providers/theme-provider';
+import { useNodeStore } from '../stores/node-store';
+
+const LEVEL_METADATA: Record<AlarmLevel, { label: string; description: string }> = {
+  INFO: { label: 'Info', description: 'Low priority notifications (status updates).' },
+  NOTICE: { label: 'Notice', description: 'Important events, like new targets.' },
+  ALERT: { label: 'Alert', description: 'Actionable events requiring attention.' },
+  CRITICAL: { label: 'Critical', description: 'Safety or erase events that must be acknowledged.' },
+};
+
+const GAPS: Array<{ key: keyof AlarmConfig; label: string }> = [
+  { key: 'gapInfoMs', label: 'Info gap (ms)' },
+  { key: 'gapNoticeMs', label: 'Notice gap (ms)' },
+  { key: 'gapAlertMs', label: 'Alert gap (ms)' },
+  { key: 'gapCriticalMs', label: 'Critical gap (ms)' },
+];
+
+const DETECTION_MODE_OPTIONS = [
+  { value: 2, label: 'WiFi + BLE' },
+  { value: 0, label: 'WiFi Only' },
+  { value: 1, label: 'BLE Only' },
+];
+
+const PROTOCOL_OPTIONS = [
+  { value: 'meshtastic-like', label: 'Meshtastic JSON/CBOR' },
+  { value: 'raw-lines', label: 'Raw Lines' },
+  { value: 'nmea-like', label: 'NMEA-like' },
+];
+
+const PARITY_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'even', label: 'Even' },
+  { value: 'odd', label: 'Odd' },
+];
+
+const STOP_BITS_OPTIONS = [
+  { value: 1, label: '1' },
+  { value: 2, label: '2' },
+];
+
+const DEFAULT_SITE_ID = 'default';
+
+export function ConfigPage() {
+  const queryClient = useQueryClient();
+  const { theme, toggleTheme, setTheme } = useTheme();
+  const updateNodeSiteMeta = useNodeStore((state) => state.updateSiteMeta);
+  const {
+    settings: alarmSettings,
+    isLoading: alarmLoading,
+    updateConfig: updateAlarmConfig,
+    uploadSound,
+    removeSound,
+    play,
+  } = useAlarm();
+
+  const appSettingsQuery = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => apiClient.get<AppSettings>('/config/app'),
+  });
+
+  const serialConfigQuery = useQuery({
+    queryKey: ['serialConfig'],
+    queryFn: () => apiClient.get<SerialConfig>('/serial/config'),
+  });
+
+  const sitesQuery = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => apiClient.get<SiteSummary[]>('/sites'),
+  });
+  const mqttSitesQuery = useQuery({
+    queryKey: ['mqttSites'],
+    queryFn: () => apiClient.get<MqttSiteConfig[]>('/mqtt/sites'),
+  });
+
+  const ouiStatsQuery = useQuery({
+    queryKey: ['ouiStats'],
+    queryFn: () =>
+      apiClient.get<{ total: number; lastUpdated?: string | null }>('/oui/stats'),
+  });
+
+  const [ouiMode, setOuiMode] = useState<'replace' | 'merge'>('replace');
+  const [ouiError, setOuiError] = useState<string | null>(null);
+
+  const [localAlarm, setLocalAlarm] = useState<AlarmConfig | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [serialConfig, setSerialConfig] = useState<SerialConfig | null>(null);
+  const [siteSettings, setSiteSettings] = useState<SiteSummary[]>([]);
+  const [mqttConfigs, setMqttConfigs] = useState<MqttSiteConfig[]>([]);
+  const [mqttPasswords, setMqttPasswords] = useState<Record<string, string>>({});
+  const [serialTestStatus, setSerialTestStatus] = useState<{
+    status: 'idle' | 'running' | 'success' | 'error';
+    message?: string;
+  }>({ status: 'idle' });
+
+  useEffect(() => {
+    if (alarmSettings?.config) {
+      setLocalAlarm(alarmSettings.config);
+    }
+  }, [alarmSettings?.config]);
+
+  useEffect(() => {
+    if (appSettingsQuery.data) {
+      setAppSettings(appSettingsQuery.data);
+    }
+  }, [appSettingsQuery.data]);
+  useEffect(() => {
+    if (serialConfigQuery.data) {
+      setSerialConfig(serialConfigQuery.data);
+    }
+  }, [serialConfigQuery.data]);
+
+  useEffect(() => {
+    if (sitesQuery.data) {
+      setSiteSettings(sitesQuery.data);
+    }
+  }, [sitesQuery.data]);
+
+  useEffect(() => {
+    if (mqttSitesQuery.data) {
+      setMqttConfigs(mqttSitesQuery.data);
+    }
+  }, [mqttSitesQuery.data]);
+
+  const sounds = useMemo<Record<AlarmLevel, string | null>>(
+    () =>
+      alarmSettings?.sounds ?? {
+        INFO: null,
+        NOTICE: null,
+        ALERT: null,
+        CRITICAL: null,
+      },
+    [alarmSettings?.sounds],
+  );
+
+  const updateAppSettingsMutation = useMutation({
+    mutationFn: (body: Partial<AppSettings>) => apiClient.put<AppSettings>('/config/app', body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['appSettings'], data);
+      setAppSettings(data);
+    },
+  });
+
+  const updateSerialConfigMutation = useMutation({
+    mutationFn: (body: Partial<SerialConfig> & { siteId: string }) =>
+      apiClient.put<SerialConfig>('/serial/config', body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['serialConfig'], data);
+      setSerialConfig(data);
+    },
+  });
+
+  const updateSiteMutation = useMutation({
+    mutationFn: ({ siteId, body }: { siteId: string; body: Partial<SiteSummary> }) =>
+      apiClient.put<SiteSummary>(`/sites/${siteId}`, body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['sites'], (existing: SiteSummary[] | undefined) =>
+        existing ? existing.map((site) => (site.id === data.id ? data : site)) : [data],
+      );
+      setSiteSettings((prev) => prev.map((site) => (site.id === data.id ? data : site)));
+      updateNodeSiteMeta(data.id, { name: data.name, color: data.color });
+    },
+  });
+  const updateMqttConfigMutation = useMutation({
+    mutationFn: ({ siteId, body }: { siteId: string; body: Partial<MqttSiteConfig> & { password?: string | null } }) =>
+      apiClient.put<MqttSiteConfig>(`/mqtt/sites/${siteId}`, body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['mqttSites'], (existing: MqttSiteConfig[] | undefined) =>
+        existing
+          ? existing.map((cfg) => (cfg.siteId === data.siteId ? { ...cfg, ...data } : cfg))
+          : [data],
+      );
+      setMqttConfigs((prev) =>
+        prev.map((cfg) => (cfg.siteId === data.siteId ? { ...cfg, ...data } : cfg)),
+      );
+    },
+  });
+
+  const setLocalMqttConfig = (siteId: string, patch: Partial<MqttSiteConfig>) => {
+    setMqttConfigs((prev) =>
+      prev.map((cfg) => (cfg.siteId === siteId ? { ...cfg, ...patch } : cfg)),
+    );
+  };
+
+  const commitMqttConfig = (
+    siteId: string,
+    patch: Partial<MqttSiteConfig> & { password?: string | null },
+  ) => {
+    updateMqttConfigMutation.mutate({ siteId, body: patch });
+  };
+
+  const handleMqttPasswordSubmit = (siteId: string) => {
+    const value = mqttPasswords[siteId];
+    commitMqttConfig(siteId, { password: value ? value : null });
+    setMqttPasswords((prev) => ({ ...prev, [siteId]: '' }));
+  };
+
+  const serialTestMutation = useMutation({
+    mutationFn: (payload: { path?: string; baudRate?: number; delimiter?: string; protocol?: string }) =>
+      apiClient.post<SerialState>('/serial/connect', payload),
+    onMutate: () => {
+      setSerialTestStatus({ status: 'running', message: 'Attempting to connect...' });
+    },
+    onSuccess: (state) => {
+      if (state.connected) {
+        setSerialTestStatus({
+          status: 'success',
+          message: `Connected to ${state.path ?? 'device'} ${state.baudRate ? `@ ${state.baudRate} baud` : ''}`.trim(),
+        });
+        void serialConfigQuery.refetch();
+      } else {
+        setSerialTestStatus({
+          status: 'error',
+          message: state.lastError ?? 'Connection attempt completed without link.',
+        });
+      }
+    },
+    onError: (error) => {
+      setSerialTestStatus({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to connect to serial device.',
+      });
+    },
+  });
+
+  const ouiImportMutation = useMutation({
+    mutationFn: ({ file, mode }: { file: File; mode: 'replace' | 'merge' }) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return apiClient.upload<{ imported: number; total: number; mode: string }>(
+        `/oui/import?mode=${mode}`,
+        formData,
+      );
+    },
+    onSuccess: () => {
+      setOuiError(null);
+      queryClient.invalidateQueries({ queryKey: ['ouiStats'] });
+    },
+    onError: (error) => {
+      setOuiError(error instanceof Error ? error.message : 'Failed to import OUI data');
+    },
+  });
+
+  const updateAppSetting = (patch: Partial<AppSettings>) => {
+    if (!appSettings) return;
+    const next = { ...appSettings, ...patch };
+    setAppSettings(next);
+    updateAppSettingsMutation.mutate(patch);
+  };
+
+  const updateSerialSetting = (patch: Partial<SerialConfig>) => {
+    if (!serialConfig) return;
+    const next = { ...serialConfig, ...patch };
+    setSerialConfig(next);
+    updateSerialConfigMutation.mutate({ ...patch, siteId: serialConfig.siteId });
+  };
+
+  const updateSiteSetting = (siteId: string, patch: Partial<SiteSummary>) => {
+    setSiteSettings((prev) =>
+      prev.map((site) => (site.id === siteId ? { ...site, ...patch } : site)),
+    );
+  };
+
+  const commitSiteSetting = (siteId: string, patch: Partial<SiteSummary>) => {
+    const body: Partial<SiteSummary> = {};
+    if ('name' in patch) {
+      const value = patch.name?.trim();
+      if (typeof value === 'string') {
+        body.name = value;
+      }
+    }
+    if ('color' in patch) {
+      const value = patch.color?.trim();
+      if (value) {
+        body.color = value.startsWith('#') ? value : `#${value}`;
+      }
+    }
+    if ('region' in patch) {
+      const value = patch.region?.trim();
+      body.region = value && value.length > 0 ? value : null;
+    }
+    if (Object.keys(body).length === 0) {
+      return;
+    }
+    updateSiteMutation.mutate({ siteId, body });
+  };
+
+  const handleOuiUpload = (file: File) => {
+    if (!file) return;
+    setOuiError(null);
+    ouiImportMutation.mutate({ file, mode: ouiMode });
+  };
+
+  const handleTestSerial = () => {
+    if (!appSettings || !serialConfig) {
+      setSerialTestStatus({
+        status: 'error',
+        message: 'Serial settings are not loaded yet.',
+      });
+      return;
+    }
+
+    const payload: { path?: string; baudRate?: number; delimiter?: string; protocol?: string } = {};
+    if (serialConfig.devicePath) {
+      payload.path = serialConfig.devicePath;
+    }
+    if (serialConfig.baud != null) {
+      payload.baudRate = serialConfig.baud;
+    }
+    if (serialConfig.delimiter ?? '') {
+      payload.delimiter = serialConfig.delimiter ?? undefined;
+    }
+    payload.protocol = appSettings.protocol ?? 'meshtastic-like';
+
+    serialTestMutation.mutate(payload);
+  };
+
+  const handleOuiExport = (format: 'csv' | 'json') => {
+    window.open(`/api/oui/export?format=${format}`, '_blank', 'noopener');
+  };
+
+  const formatDateTime = (value?: string | null) =>
+    value ? new Date(value).toLocaleString() : 'N/A';
+
+  const ouiStats = ouiStatsQuery.data;
+
+  const handleVolumeChange =
+    (level: AlarmLevel, key: keyof AlarmConfig) => (event: ChangeEvent<HTMLInputElement>) => {
+      if (!localAlarm) return;
+      const value = Number(event.target.value);
+      const next = { ...localAlarm, [key]: value } as AlarmConfig;
+      setLocalAlarm(next);
+      updateAlarmConfig(next);
+    };
+
+  const handleGapChange = (key: keyof AlarmConfig) => (event: ChangeEvent<HTMLInputElement>) => {
+    if (!localAlarm) return;
+    const value = Number(event.target.value);
+    const next = { ...localAlarm, [key]: value } as AlarmConfig;
+    setLocalAlarm(next);
+    updateAlarmConfig(next);
+  };
+
+  const handleAudioPackChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    if (!localAlarm) return;
+    const next = { ...localAlarm, audioPack: event.target.value };
+    setLocalAlarm(next);
+    updateAlarmConfig(next);
+  };
+
+  const handleDndChange = (key: 'dndStart' | 'dndEnd') => (event: ChangeEvent<HTMLInputElement>) => {
+    if (!localAlarm) return;
+    const value = event.target.value || null;
+    const next = { ...localAlarm, [key]: value };
+    setLocalAlarm(next);
+    updateAlarmConfig(next);
+  };
+
+  const handleBackgroundToggle = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!localAlarm) return;
+    const next = { ...localAlarm, backgroundAllowed: event.target.checked };
+    setLocalAlarm(next);
+    updateAlarmConfig(next);
+  };
+
+  const isLoading =
+    alarmLoading ||
+    appSettingsQuery.isLoading ||
+    serialConfigQuery.isLoading ||
+    !localAlarm ||
+    !appSettings ||
+    !serialConfig;
+
+  if (isLoading) {
+    return (
+      <section className="panel">
+        <header className="panel__header">
+          <div>
+            <h1 className="panel__title">Configuration</h1>
+            <p className="panel__subtitle">Loading configuration.</p>
+          </div>
+        </header>
+        <div className="empty-state">
+          <div>Loading configuration.</div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel">
+      <header className="panel__header">
+        <div>
+          <h1 className="panel__title">Configuration</h1>
+          <p className="panel__subtitle">
+            Manage appearance, alarms, serial transport, detection defaults, federation, and retention.
+          </p>
+        </div>
+        <div className="controls-row">
+          <button
+            type="button"
+            className="control-chip"
+            onClick={handleTestSerial}
+            disabled={serialTestMutation.isPending}
+          >
+            {serialTestMutation.isPending ? 'Testingâ€¦' : 'Test Serial'}
+          </button>
+          <button type="button" className="control-chip">
+            Import JSON
+          </button>
+          <button type="button" className="control-chip">
+            Export JSON
+          </button>
+        </div>
+        {serialTestStatus.status !== 'idle' ? (
+          <div
+            className={
+              serialTestStatus.status === 'error'
+                ? 'form-error'
+                : serialTestStatus.status === 'success'
+                ? 'form-success'
+                : 'form-hint'
+            }
+          >
+            {serialTestStatus.message}
+          </div>
+        ) : null}
+      </header>
+
+      <div className="config-grid">
+        <section className="config-card">
+          <header>
+            <h2>Appearance</h2>
+            <p>Switch between light and dark themes for the operator console.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="theme-toggle">
+              <button
+                type="button"
+                className={`theme-option ${theme === 'light' ? 'active' : ''}`}
+                onClick={() => setTheme('light')}
+              >
+                Light Mode
+              </button>
+              <button
+                type="button"
+                className={`theme-option ${theme === 'dark' ? 'active' : ''}`}
+                onClick={() => setTheme('dark')}
+              >
+                Dark Mode
+              </button>
+              <button type="button" className="theme-option" onClick={toggleTheme}>
+                Toggle
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Alarm Profiles</h2>
+            <p>Adjust volume, rate limit, and audio tone for each alarm level.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="config-row">
+              <label>Sound Pack</label>
+              <select value={localAlarm.audioPack} onChange={handleAudioPackChange}>
+                <option value="default">Default</option>
+                <option value="quiet">Quiet</option>
+                <option value="ops">Operations</option>
+              </select>
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={localAlarm.backgroundAllowed}
+                onChange={handleBackgroundToggle}
+              />
+              Allow audio playback when the console tab is in the background
+            </label>
+          </div>
+          <div className="config-card__body alarm-grid">
+            {Object.entries(LEVEL_METADATA).map(([level, meta]) => {
+              const alarmLevel = level as AlarmLevel;
+              const volumeKey = volumeKeyForLevel(alarmLevel);
+              const volumeValue = (localAlarm[volumeKey] ?? 0) as number;
+              return (
+                <div key={alarmLevel} className="alarm-level-card">
+                  <div className="alarm-header">
+                    <h3>{meta.label}</h3>
+                    <span>{meta.description}</span>
+                  </div>
+                  <div className="alarm-controls">
+                    <label>
+                      Volume: {volumeValue}%
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={volumeValue}
+                        onChange={handleVolumeChange(alarmLevel, volumeKey)}
+                      />
+                    </label>
+                    <div className="alarm-sound-row">
+                      <div className="sound-file">
+                        {sounds[alarmLevel] ? 'Custom sound uploaded' : 'Using default tone'}
+                      </div>
+                      <div className="sound-actions">
+                        <button type="button" className="control-chip" onClick={() => play(alarmLevel)}>
+                          Preview
+                        </button>
+                        <label className="control-chip">
+                          Upload
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                uploadSound(alarmLevel, file);
+                                event.target.value = '';
+                              }
+                            }}
+                            hidden
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          disabled={!sounds[alarmLevel]}
+                          onClick={() => removeSound(alarmLevel)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Alarm Cooldowns</h2>
+            <p>Define the minimum interval between repeated alarms of the same level.</p>
+          </header>
+          <div className="config-card__body">
+            {GAPS.map(({ key, label }) => {
+              const gapValue = (localAlarm[key] ?? 0) as number;
+              return (
+                <div className="config-row" key={key}>
+                  <label>{label}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={100}
+                    value={gapValue}
+                    onChange={handleGapChange(key)}
+                  />
+                </div>
+              );
+            })}
+            <div className="config-row">
+              <label>Do-not-disturb start</label>
+              <input
+                type="time"
+                value={localAlarm.dndStart ?? ''}
+                onChange={handleDndChange('dndStart')}
+              />
+            </div>
+            <div className="config-row">
+              <label>Do-not-disturb end</label>
+              <input
+                type="time"
+                value={localAlarm.dndEnd ?? ''}
+                onChange={handleDndChange('dndEnd')}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Site Settings</h2>
+            <p>Update site names and colors for multi-site deployments.</p>
+          </header>
+          <div className="config-card__body">
+            {sitesQuery.isLoading ? (
+              <div>Loading site metadata…</div>
+            ) : sitesQuery.isError ? (
+              <div className="form-error">Unable to load site list.</div>
+            ) : siteSettings.length === 0 ? (
+              <div className="empty-state">
+                <div>No sites found. Create a site in the database to manage settings here.</div>
+              </div>
+            ) : (
+              siteSettings.map((site) => (
+                <div key={site.id} className="config-subcard">
+                  <div className="config-row">
+                    <label>Site ID</label>
+                    <span className="muted">{site.id}</span>
+                  </div>
+                  <div className="config-row">
+                    <label>Name</label>
+                    <input
+                      value={site.name}
+                      onChange={(event) => updateSiteSetting(site.id, { name: event.target.value })}
+                      onBlur={(event) => {
+                        const trimmed = event.target.value.trim();
+                        updateSiteSetting(site.id, { name: trimmed });
+                        commitSiteSetting(site.id, { name: trimmed });
+                      }}
+                    />
+                  </div>
+                  <div className="config-row">
+                    <label>Display Color</label>
+                    <div className="site-color-row">
+                      <input
+                        type="color"
+                        value={site.color || '#0f62fe'}
+                        onChange={(event) => {
+                          const color = event.target.value;
+                          updateSiteSetting(site.id, { color });
+                          commitSiteSetting(site.id, { color });
+                        }}
+                        aria-label={`${site.name || site.id} color`}
+                      />
+                      <input
+                        value={site.color ?? ''}
+                        placeholder="#0f62fe"
+                        onChange={(event) =>
+                          updateSiteSetting(site.id, { color: event.target.value })
+                        }
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        if (!raw) {
+                          return;
+                        }
+                        const sanitized = raw.startsWith('#') ? raw : `#${raw}`;
+                        updateSiteSetting(site.id, { color: sanitized });
+                        commitSiteSetting(site.id, { color: sanitized });
+                      }}
+                      />
+                    </div>
+                  </div>
+                  <div className="config-row">
+                    <label>Region</label>
+                    <input
+                      value={site.region ?? ''}
+                      placeholder="Optional"
+                      onChange={(event) =>
+                        updateSiteSetting(site.id, {
+                          region: event.target.value === '' ? null : event.target.value,
+                        })
+                      }
+                      onBlur={(event) =>
+                        commitSiteSetting(site.id, {
+                          region: event.target.value === '' ? null : event.target.value.trim(),
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Serial Connection</h2>
+            <p>Review connection defaults and rate limits.</p>
+          </header>
+          <div className="config-card__body">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={serialConfig.enabled}
+                onChange={(event) => updateSerialSetting({ enabled: event.target.checked })}
+              />
+              Enable serial auto-connect
+            </label>
+            <div className="config-row">
+              <label>Device Path</label>
+              <input
+                placeholder="/dev/ttyUSB0"
+                value={serialConfig.devicePath ?? ''}
+                onChange={(event) =>
+                  updateSerialSetting({ devicePath: event.target.value || null })
+                }
+              />
+            </div>
+            <div className="config-row">
+              <label>Baud Rate</label>
+              <input
+                type="number"
+                placeholder="115200"
+                value={serialConfig.baud ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') {
+                    updateSerialSetting({ baud: null });
+                    return;
+                  }
+                  const value = Number(raw);
+                  if (!Number.isFinite(value)) return;
+                  updateSerialSetting({ baud: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Protocol</label>
+              <select
+                value={appSettings.protocol}
+                onChange={(event) => updateAppSetting({ protocol: event.target.value })}
+              >
+                {PROTOCOL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="config-row">
+              <label>Data Bits</label>
+              <input
+                type="number"
+                min={5}
+                max={9}
+                value={serialConfig.dataBits ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') {
+                    updateSerialSetting({ dataBits: null });
+                    return;
+                  }
+                  const value = Number(raw);
+                  if (!Number.isFinite(value)) return;
+                  updateSerialSetting({ dataBits: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Parity</label>
+              <select
+                value={serialConfig.parity ?? 'none'}
+                onChange={(event) => updateSerialSetting({ parity: event.target.value })}
+              >
+                {PARITY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="config-row">
+              <label>Stop Bits</label>
+              <select
+                value={serialConfig.stopBits ?? 1}
+                onChange={(event) =>
+                  updateSerialSetting({ stopBits: Number(event.target.value) })
+                }
+              >
+                {STOP_BITS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="config-row">
+              <label>Delimiter</label>
+              <input
+                placeholder="auto (default)"
+                value={serialConfig.delimiter ?? ''}
+                onChange={(event) =>
+                  updateSerialSetting({ delimiter: event.target.value || null })
+                }
+                title="Use 'auto' to try CRLF and LF automatically. Common values: \n, \r\n."
+              />
+            </div>
+            <div className="config-row">
+              <label>Reconnect Base (ms)</label>
+              <input
+                type="number"
+                value={serialConfig.reconnectBaseMs ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') {
+                    updateSerialSetting({ reconnectBaseMs: null });
+                    return;
+                  }
+                  const value = Number(raw);
+                  if (!Number.isFinite(value)) return;
+                  updateSerialSetting({ reconnectBaseMs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Reconnect Max (ms)</label>
+              <input
+                type="number"
+                value={serialConfig.reconnectMaxMs ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') {
+                    updateSerialSetting({ reconnectMaxMs: null });
+                    return;
+                  }
+                  const value = Number(raw);
+                  if (!Number.isFinite(value)) return;
+                  updateSerialSetting({ reconnectMaxMs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Reconnect Jitter</label>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={serialConfig.reconnectJitter ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') {
+                    updateSerialSetting({ reconnectJitter: null });
+                    return;
+                  }
+                  const value = Number(raw);
+                  if (!Number.isFinite(value)) return;
+                  updateSerialSetting({ reconnectJitter: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Reconnect Attempts</label>
+              <input
+                type="number"
+                min={0}
+                value={serialConfig.reconnectMaxAttempts ?? ''}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  if (raw === '') {
+                    updateSerialSetting({ reconnectMaxAttempts: null });
+                    return;
+                  }
+                  const value = Number(raw);
+                  if (!Number.isFinite(value)) return;
+                  updateSerialSetting({ reconnectMaxAttempts: value });
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>MQTT Federation</h2>
+            <p>Configure broker connectivity for remote sites and command replication.</p>
+          </header>
+          <div className="config-card__body">
+            {mqttSitesQuery.isLoading ? (
+              <div>Loading MQTT configurationâ€¦</div>
+            ) : mqttSitesQuery.isError ? (
+              <div className="form-error">Unable to load MQTT configuration. Check backend logs.</div>
+            ) : mqttConfigs.length === 0 ? (
+              <div className="empty-state">
+                <div>No MQTT sites configured yet. Add a site to enable federation.</div>
+              </div>
+            ) : (
+              mqttConfigs.map((cfg) => (
+                <div key={cfg.siteId} className="config-subcard">
+                  <div className="config-row">
+                    <label>Site</label>
+                    <div className="config-value">
+                      <strong>{cfg.site?.name ?? cfg.siteId}</strong>
+                      <span className="muted">{cfg.siteId}</span>
+                    </div>
+                  </div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={cfg.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setLocalMqttConfig(cfg.siteId, { enabled });
+                        commitMqttConfig(cfg.siteId, { enabled });
+                      }}
+                    />
+                    Enable site replication
+                  </label>
+                  <div className="config-row">
+                    <label>Broker URL</label>
+                    <input
+                      value={cfg.brokerUrl}
+                      onChange={(event) =>
+                        setLocalMqttConfig(cfg.siteId, { brokerUrl: event.target.value })
+                      }
+                      onBlur={(event) =>
+                        commitMqttConfig(cfg.siteId, { brokerUrl: event.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="config-row">
+                    <label>Client ID</label>
+                    <input
+                      value={cfg.clientId}
+                      onChange={(event) =>
+                        setLocalMqttConfig(cfg.siteId, { clientId: event.target.value })
+                      }
+                      onBlur={(event) =>
+                        commitMqttConfig(cfg.siteId, { clientId: event.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="config-row">
+                    <label>Username</label>
+                    <input
+                      value={cfg.username ?? ''}
+                      onChange={(event) =>
+                        setLocalMqttConfig(cfg.siteId, { username: event.target.value || null })
+                      }
+                      onBlur={(event) =>
+                        commitMqttConfig(cfg.siteId, {
+                          username: event.target.value || null,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="config-row">
+                    <label>Password</label>
+                    <div className="mqtt-password-row">
+                      <input
+                        type="password"
+                        value={mqttPasswords[cfg.siteId] ?? ''}
+                        placeholder={cfg.username ? 'Enter new password' : 'Optional'}
+                        onChange={(event) =>
+                          setMqttPasswords((prev) => ({
+                            ...prev,
+                            [cfg.siteId]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => handleMqttPasswordSubmit(cfg.siteId)}
+                        disabled={!mqttPasswords[cfg.siteId]}
+                      >
+                        Update
+                      </button>
+                    </div>
+                  </div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={cfg.tlsEnabled}
+                      onChange={(event) => {
+                        const tlsEnabled = event.target.checked;
+                        setLocalMqttConfig(cfg.siteId, { tlsEnabled });
+                        commitMqttConfig(cfg.siteId, { tlsEnabled });
+                      }}
+                    />
+                    TLS enabled
+                  </label>
+                  <div className="config-row">
+                    <label>QoS (events)</label>
+                    <select
+                      value={cfg.qosEvents}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setLocalMqttConfig(cfg.siteId, { qosEvents: value });
+                        commitMqttConfig(cfg.siteId, { qosEvents: value });
+                      }}
+                    >
+                      {[0, 1, 2].map((level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="config-row">
+                    <label>QoS (commands)</label>
+                    <select
+                      value={cfg.qosCommands}
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setLocalMqttConfig(cfg.siteId, { qosCommands: value });
+                        commitMqttConfig(cfg.siteId, { qosCommands: value });
+                      }}
+                    >
+                      {[0, 1, 2].map((level) => (
+                        <option key={level} value={level}>
+                          {level}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="config-row">
+                    <label>CA PEM</label>
+                    <textarea
+                      rows={3}
+                      value={cfg.caPem ?? ''}
+                      onChange={(event) =>
+                        setLocalMqttConfig(cfg.siteId, { caPem: event.target.value || null })
+                      }
+                      onBlur={(event) =>
+                        commitMqttConfig(cfg.siteId, { caPem: event.target.value || null })
+                      }
+                    />
+                  </div>
+                  <div className="config-row">
+                    <label>Client Cert PEM</label>
+                    <textarea
+                      rows={3}
+                      value={cfg.certPem ?? ''}
+                      onChange={(event) =>
+                        setLocalMqttConfig(cfg.siteId, { certPem: event.target.value || null })
+                      }
+                      onBlur={(event) =>
+                        commitMqttConfig(cfg.siteId, { certPem: event.target.value || null })
+                      }
+                    />
+                  </div>
+                  <div className="config-row">
+                    <label>Client Key PEM</label>
+                    <textarea
+                      rows={3}
+                      value={cfg.keyPem ?? ''}
+                      onChange={(event) =>
+                        setLocalMqttConfig(cfg.siteId, { keyPem: event.target.value || null })
+                      }
+                      onBlur={(event) =>
+                        commitMqttConfig(cfg.siteId, { keyPem: event.target.value || null })
+                      }
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Detection Defaults</h2>
+            <p>Preset channels and durations for scan/baseline workflows.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="config-row">
+              <label>Mode</label>
+              <select
+                value={appSettings.detectMode}
+                onChange={(event) => updateAppSetting({ detectMode: Number(event.target.value) })}
+              >
+                {DETECTION_MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="config-row">
+              <label>Channels</label>
+              <input
+                placeholder="1..14"
+                value={appSettings.detectChannels}
+                onChange={(event) => updateAppSetting({ detectChannels: event.target.value })}
+              />
+            </div>
+            <div className="config-row">
+              <label>Scan Duration (s)</label>
+              <input
+                type="number"
+                value={appSettings.detectScanSecs}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ detectScanSecs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Device Scan Duration (s)</label>
+              <input
+                type="number"
+                value={appSettings.deviceScanSecs}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ deviceScanSecs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Baseline Duration (s)</label>
+              <input
+                type="number"
+                value={appSettings.baselineSecs}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ baselineSecs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Randomization Duration (s)</label>
+              <input
+                type="number"
+                value={appSettings.randomizeSecs}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ randomizeSecs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Drone Duration (s)</label>
+              <input
+                type="number"
+                value={appSettings.droneSecs}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ droneSecs: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Deauth Duration (s)</label>
+              <input
+                type="number"
+                value={appSettings.deauthSecs}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ deauthSecs: value });
+                }}
+              />
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={appSettings.allowForever}
+                onChange={(event) => updateAppSetting({ allowForever: event.target.checked })}
+              />
+              Allow FOREVER commands
+            </label>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Map & Coverage</h2>
+            <p>Tiles, attribution, and coverage radius defaults.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="config-row">
+              <label>Map Tile URL</label>
+              <input
+                placeholder="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                value={appSettings.mapTileUrl}
+                onChange={(event) => updateAppSetting({ mapTileUrl: event.target.value })}
+              />
+            </div>
+            <div className="config-row">
+              <label>Attribution</label>
+              <input
+                value={appSettings.mapAttribution}
+                onChange={(event) => updateAppSetting({ mapAttribution: event.target.value })}
+              />
+            </div>
+            <div className="config-row">
+              <label>Default Radius (m)</label>
+              <input
+                type="number"
+                value={appSettings.defaultRadiusM}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ defaultRadiusM: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Min Zoom</label>
+              <input
+                type="number"
+                value={appSettings.minZoom}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ minZoom: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Max Zoom</label>
+              <input
+                type="number"
+                value={appSettings.maxZoom}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ maxZoom: value });
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>OUI Resolver</h2>
+            <p>Manage vendor lookup cache for MAC address resolution.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="config-row">
+              <label>Total entries</label>
+              <span>{ouiStats ? ouiStats.total.toLocaleString() : 'â€”'}</span>
+            </div>
+            <div className="config-row">
+              <label>Last updated</label>
+              <span>{formatDateTime(ouiStats?.lastUpdated ?? null)}</span>
+            </div>
+            {ouiError ? <div className="form-error">{ouiError}</div> : null}
+            <div className="config-row">
+              <label>Import mode</label>
+              <select
+                value={ouiMode}
+                onChange={(event) => setOuiMode(event.target.value as 'replace' | 'merge')}
+              >
+                <option value="replace">Replace existing</option>
+                <option value="merge">Merge</option>
+              </select>
+            </div>
+            <label className="control-chip">
+              {ouiImportMutation.isPending ? 'Uploading...' : 'Upload CSV/JSON'}
+              <input
+                type="file"
+                accept=".csv,.json,text/csv,application/json"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    handleOuiUpload(file);
+                    event.target.value = '';
+                  }
+                }}
+              />
+            </label>
+            <div className="controls-row">
+              <button
+                type="button"
+                className="control-chip"
+                onClick={() => handleOuiExport('csv')}
+              >
+                Export CSV
+              </button>
+              <button
+                type="button"
+                className="control-chip"
+                onClick={() => handleOuiExport('json')}
+              >
+                Export JSON
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function volumeKeyForLevel(level: AlarmLevel): keyof AlarmConfig {
+  switch (level) {
+    case 'INFO':
+      return 'volumeInfo';
+    case 'NOTICE':
+      return 'volumeNotice';
+    case 'ALERT':
+      return 'volumeAlert';
+    case 'CRITICAL':
+      return 'volumeCritical';
+  }
+}
+
+
+
+
+
+
+
