@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Map as LeafletMap, latLngBounds } from 'leaflet';
 import {
@@ -18,12 +18,15 @@ import { CommandCenterMap } from '../components/map/CommandCenterMap';
 import { apiClient } from '../api/client';
 import { useAlertStore } from '../stores/alert-store';
 import { useMapPreferences } from '../stores/map-store';
-import { useNodeStore } from '../stores/node-store';
+import { canonicalNodeId, useNodeStore } from '../stores/node-store';
 import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
 import { useMapCommandStore } from '../stores/map-command-store';
 import { GeofenceVertex, useGeofenceStore } from '../stores/geofence-store';
-import type { AlarmLevel, Target } from '../api/types';
+import type { AlarmLevel, AppSettings, Target } from '../api/types';
+import { extractAlertColors } from '../constants/alert-colors';
+import type { AlertColorConfig } from '../constants/alert-colors';
+import { useAuthStore } from '../stores/auth-store';
 
 export function MapPage() {
   const { nodes, order, histories } = useNodeStore((state) => ({
@@ -46,6 +49,16 @@ export function MapPage() {
   const pendingTarget = useMapCommandStore((state) => state.target);
   const consumeTarget = useMapCommandStore((state) => state.consume);
   const goto = useMapCommandStore((state) => state.goto);
+
+  const authStatus = useAuthStore((state) => state.status);
+  const isAuthenticated = authStatus === 'authenticated';
+
+  const appSettingsQuery = useQuery({
+    queryKey: ['appSettings'],
+    queryFn: () => apiClient.get<AppSettings>('/config/app'),
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const geofences = useGeofenceStore((state) => state.geofences);
   const addGeofence = useGeofenceStore((state) => state.addGeofence);
@@ -102,15 +115,44 @@ export function MapPage() {
     [nodeList],
   );
 
+  const alertColors: AlertColorConfig = useMemo(
+    () => extractAlertColors(appSettingsQuery.data),
+    [appSettingsQuery.data],
+  );
+  const mapDefaultRadius = appSettingsQuery.data?.defaultRadiusM ?? 200;
+
+
   const alertIndicatorMap = useMemo(() => {
-    const map = new Map<string, 'alert' | 'notice'>();
+    type IndicatorState = 'critical' | 'alert' | 'notice';
+    const severityRank: Record<IndicatorState, number> = {
+      notice: 0,
+      alert: 1,
+      critical: 2,
+    };
+    const map = new Map<string, IndicatorState>();
     Object.values(alerts).forEach((alert) => {
       const key = composeNodeKey(alert.nodeId, alert.siteId);
-      const level = alert.level?.toUpperCase();
-      if (level === 'ALERT' || level === 'CRITICAL') {
-        map.set(key, 'alert');
-      } else if ((level === 'NOTICE' || level === 'INFO') && !map.has(key)) {
-        map.set(key, 'notice');
+      const level = (alert.level ?? 'INFO').toUpperCase();
+      if (level === 'INFO') {
+        return;
+      }
+
+      let indicator: IndicatorState;
+      switch (level) {
+        case 'CRITICAL':
+          indicator = 'critical';
+          break;
+        case 'ALERT':
+          indicator = 'alert';
+          break;
+        case 'NOTICE':
+        default:
+          indicator = 'notice';
+          break;
+      }
+      const previous = map.get(key);
+      if (!previous || severityRank[indicator] >= severityRank[previous]) {
+        map.set(key, indicator);
       }
     });
     return map;
@@ -250,13 +292,6 @@ export function MapPage() {
           >
             <MdVisibility /> Targets
           </button>
-          <button
-            type="button"
-            className={`control-chip ${coverageEnabled ? 'is-active' : ''}`}
-            onClick={toggleCoverage}
-          >
-            <MdSignalCellularAlt /> RF Coverage
-          </button>
         </div>
       </header>
       <div className="map-canvas">
@@ -265,6 +300,8 @@ export function MapPage() {
           trails={histories}
           targets={targetMarkers}
           alertIndicators={alertIndicatorMap}
+          alertColors={alertColors}
+          defaultRadius={mapDefaultRadius}
           showRadius={radiusEnabled}
           showTrails={trailsEnabled}
           showTargets={targetsEnabled}
@@ -318,7 +355,7 @@ export function MapPage() {
 }
 
 function composeNodeKey(nodeId: string, siteId?: string | null): string {
-  return `${siteId ?? 'default'}::${nodeId}`;
+  return `${siteId ?? 'default'}::${canonicalNodeId(nodeId)}`;
 }
 
 function normalizeAlarmLevel(value: string | null): AlarmLevel {
@@ -344,3 +381,4 @@ function calculatePolygonCentroid(points: GeofenceVertex[]): GeofenceVertex {
     lon: sumLon / points.length,
   };
 }
+

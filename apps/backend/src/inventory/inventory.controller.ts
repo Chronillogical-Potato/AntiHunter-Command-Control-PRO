@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Role } from '@prisma/client';
 
 import { InventoryService } from './inventory.service';
 import { PromoteTargetDto } from './dto/promote-target.dto';
+import { Roles } from '../auth/auth.decorators';
 
 @Controller('inventory')
 export class InventoryController {
@@ -13,11 +15,13 @@ export class InventoryController {
   }
 
   @Post(':mac/promote')
+  @Roles(Role.ADMIN, Role.OPERATOR)
   promoteToTarget(@Param('mac') mac: string, @Body() dto: PromoteTargetDto) {
     return this.inventoryService.promoteToTarget(mac, dto);
   }
 
   @Post('clear')
+  @Roles(Role.ADMIN)
   clearInventory() {
     return this.inventoryService.clearAll();
   }

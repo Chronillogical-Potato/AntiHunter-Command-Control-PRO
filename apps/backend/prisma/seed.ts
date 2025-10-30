@@ -1,8 +1,13 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role, SiteAccessLevel } from '@prisma/client';
+import * as argon2 from 'argon2';
+import { DEFAULT_FEATURES_BY_ROLE } from '../src/users/user-permissions.constants';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  const adminPassword = process.env.ADMIN_PASSWORD ?? 'admin';
+  const adminEmail = process.env.ADMIN_EMAIL ?? 'admin@example.com';
+
   await prisma.appConfig.upsert({
     where: { id: 1 },
     update: {},
@@ -54,6 +59,46 @@ async function main() {
       siteId: 'default',
     },
   });
+
+  const existingAdmin = await prisma.user.findUnique({
+    where: { email: adminEmail },
+  });
+
+  if (!existingAdmin) {
+    const passwordHash = await argon2.hash(adminPassword);
+    await prisma.user.create({
+      data: {
+        email: adminEmail,
+        passwordHash,
+        role: Role.ADMIN,
+        legalAcceptedAt: null,
+        firstName: 'Admin',
+        lastName: 'User',
+        jobTitle: 'System Administrator',
+        preferences: {
+          create: {
+            theme: 'dark',
+            density: 'compact',
+            language: 'en',
+            timeFormat: '24h',
+          },
+        },
+        permissions: {
+          create: (DEFAULT_FEATURES_BY_ROLE[Role.ADMIN] ?? []).map((feature) => ({
+            feature,
+          })),
+        },
+        siteAccess: {
+          create: [
+            {
+              siteId: 'default',
+              level: SiteAccessLevel.MANAGE,
+            },
+          ],
+        },
+      },
+    });
+  }
 }
 
 main()

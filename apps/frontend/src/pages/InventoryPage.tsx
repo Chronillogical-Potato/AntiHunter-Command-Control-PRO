@@ -3,10 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient } from '../api/client';
 import { InventoryDevice } from '../api/types';
+import { useAuthStore } from '../stores/auth-store';
 
 export function InventoryPage() {
   const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
+  const role = useAuthStore((state) => state.user?.role ?? null);
+
+  const canPromote = role === 'ADMIN' || role === 'OPERATOR';
+  const canClear = role === 'ADMIN';
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['inventory', search],
@@ -82,13 +87,17 @@ export function InventoryPage() {
               if (clearMutation.isPending) {
                 return;
               }
+              if (!canClear) {
+                window.alert('You need ADMIN privileges to clear the inventory.');
+                return;
+              }
               const confirmed = window.confirm('Clear all inventory records? This cannot be undone.');
               if (!confirmed) {
                 return;
               }
               clearMutation.mutate();
             }}
-            disabled={clearMutation.isPending}
+            disabled={clearMutation.isPending || !canClear}
           >
             {clearMutation.isPending ? 'Clearing...' : 'Clear Inventory'}
           </button>
@@ -157,8 +166,14 @@ export function InventoryPage() {
                       <button
                         type="button"
                         className="control-chip"
-                        onClick={() => promoteMutation.mutate(device)}
-                        disabled={promoteMutation.isPending || !locationKnown}
+                        onClick={() => {
+                          if (!canPromote) {
+                            window.alert('You need OPERATOR or ADMIN privileges to promote devices.');
+                            return;
+                          }
+                          promoteMutation.mutate(device);
+                        }}
+                        disabled={promoteMutation.isPending || !locationKnown || !canPromote}
                         title={
                           locationKnown
                             ? 'Promote device to targets list'

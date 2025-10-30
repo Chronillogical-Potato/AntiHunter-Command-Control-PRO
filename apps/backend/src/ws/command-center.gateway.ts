@@ -9,13 +9,14 @@ import {
   WebSocketServer,
   WsException,
 } from '@nestjs/websockets';
-import { OnModuleDestroy, UsePipes, ValidationPipe } from '@nestjs/common';
+import { OnModuleDestroy, UnauthorizedException, UsePipes, ValidationPipe } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { Subscription } from 'rxjs';
 
 import { CommandState, CommandsService } from '../commands/commands.service';
 import { SendCommandDto } from '../commands/dto/send-command.dto';
 import { NodesService } from '../nodes/nodes.service';
+import { AuthService } from '../auth/auth.service';
 
 @WebSocketGateway({
   namespace: '/ws',
@@ -33,6 +34,7 @@ export class CommandCenterGateway
   constructor(
     private readonly nodesService: NodesService,
     private readonly commandsService: CommandsService,
+    private readonly authService: AuthService,
   ) {}
 
   afterInit(server: Server): void {
@@ -41,7 +43,26 @@ export class CommandCenterGateway
     });
   }
 
-  handleConnection(@ConnectedSocket() client: Socket): void {
+  async handleConnection(@ConnectedSocket() client: Socket): Promise<void> {
+    try {
+      const token =
+        (client.handshake.auth?.token as string | undefined) ||
+        (client.handshake.headers?.authorization as string | undefined);
+      if (!token) {
+        throw new UnauthorizedException('Missing token');
+      }
+      const normalizedToken = token.startsWith('Bearer ') ? token.slice(7) : token;
+      const payload = await this.authService.verifyToken(normalizedToken);
+      if (!payload.legalAccepted) {
+        throw new UnauthorizedException('Legal acknowledgement required');
+      }
+      client.data.userId = payload.sub;
+    } catch (error) {
+      client.emit('error', 'unauthorized');
+      client.disconnect(true);
+      return;
+    }
+
     client.emit('init', {
       nodes: this.nodesService.getSnapshot(),
     });

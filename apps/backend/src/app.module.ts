@@ -18,6 +18,10 @@ import { TargetsModule } from './targets/targets.module';
 import { OuiModule } from './oui/oui.module';
 import { SitesModule } from './sites/sites.module';
 import { MqttModule } from './mqtt/mqtt.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { MailModule } from './mail/mail.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
   imports: [
@@ -55,6 +59,7 @@ import { MqttModule } from './mqtt/mqtt.module';
       },
     }),
     PrismaModule,
+    AuthModule,
     AppConfigModule,
     HealthModule,
     SerialModule,
@@ -68,6 +73,9 @@ import { MqttModule } from './mqtt/mqtt.module';
     OuiModule,
     MqttModule,
     SitesModule,
+    MailModule,
+    UsersModule,
+    ExportsModule,
   ],
 })
 export class AppModule {}

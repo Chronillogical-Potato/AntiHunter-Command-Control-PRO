@@ -12,12 +12,22 @@ model User {
   email        String        @unique
   passwordHash String
   role         Role
+  legalAcceptedAt DateTime?
+  firstName    String?
+  lastName     String?
+  phone        String?
+  jobTitle     String?
+  isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
   commandLogs  CommandLog[]
   auditLogs    AuditLog[]
   preferences  UserPreference?
+  permissions  UserPermission[]
+  siteAccess   UserSiteAccess[]
+  invitationsSent UserInvitation[] @relation("UserInvitations")
+  passwordResetTokens PasswordResetToken[]
 }
 
 enum Role {
@@ -67,6 +77,24 @@ model AppConfig {
   mapAttribution       String   @default("OpenStreetMap contributors")
   minZoom              Int      @default(2)
   maxZoom              Int      @default(18)
+
+  alertColorIdle       String   @default("#38BDF8")
+  alertColorInfo       String   @default("#2563EB")
+  alertColorNotice     String   @default("#22C55E")
+  alertColorAlert      String   @default("#F97316")
+  alertColorCritical   String   @default("#EF4444")
+
+  mailEnabled         Boolean  @default(false)
+  mailHost            String?
+  mailPort            Int?     @default(587)
+  mailSecure          Boolean  @default(false)
+  mailUser            String?
+  mailPassword        String?
+  mailFrom            String   @default("Command Center <no-reply@command-center.local>")
+  mailPreview         Boolean  @default(true)
+  securityAppUrl      String   @default("http://localhost:5173")
+  invitationExpiryHours Int   @default(48)
+  passwordResetExpiryHours Int @default(4)
 
   allowApi             Boolean  @default(true)
   updatedAt            DateTime @updatedAt
@@ -296,6 +324,7 @@ model Site {
   commandLogs CommandLog[]
   audits    AuditLog[]
   templates CommandTemplate[]
+  userAccess UserSiteAccess[]
 }
 
 model SerialConfig {
@@ -345,6 +374,9 @@ model UserPreference {
   tablePrefs     Json?
   terminalFilters Json?
   muteLevels     Json?
+  language       String @default("en")
+  notifications  Json?
+  timeFormat     String @default("24h")
   updatedAt      DateTime @updatedAt
 
   user           User   @relation(fields: [userId], references: [id])
@@ -354,4 +386,65 @@ enum TargetStatus {
   ACTIVE
   TRIANGULATING
   RESOLVED
+}
+
+model UserPermission {
+  id        String   @id @default(cuid())
+  userId    String
+  feature   String
+  granted   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, feature])
+}
+
+enum SiteAccessLevel {
+  VIEW
+  MANAGE
+}
+
+model UserSiteAccess {
+  id        String          @id @default(cuid())
+  userId    String
+  siteId    String
+  level     SiteAccessLevel @default(VIEW)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  site Site @relation(fields: [siteId], references: [id])
+
+  @@unique([userId, siteId])
+}
+
+model UserInvitation {
+  id         String   @id @default(cuid())
+  email      String
+  role       Role
+  token      String   @unique
+  expiresAt  DateTime
+  siteIds    String[]
+  permissions String[] @default([])
+  message    String?
+  inviterId  String?
+  acceptedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  inviter User? @relation("UserInvitations", fields: [inviterId], references: [id])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  consumedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }

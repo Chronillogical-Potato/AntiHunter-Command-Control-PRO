@@ -247,7 +247,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
             }
             results.push({
                 kind: 'alert',
-                level: 'ALERT',
+                level: 'CRITICAL',
                 category: 'vibration',
                 nodeId,
                 message: `${nodeId} VIBRATION ${vibrationMatch.groups.time}`,
@@ -690,13 +690,33 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
             return 'NODE_UNKNOWN';
         }
         const trimmed = value.trim();
-        if (/^NODE_/i.test(trimmed)) {
-            return trimmed.toUpperCase();
+        const segments = trimmed.split(':').map((segment) => segment.trim()).filter(Boolean);
+        const token = segments.length > 0 ? segments[segments.length - 1] : trimmed;
+        if (!token) {
+            return 'NODE_UNKNOWN';
         }
-        if (/^AH\d+/i.test(trimmed)) {
-            return `NODE_${trimmed.replace(/\s+/g, '').toUpperCase()}`;
+        const upper = token.toUpperCase();
+        if (/^NODE[\s_\-]/i.test(token)) {
+            const base = upper.replace(/^NODE[\s_\-]?/, '');
+            const normalized = base.replace(/[^A-Z0-9]/g, '');
+            return normalized ? `NODE_${normalized}` : 'NODE_UNKNOWN';
         }
-        return `NODE_${trimmed.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}`;
+        if (/^NODE_/i.test(token)) {
+            return upper.replace(/[^A-Z0-9_]/g, '');
+        }
+        if (/^NODE-/i.test(token)) {
+            return `NODE_${upper.replace(/^NODE-/, '').replace(/[^A-Z0-9]/g, '')}`;
+        }
+        if (/^NODE[0-9A-Z]/i.test(token)) {
+            const normalized = upper.replace(/^NODE/, '').replace(/[^A-Z0-9]/g, '');
+            return normalized ? `NODE_${normalized}` : 'NODE_UNKNOWN';
+        }
+        if (/^AH[0-9A-Z]+/i.test(token)) {
+            const normalized = upper.replace(/[^A-Z0-9]/g, '');
+            return `NODE_${normalized}`;
+        }
+        const sanitized = upper.replace(/[^A-Z0-9]/g, '');
+        return sanitized ? `NODE_${sanitized}` : 'NODE_UNKNOWN';
     }
 }
 function looksBinary(text: string): boolean {

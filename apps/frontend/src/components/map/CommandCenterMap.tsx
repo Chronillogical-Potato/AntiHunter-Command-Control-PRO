@@ -18,11 +18,13 @@ import * as L from 'leaflet';
 import 'leaflet.heat';
 
 import type { NodeHistoryPoint, NodeSummary } from '../../stores/node-store';
+import { canonicalNodeId } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
 import type { Geofence, GeofenceVertex } from '../../stores/geofence-store';
+import type { AlertColorConfig } from '../../constants/alert-colors';
 
 const FALLBACK_CENTER: LatLngExpression = [59.9139, 10.7522];
-const DEFAULT_RADIUS = 200;
+const DEFAULT_RADIUS_FALLBACK = 200;
 const COVERAGE_MULTIPLIER = 5;
 type HeatPoint = [number, number, number];
 type BaseLayerDefinition = {
@@ -65,27 +67,23 @@ const BASE_LAYERS: BaseLayerDefinition[] = [
   },
 ] ;
 
-type IndicatorState = 'alert' | 'notice' | undefined;
+type IndicatorState = 'info' | 'notice' | 'alert' | 'critical' | undefined;
 
 function createNodeIcon(node: NodeSummary, state: IndicatorState): DivIcon {
-  const wrapperClass = [
-    'node-marker-wrapper',
-    state === 'alert' ? 'node-marker-wrapper--alert' : state === 'notice' ? 'node-marker-wrapper--notice' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-  const markerClass = [
-    'node-marker',
-    state === 'alert' ? 'node-marker--alert' : state === 'notice' ? 'node-marker--notice' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const wrapperClasses = ['node-marker-wrapper'];
+  if (state) {
+    wrapperClasses.push(`node-marker-wrapper--${state}`);
+  }
+  const markerClasses = ['node-marker'];
+  if (state) {
+    markerClasses.push(`node-marker--${state}`);
+  }
   const label = formatNodeLabel(node);
-  const background = node.siteColor ?? '';
-  const style = background ? `style="background:${background};"` : '';
+  const background = !state && node.siteColor ? `background:${node.siteColor};` : '';
+  const styleAttr = background ? `style="${background}"` : '';
   return divIcon({
-    html: `<div class="${markerClass}" ${style}>${label}</div>`,
-    className: wrapperClass,
+    html: `<div class="${markerClasses.join(' ')}" ${styleAttr}>${label}</div>`,
+    className: wrapperClasses.join(' '),
     iconSize: [32, 32],
     iconAnchor: [16, 16],
   });
@@ -103,13 +101,120 @@ function createTargetIcon(target: TargetMarker): DivIcon {
 }
 
 function formatNodeLabel(node: NodeSummary): string {
-  const prefix = node.siteName ?? node.siteId ?? null;
-  const base = node.name ?? node.id;
-  return prefix ? `${prefix}:${base}` : base;
+  const siteCode = deriveSiteCode(node.siteName, node.siteId);
+  const rawBase = node.name ?? node.id;
+  const segments = rawBase.split(':').map((segment) => segment.trim()).filter(Boolean);
+  const token = segments.length > 0 ? segments[segments.length - 1] : rawBase;
+  const base = token.replace(/^NODE[_-]?/i, '').toUpperCase();
+  return siteCode ? `${siteCode}:${base}` : base;
+}
+
+function deriveSiteCode(siteName?: string | null, siteId?: string | null): string | null {
+  const candidate = (siteName ?? siteId ?? '').trim();
+  if (!candidate) {
+    return null;
+  }
+
+  const normalized = candidate
+    .replace(/[^A-Za-z0-9\s_-]/g, ' ')
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((token) => token[0])
+    .join('')
+    .toUpperCase();
+
+  if (normalized.length >= 2) {
+    return normalized.slice(0, 3);
+  }
+
+  const fallback = candidate.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (fallback.length >= 2) {
+    return fallback.slice(0, 2);
+  }
+
+  return candidate.toUpperCase().slice(0, 2);
 }
 
 function nodeKey(nodeId: string, siteId?: string | null): string {
-  return `${siteId ?? 'default'}::${nodeId}`;
+  return `${siteId ?? 'default'}::${canonicalNodeId(nodeId)}`;
+}
+
+type RadiusStyle = {
+  className: string;
+  color: string;
+  fillColor: string;
+  fillOpacity: number;
+  weight: number;
+};
+
+function resolveRadiusStyle(state: IndicatorState, colors: AlertColorConfig): RadiusStyle {
+  const key = state ?? 'idle';
+  switch (key) {
+    case 'critical':
+      return {
+        className: 'node-radius node-radius--critical',
+        color: colors.critical,
+        fillColor: withAlpha(colors.critical, 0.28),
+        fillOpacity: 0.28,
+        weight: 3,
+      };
+    case 'alert':
+      return {
+        className: 'node-radius node-radius--alert',
+        color: colors.alert,
+        fillColor: colors.alert,
+        fillOpacity: 0.24,
+        weight: 2,
+      };
+    case 'notice':
+      return {
+        className: 'node-radius node-radius--notice',
+        color: colors.notice,
+        fillColor: colors.notice,
+        fillOpacity: 0.2,
+        weight: 2,
+      };
+    case 'info':
+      return {
+        className: 'node-radius node-radius--info',
+        color: colors.info,
+        fillColor: colors.info,
+        fillOpacity: 0.18,
+        weight: 2,
+      };
+    case 'idle':
+    default:
+      return {
+        className: 'node-radius node-radius--idle',
+        color: colors.idle,
+        fillColor: withAlpha(colors.idle, 0.12),
+        fillOpacity: 0.12,
+        weight: 2,
+      };
+  }
+}
+
+function withAlpha(color: string, alpha: number): string {
+  if (!color) {
+    return color;
+  }
+  if (color.startsWith('#')) {
+    const hex = color.slice(1);
+    const normalized = hex.length === 3 ? hex.split('').map((ch) => ch + ch).join('') : hex;
+    const numeric = Number.parseInt(normalized, 16);
+    if (Number.isNaN(numeric)) {
+      return color;
+    }
+    const r = (numeric >> 16) & 0xff;
+    const g = (numeric >> 8) & 0xff;
+    const b = numeric & 0xff;
+    const clamped = Math.max(0, Math.min(1, alpha));
+    return `rgba(${r}, ${g}, ${b}, ${clamped.toFixed(2)})`;
+  }
+  if (color.startsWith('rgb')) {
+    return color;
+  }
+  return color;
 }
 
 interface CommandCenterMapProps {
@@ -117,6 +222,8 @@ interface CommandCenterMapProps {
   trails: Record<string, NodeHistoryPoint[]>;
   targets: TargetMarker[];
   alertIndicators: Map<string, IndicatorState>;
+  alertColors: AlertColorConfig;
+  defaultRadius: number;
   showRadius: boolean;
   showTrails: boolean;
   showTargets: boolean;
@@ -138,6 +245,8 @@ export function CommandCenterMap({
   trails,
   targets,
   alertIndicators,
+  alertColors,
+  defaultRadius,
   showRadius,
   showTrails,
   showTargets,
@@ -148,6 +257,10 @@ export function CommandCenterMap({
   onReady,
 }: CommandCenterMapProps) {
   const mapRef = useRef<LeafletMap | null>(null);
+  const effectiveRadius = useMemo(
+    () => Math.max(25, Number.isFinite(defaultRadius) ? defaultRadius : DEFAULT_RADIUS_FALLBACK),
+    [defaultRadius],
+  );
 
   const center = useMemo<LatLngExpression>(() => {
     if (nodes.length > 0) {
@@ -177,16 +290,16 @@ export function CommandCenterMap({
     onReady?.(map);
   };
 
-const draftPositions: LatLngExpression[] = useMemo(() => {
-  if (!drawing?.enabled || drawing.points.length === 0) {
-    return [];
-  }
-  const base = drawing.points.map((point) => [point.lat, point.lon] as LatLngTuple);
-  if (drawing.hover) {
-    base.push([drawing.hover.lat, drawing.hover.lon]);
-  }
-  return base;
-}, [drawing]);
+  const draftPositions = useMemo<LatLngExpression[]>(() => {
+    if (!drawing?.enabled || drawing.points.length === 0) {
+      return [];
+    }
+    const base = drawing.points.map((point) => [point.lat, point.lon] as LatLngTuple);
+    if (drawing.hover) {
+      base.push([drawing.hover.lat, drawing.hover.lon]);
+    }
+    return base;
+  }, [drawing]);
 
   return (
     <MapContainer center={center} zoom={13} className="map-container" scrollWheelZoom preferCanvas>
@@ -204,7 +317,7 @@ const draftPositions: LatLngExpression[] = useMemo(() => {
         ))}
       </LayersControl>
 
-      <CoverageHeatLayer enabled={showCoverage} nodes={nodes} />
+      <CoverageHeatLayer enabled={showCoverage} nodes={nodes} baseRadius={effectiveRadius} />
 
       {geofences.map((geofence) => {
         if (geofence.polygon.length < 3) {
@@ -267,9 +380,8 @@ const draftPositions: LatLngExpression[] = useMemo(() => {
       {nodes.map((node) => {
         const key = nodeKey(node.id, node.siteId);
         const indicator = alertIndicators.get(key);
-        const isAlerted = indicator === 'alert';
-        const isNotice = indicator === 'notice';
         const position: LatLngExpression = [node.lat, node.lon];
+        const radiusStyle = resolveRadiusStyle(indicator, alertColors);
         return (
           <Marker key={key} position={position} icon={createNodeIcon(node, indicator)}>
             <Tooltip direction="top" offset={[0, -12]} opacity={0.9}>
@@ -286,13 +398,13 @@ const draftPositions: LatLngExpression[] = useMemo(() => {
             {showRadius ? (
               <Circle
                 center={position}
-                radius={DEFAULT_RADIUS}
+                radius={effectiveRadius}
                 pathOptions={{
-                  className: isAlerted
-                    ? 'node-radius node-radius--alert'
-                    : isNotice
-                    ? 'node-radius node-radius--notice'
-                    : 'node-radius node-radius--idle',
+                  className: radiusStyle.className,
+                  color: radiusStyle.color,
+                  fillColor: radiusStyle.fillColor,
+                  fillOpacity: radiusStyle.fillOpacity,
+                  weight: radiusStyle.weight,
                 }}
               />
             ) : null}
@@ -386,10 +498,18 @@ function GeofenceDrawingHandler({
   return null;
 }
 
-function CoverageHeatLayer({ enabled, nodes }: { enabled: boolean; nodes: NodeSummary[] }) {
+function CoverageHeatLayer({
+  enabled,
+  nodes,
+  baseRadius,
+}: {
+  enabled: boolean;
+  nodes: NodeSummary[];
+  baseRadius: number;
+}) {
   const map = useMap();
   const layerRef = useRef<L.Layer | null>(null);
-  const points = useMemo(() => (enabled ? buildCoveragePoints(nodes) : []), [enabled, nodes]);
+  const points = useMemo(() => (enabled ? buildCoveragePoints(nodes, baseRadius) : []), [enabled, nodes, baseRadius]);
 
   useEffect(() => {
     if (!enabled) {
@@ -459,14 +579,15 @@ function estimateCoverageFactor(node: NodeSummary): number {
   return 0.8 + ((hash % 60) - 30) / 200;
 }
 
-function buildCoveragePoints(nodes: NodeSummary[]): HeatPoint[] {
+function buildCoveragePoints(nodes: NodeSummary[], baseRadius: number): HeatPoint[] {
   const samples: HeatPoint[] = [];
   nodes.forEach((node) => {
     if (typeof node.lat !== 'number' || typeof node.lon !== 'number') {
       return;
     }
     const factor = estimateCoverageFactor(node);
-    const baseRadius = DEFAULT_RADIUS * COVERAGE_MULTIPLIER * factor;
+    const adjustedBase = Math.max(25, baseRadius);
+    const coverageRadius = adjustedBase * COVERAGE_MULTIPLIER * factor;
     const latMeters = 111_320;
     const lonMeters = latMeters * Math.cos((node.lat * Math.PI) / 180);
 
@@ -476,7 +597,7 @@ function buildCoveragePoints(nodes: NodeSummary[]): HeatPoint[] {
     const radialSteps = 5;
     const angleSteps = 24;
     for (let rIndex = 1; rIndex <= radialSteps; rIndex += 1) {
-      const radius = (baseRadius * rIndex) / radialSteps;
+      const radius = (coverageRadius * rIndex) / radialSteps;
       const weight = Math.max(0.05, 1 - rIndex / (radialSteps + 0.5));
       for (let angleIndex = 0; angleIndex < angleSteps; angleIndex += 1) {
         const radians = (angleIndex / angleSteps) * Math.PI * 2;
@@ -488,6 +609,8 @@ function buildCoveragePoints(nodes: NodeSummary[]): HeatPoint[] {
   });
   return samples;
 }
+
+
 
 
 

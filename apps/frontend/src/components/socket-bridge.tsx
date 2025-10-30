@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
-import { NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
+import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
 import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
@@ -60,7 +60,7 @@ export function SocketBridge() {
 
         if (payload.type === 'upsert') {
           const state = useNodeStore.getState();
-          const node = state.nodes[payload.node.id];
+          const node = state.nodes[canonicalNodeId(payload.node.id)];
           if (node) {
             const geofenceEvents = useGeofenceStore.getState().processNodePosition(node);
             emitGeofenceEvents(geofenceEvents, node.siteId ?? undefined);
@@ -80,7 +80,9 @@ export function SocketBridge() {
       const targetDetails = extractTargetDetails(payload);
       if (targetDetails) {
         const nodeState = useNodeStore.getState();
-        const node = targetDetails.nodeId ? nodeState.nodes[targetDetails.nodeId] : undefined;
+        const node = targetDetails.nodeId
+          ? nodeState.nodes[canonicalNodeId(targetDetails.nodeId)]
+          : undefined;
         const lat = targetDetails.lat ?? node?.lat;
         const lon = targetDetails.lon ?? node?.lon;
         if (typeof lat === 'number' && Number.isFinite(lat) && typeof lon === 'number' && Number.isFinite(lon)) {

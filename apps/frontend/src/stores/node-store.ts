@@ -36,6 +36,34 @@ interface NodeStore {
 
 const HISTORY_LIMIT = 50;
 
+export function canonicalNodeId(value: string | null | undefined): string {
+  if (!value) {
+    return 'NODE_UNKNOWN';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 'NODE_UNKNOWN';
+  }
+  const segments = trimmed.split(':').map((segment) => segment.trim()).filter(Boolean);
+  const token = segments.length > 0 ? segments[segments.length - 1] : trimmed;
+  const upper = token.toUpperCase();
+  if (upper.startsWith('NODE_')) {
+    return upper.replace(/[^A-Z0-9_]/g, '');
+  }
+  if (upper.startsWith('NODE-')) {
+    return `NODE_${upper.slice(5).replace(/[^A-Z0-9]/g, '')}`;
+  }
+  if (upper.startsWith('NODE')) {
+    const normalized = upper.slice(4).replace(/[^A-Z0-9]/g, '');
+    return normalized ? `NODE_${normalized}` : 'NODE_UNKNOWN';
+  }
+  if (/^AH[0-9A-Z]+/.test(upper)) {
+    return `NODE_${upper.replace(/[^A-Z0-9]/g, '')}`;
+  }
+  const sanitized = upper.replace(/[^A-Z0-9]/g, '');
+  return sanitized ? `NODE_${sanitized}` : 'NODE_UNKNOWN';
+}
+
 export const useNodeStore = create<NodeStore>((set) => ({
   nodes: {},
   order: [],
@@ -67,21 +95,22 @@ export const useNodeStore = create<NodeStore>((set) => ({
       const order = new Set(state.order);
 
       if (diff.type === 'remove') {
-        delete next[diff.node.id];
-        delete histories[diff.node.id];
-        order.delete(diff.node.id);
+        const id = canonicalNodeId(diff.node.id);
+        delete next[id];
+        delete histories[id];
+        order.delete(id);
       } else {
         const normalized = normalizeNode(diff.node as any);
-        next[diff.node.id] = normalized;
-        order.add(diff.node.id);
+        next[normalized.id] = normalized;
+        order.add(normalized.id);
 
-        const history = histories[diff.node.id] ? [...histories[diff.node.id]] : [];
+        const history = histories[normalized.id] ? [...histories[normalized.id]] : [];
         const latest = createHistoryPoint(normalized);
         const lastEntry = history.at(-1);
         if (!lastEntry || lastEntry.lat !== latest.lat || lastEntry.lon !== latest.lon) {
           history.push(latest);
         }
-        histories[diff.node.id] = history.slice(-HISTORY_LIMIT);
+        histories[normalized.id] = history.slice(-HISTORY_LIMIT);
       }
 
       const sortedOrder = Array.from(order).sort((left, right) => {
@@ -170,9 +199,15 @@ function normalizeNode(node: {
     return value;
   };
 
+  const canonicalId = canonicalNodeId(node.id);
+  const rawName = node.name ?? node.id;
+  const nameSegments = rawName.split(':').map((segment) => segment.trim()).filter(Boolean);
+  const normalizedName = nameSegments.length > 0 ? nameSegments[nameSegments.length - 1] : rawName;
+  const displayName = normalizedName ? normalizedName : canonicalId;
+
   return {
-    id: node.id,
-    name: node.name ?? null,
+    id: canonicalId,
+    name: displayName ?? null,
     lat: ensureNumber(node.lat),
     lon: ensureNumber(node.lon),
     ts: ensureIsoString(node.ts),

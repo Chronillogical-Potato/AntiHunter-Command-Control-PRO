@@ -89,6 +89,22 @@ export interface AppSettings {
   mapAttribution: string;
   minZoom: number;
   maxZoom: number;
+  alertColorIdle: string;
+  alertColorInfo: string;
+  alertColorNotice: string;
+  alertColorAlert: string;
+  alertColorCritical: string;
+  mailEnabled: boolean;
+  mailHost?: string | null;
+  mailPort?: number | null;
+  mailSecure: boolean;
+  mailUser?: string | null;
+  mailFrom: string;
+  mailPreview: boolean;
+  securityAppUrl: string;
+  invitationExpiryHours: number;
+  passwordResetExpiryHours: number;
+  mailPasswordSet: boolean;
   updatedAt: string;
 }
 
@@ -145,5 +161,85 @@ export interface MqttSiteConfig {
   };
 }
 
+export type SiteAccessLevel = 'VIEW' | 'MANAGE';
 
+export interface FeatureFlagDefinition {
+  key: string;
+  label: string;
+  description: string;
+  defaultForRoles: UserRole[];
+}
+
+export interface UserSiteAccessGrant {
+  siteId: string;
+  level: SiteAccessLevel;
+  siteName?: string | null;
+}
+
+export interface UserInvitationSummary {
+  id: string;
+  email: string;
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt?: string | null;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string;
+  createdAt: string;
+  userId?: string | null;
+  before?: unknown;
+  after?: unknown;
+}
+
+export type UserRole = 'ADMIN' | 'OPERATOR' | 'ANALYST' | 'VIEWER';
+
+export interface UserPreferences {
+  theme: string;
+  density: string;
+  language: string;
+  timeFormat: '12h' | '24h';
+  notifications?: Record<string, unknown> | null;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  jobTitle?: string | null;
+  isActive: boolean;
+  legalAccepted: boolean;
+  legalAcceptedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  preferences: UserPreferences;
+  permissions: string[];
+  siteAccess: UserSiteAccessGrant[];
+}
+
+export interface LoginResponse {
+  token: string;
+  user: AuthUser;
+  legalAccepted: boolean;
+  disclaimer?: string;
+}
+
+export interface MeResponse {
+  user: AuthUser;
+  legalAccepted: boolean;
+  disclaimer?: string;
+}
+
+export interface UserSummary extends AuthUser {}
+
+export interface UserDetail extends AuthUser {
+  pendingInvitations: UserInvitationSummary[];
+}
 

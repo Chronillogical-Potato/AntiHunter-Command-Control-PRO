@@ -10,9 +10,8 @@ import {
   MdDownload,
   MdEventNote,
   MdOutlineAreaChart,
+  MdPerson,
 } from 'react-icons/md';
-
-import { LogoGlyph } from './logo-glyph';
 
 interface NavItem {
   to: string;
@@ -30,14 +29,12 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/scheduler', label: 'Scheduler', icon: MdEventNote },
   { to: '/config', label: 'Config', icon: MdSettings },
   { to: '/exports', label: 'Exports', icon: MdDownload },
+  { to: '/account', label: 'Account', icon: MdPerson },
 ];
 
 export function SidebarNav() {
   return (
     <aside className="sidebar">
-      <div className="sidebar__logo" aria-hidden="true">
-        <LogoGlyph />
-      </div>
       {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}

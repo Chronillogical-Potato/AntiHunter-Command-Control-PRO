@@ -1,4 +1,6 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+
+const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/;
 
 export class UpdateAppSettingsDto {
   @IsOptional()
@@ -82,4 +84,76 @@ export class UpdateAppSettingsDto {
   @IsInt()
   @Min(1)
   maxZoom?: number;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  alertColorIdle?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  alertColorInfo?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  alertColorNotice?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  alertColorAlert?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  alertColorCritical?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  mailEnabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  mailHost?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  mailPort?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  mailSecure?: boolean;
+
+  @IsOptional()
+  @IsString()
+  mailUser?: string;
+
+  @IsOptional()
+  @IsString()
+  mailPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  mailFrom?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  mailPreview?: boolean;
+
+  @IsOptional()
+  @IsString()
+  securityAppUrl?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  invitationExpiryHours?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  passwordResetExpiryHours?: number;
 }

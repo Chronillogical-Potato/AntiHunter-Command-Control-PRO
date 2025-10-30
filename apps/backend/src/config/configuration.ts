@@ -36,4 +36,29 @@ export default () => ({
     level: process.env.LOG_LEVEL ?? 'info',
     structured: process.env.STRUCTURED_LOGS !== 'false',
   },
+  mail: {
+    enabled: process.env.MAIL_ENABLED !== 'false' && !!process.env.MAIL_HOST,
+    host: process.env.MAIL_HOST,
+    port: process.env.MAIL_PORT
+      ? Number(process.env.MAIL_PORT)
+      : process.env.MAIL_HOST
+      ? process.env.MAIL_SECURE === 'true'
+        ? 465
+        : 587
+      : undefined,
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+    secure: process.env.MAIL_SECURE === 'true',
+    from: process.env.MAIL_FROM ?? 'Command Center <no-reply@command-center.local>',
+    preview: process.env.MAIL_PREVIEW === 'true',
+  },
+  security: {
+    invitationExpiryHours: process.env.INVITE_EXPIRY_HOURS
+      ? Number(process.env.INVITE_EXPIRY_HOURS)
+      : 48,
+    passwordResetExpiryHours: process.env.PASSWORD_RESET_EXPIRY_HOURS
+      ? Number(process.env.PASSWORD_RESET_EXPIRY_HOURS)
+      : 4,
+    appUrl: process.env.APP_URL ?? 'http://localhost:5173',
+  },
 });

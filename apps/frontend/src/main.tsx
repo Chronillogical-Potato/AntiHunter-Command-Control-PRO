@@ -6,6 +6,7 @@ import { QueryClientProvider } from './providers/query-client';
 import { ThemeProvider } from './providers/theme-provider';
 import { AlarmProvider } from './providers/alarm-provider';
 import { SocketProvider } from './providers/socket-provider';
+import { AuthProvider } from './providers/auth-provider';
 
 import './styles/global.css';
 import 'leaflet/dist/leaflet.css';
@@ -20,11 +21,13 @@ ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <QueryClientProvider>
       <ThemeProvider>
-        <AlarmProvider>
-          <SocketProvider>
-            <App />
-          </SocketProvider>
-        </AlarmProvider>
+        <AuthProvider>
+          <AlarmProvider>
+            <SocketProvider>
+              <App />
+            </SocketProvider>
+          </AlarmProvider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>,

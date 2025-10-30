@@ -12,6 +12,7 @@ import {
 import { NodeSummary, useNodeStore } from '../stores/node-store';
 import { useTemplateStore, CommandTemplate } from '../stores/template-store';
 import { TerminalLevel, useTerminalStore } from '../stores/terminal-store';
+import { useAuthStore } from '../stores/auth-store';
 
 type CommandFormState = {
   target: string;
@@ -158,6 +159,9 @@ export function CommandConsolePage() {
   const addTemplateToStore = useTemplateStore((state) => state.addTemplate);
   const updateTemplateInStore = useTemplateStore((state) => state.updateTemplate);
   const deleteTemplateFromStore = useTemplateStore((state) => state.deleteTemplate);
+  const role = useAuthStore((state) => state.user?.role ?? null);
+
+  const canSendCommands = role === 'ADMIN' || role === 'OPERATOR';
 
   const commandMap = useMemo(() => new Map(MESH_COMMANDS.map((cmd) => [cmd.name, cmd])), []);
   const groupedCommands = useMemo(() => {
@@ -310,10 +314,6 @@ export function CommandConsolePage() {
     });
   };
 
-  const handleExampleApply = (params: string[], targetOverride?: string) => {
-    setCommand(selectedCommand, { target: targetOverride, params });
-  };
-
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     setCustomError(null);
@@ -332,6 +332,11 @@ export function CommandConsolePage() {
       setTargetError(null);
     }
     if (Object.keys(errors).length > 0 || !trimmedTarget) {
+      return;
+    }
+
+    if (!canSendCommands) {
+      setTargetError('You do not have permission to send commands.');
       return;
     }
 
@@ -448,6 +453,11 @@ export function CommandConsolePage() {
       return;
     }
 
+    if (!canSendCommands) {
+      setCustomError('You do not have permission to send commands.');
+      return;
+    }
+
     setCustomError(null);
     mutation.mutate({
       target: parsed.target,
@@ -469,46 +479,6 @@ export function CommandConsolePage() {
       </header>
 
       <div className="console-layout">
-        <aside className="console-templates">
-          <h2>Command Templates</h2>
-          <div className="template-list">
-            {templates.map((template) => {
-              const isEditingTemplate = editingTemplateId === template.id;
-              return (
-                <article
-                  key={template.id}
-                  className={`template-card${isEditingTemplate ? ' is-editing' : ''}`}
-                >
-                  <div className="template-card__header">
-                    <div>
-                      <strong>{template.label}</strong>
-                      <span>{template.commandName}</span>
-                    </div>
-                    <div className="template-card__actions">
-                      <button type="button" onClick={() => handleTemplateUse(template)}>
-                        Use
-                      </button>
-                      <button type="button" onClick={() => handleTemplateEdit(template)}>
-                        {isEditingTemplate ? 'Editing…' : 'Edit'}
-                      </button>
-                      <button
-                        type="button"
-                        className="template-delete"
-                        aria-label={`Delete template ${template.label}`}
-                        onClick={() => handleDeleteTemplate(template.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                  <p>{template.description ?? `${template.target} ${[template.commandName, ...template.params].join(':')}`}</p>
-                </article>
-              );
-            })}
-            {templates.length === 0 ? <p className="template-empty">No templates yet.</p> : null}
-          </div>
-        </aside>
-
         <form className="console-form" onSubmit={handleSubmit}>
           <div className="form-row">
             <label htmlFor="command-selector">Command</label>
@@ -639,37 +609,16 @@ export function CommandConsolePage() {
             </div>
           ) : null}
 
-          {selectedCommand.examples?.length ? (
-            <div className="form-row example-row">
-              <label>Presets</label>
-              <div className="example-chips">
-                {selectedCommand.examples.map((example, index) => {
-                  const label =
-                    example.label ??
-                    `${example.target ?? selectedCommand.defaultTarget ?? '@ALL'} ${[
-                      selectedCommand.name,
-                      ...(example.params ?? []),
-                    ]
-                      .filter(Boolean)
-                      .join(':')}`;
-                  return (
-                    <button
-                      key={`${selectedCommand.name}-preset-${index}`}
-                      type="button"
-                      onClick={() => handleExampleApply(example.params ?? [], example.target)}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
           <div className="form-row">
             <label>Preview</label>
             <code className="preview-line">{preview || 'N/A'}</code>
           </div>
+
+          <button type="submit" className="submit-button" disabled={mutation.isPending || !canSendCommands}>
+            {mutation.isPending ? 'Sending...' : 'Send Command'}
+          </button>
+
+          <div className="form-divider" />
 
           <div className="custom-command">
             <label htmlFor="custom-command">Custom Command</label>
@@ -682,7 +631,12 @@ export function CommandConsolePage() {
               placeholder="@ALL STATUS"
             />
             {customError ? <span className="form-error">{customError}</span> : null}
-            <button type="button" className="secondary-button" onClick={handleCustomSubmit}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleCustomSubmit}
+              disabled={mutation.isPending || !canSendCommands}
+            >
               Send Raw Command
             </button>
           </div>
@@ -714,10 +668,6 @@ export function CommandConsolePage() {
             {templateError ? <span className="form-error">{templateError}</span> : null}
           </div>
 
-          <button type="submit" className="submit-button" disabled={mutation.isPending}>
-            {mutation.isPending ? 'Sending...' : 'Send Command'}
-          </button>
-
           {mutation.isError ? (
             <p className="error-text">Failed to send command. Check terminal for details.</p>
           ) : null}
@@ -725,10 +675,55 @@ export function CommandConsolePage() {
             <p className="success-text">Command queued. Track updates in the terminal.</p>
           ) : null}
         </form>
+
+        <section className="console-templates console-templates--stacked">
+          <h2>Command Templates</h2>
+          <div className="template-list">
+            {templates.map((template) => {
+              const isEditingTemplate = editingTemplateId === template.id;
+              return (
+                <article
+                  key={template.id}
+                  className={`template-card${isEditingTemplate ? ' is-editing' : ''}`}
+                >
+                  <div className="template-card__header">
+                    <div>
+                      <strong>{template.label}</strong>
+                      <span>{template.commandName}</span>
+                    </div>
+                    <div className="template-card__actions">
+                      <button type="button" onClick={() => handleTemplateUse(template)}>
+                        Use
+                      </button>
+                      <button type="button" onClick={() => handleTemplateEdit(template)}>
+                        {isEditingTemplate ? 'Editing…' : 'Edit'}
+                      </button>
+                      <button
+                        type="button"
+                        className="template-delete template-card__delete"
+                        aria-label={`Delete template ${template.label}`}
+                        onClick={() => handleDeleteTemplate(template.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <p>
+                    {template.description ??
+                      `${template.target} ${[template.commandName, ...template.params].join(':')}`}
+                  </p>
+                </article>
+              );
+            })}
+            {templates.length === 0 ? <p className="template-empty">No templates yet.</p> : null}
+          </div>
+        </section>
       </div>
     </section>
   );
 }
+
+
 
 
 

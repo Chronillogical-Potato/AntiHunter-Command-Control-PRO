@@ -103,10 +103,51 @@ const envSchema = z.object({
     .pipe(
       z
         .number()
+      .int()
+      .positive()
+      .optional(),
+    ),
+  MAIL_ENABLED: z.string().optional(),
+  MAIL_HOST: z.string().optional(),
+  MAIL_PORT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(
+      z
+        .number()
         .int()
         .positive()
         .optional(),
     ),
+  MAIL_USER: z.string().optional(),
+  MAIL_PASS: z.string().optional(),
+  MAIL_SECURE: z.string().optional(),
+  MAIL_FROM: z.string().optional(),
+  MAIL_PREVIEW: z.string().optional(),
+  INVITE_EXPIRY_HOURS: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(
+      z
+        .number()
+        .int()
+        .positive()
+        .optional(),
+    ),
+  PASSWORD_RESET_EXPIRY_HOURS: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(
+      z
+        .number()
+        .int()
+        .positive()
+        .optional(),
+    ),
+  APP_URL: z.string().optional(),
 });
 
 export type EnvironmentVariables = z.infer<typeof envSchema>;

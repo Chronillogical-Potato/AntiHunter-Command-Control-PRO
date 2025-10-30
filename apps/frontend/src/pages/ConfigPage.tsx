@@ -14,6 +14,9 @@ import type {
 import { useAlarm } from '../providers/alarm-provider';
 import { useTheme } from '../providers/theme-provider';
 import { useNodeStore } from '../stores/node-store';
+import { DEFAULT_ALERT_COLORS, extractAlertColors } from '../constants/alert-colors';
+
+type AppSettingsUpdate = Partial<AppSettings> & { mailPassword?: string };
 
 const LEVEL_METADATA: Record<AlarmLevel, { label: string; description: string }> = {
   INFO: { label: 'Info', description: 'Low priority notifications (status updates).' },
@@ -41,6 +44,42 @@ const PROTOCOL_OPTIONS = [
   { value: 'nmea-like', label: 'NMEA-like' },
 ];
 
+const ALERT_COLOR_FIELDS = [
+  {
+    key: 'alertColorIdle',
+    previewKey: 'idle',
+    label: 'Idle',
+    description: 'Default marker and radius color when no alarms are active.',
+  },
+  {
+    key: 'alertColorInfo',
+    previewKey: 'info',
+    label: 'Info',
+    description: 'Low priority status updates and heartbeat events.',
+  },
+  {
+    key: 'alertColorNotice',
+    previewKey: 'notice',
+    label: 'Notice',
+    description: 'Important events such as new targets or triangulation results.',
+  },
+  {
+    key: 'alertColorAlert',
+    previewKey: 'alert',
+    label: 'Alert',
+    description: 'Actionable events that should prompt operator attention.',
+  },
+  {
+    key: 'alertColorCritical',
+    previewKey: 'critical',
+    label: 'Critical',
+    description: 'Safety-sensitive events such as erase operations or tamper alerts.',
+  },
+] as const;
+
+type AlertColorFieldKey = (typeof ALERT_COLOR_FIELDS)[number]['key'];
+type AlertColorPreviewKey = (typeof ALERT_COLOR_FIELDS)[number]['previewKey'];
+
 const PARITY_OPTIONS = [
   { value: 'none', label: 'None' },
   { value: 'even', label: 'Even' },
@@ -51,6 +90,21 @@ const STOP_BITS_OPTIONS = [
   { value: 1, label: '1' },
   { value: 2, label: '2' },
 ];
+
+const DEFAULT_ALARM_CONFIG: AlarmConfig = {
+  audioPack: 'default',
+  volumeInfo: 60,
+  volumeNotice: 70,
+  volumeAlert: 80,
+  volumeCritical: 90,
+  gapInfoMs: 1000,
+  gapNoticeMs: 1500,
+  gapAlertMs: 2000,
+  gapCriticalMs: 0,
+  dndStart: null,
+  dndEnd: null,
+  backgroundAllowed: false,
+};
 
 const DEFAULT_SITE_ID = 'default';
 
@@ -95,16 +149,21 @@ export function ConfigPage() {
   const [ouiMode, setOuiMode] = useState<'replace' | 'merge'>('replace');
   const [ouiError, setOuiError] = useState<string | null>(null);
 
-  const [localAlarm, setLocalAlarm] = useState<AlarmConfig | null>(null);
-  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  const [serialConfig, setSerialConfig] = useState<SerialConfig | null>(null);
-  const [siteSettings, setSiteSettings] = useState<SiteSummary[]>([]);
-  const [mqttConfigs, setMqttConfigs] = useState<MqttSiteConfig[]>([]);
-  const [mqttPasswords, setMqttPasswords] = useState<Record<string, string>>({});
-  const [serialTestStatus, setSerialTestStatus] = useState<{
-    status: 'idle' | 'running' | 'success' | 'error';
-    message?: string;
-  }>({ status: 'idle' });
+  const [localAlarm, setLocalAlarm] = useState<AlarmConfig>(DEFAULT_ALARM_CONFIG);
+const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+const [serialConfig, setSerialConfig] = useState<SerialConfig | null>(null);
+const [siteSettings, setSiteSettings] = useState<SiteSummary[]>([]);
+const [mqttConfigs, setMqttConfigs] = useState<MqttSiteConfig[]>([]);
+const [mqttPasswords, setMqttPasswords] = useState<Record<string, string>>({});
+  const [mailPasswordInput, setMailPasswordInput] = useState('');
+  const [mailPasswordMessage, setMailPasswordMessage] = useState<
+    { type: 'success' | 'error'; text: string } | null
+  >(null);
+const [serialTestStatus, setSerialTestStatus] = useState<{
+  status: 'idle' | 'running' | 'success' | 'error';
+  message?: string;
+}>({ status: 'idle' });
+  const [configNotice, setConfigNotice] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   useEffect(() => {
     if (alarmSettings?.config) {
@@ -135,6 +194,22 @@ export function ConfigPage() {
     }
   }, [mqttSitesQuery.data]);
 
+  useEffect(() => {
+    if (!configNotice) {
+      return;
+    }
+    const timer = setTimeout(() => setConfigNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [configNotice]);
+
+  useEffect(() => {
+    if (serialTestStatus.status === 'success' || serialTestStatus.status === 'error') {
+      const timer = setTimeout(() => setSerialTestStatus({ status: 'idle' }), 5000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [serialTestStatus]);
+
   const sounds = useMemo<Record<AlarmLevel, string | null>>(
     () =>
       alarmSettings?.sounds ?? {
@@ -147,10 +222,15 @@ export function ConfigPage() {
   );
 
   const updateAppSettingsMutation = useMutation({
-    mutationFn: (body: Partial<AppSettings>) => apiClient.put<AppSettings>('/config/app', body),
+    mutationFn: (body: AppSettingsUpdate) => apiClient.put<AppSettings>('/config/app', body),
     onSuccess: (data) => {
       queryClient.setQueryData(['appSettings'], data);
       setAppSettings(data);
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : 'Unable to update application settings.';
+      setConfigNotice({ type: 'error', text: message });
     },
   });
 
@@ -160,6 +240,11 @@ export function ConfigPage() {
     onSuccess: (data) => {
       queryClient.setQueryData(['serialConfig'], data);
       setSerialConfig(data);
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : 'Unable to update serial configuration.';
+      setConfigNotice({ type: 'error', text: message });
     },
   });
 
@@ -208,6 +293,29 @@ export function ConfigPage() {
     setMqttPasswords((prev) => ({ ...prev, [siteId]: '' }));
   };
 
+  const handleMailPasswordSave = async () => {
+    if (!appSettings) {
+      return;
+    }
+    try {
+      setMailPasswordMessage(null);
+      const trimmed = mailPasswordInput.trim();
+      const result = await updateAppSettingsMutation.mutateAsync({
+        mailPassword: trimmed,
+      });
+      setMailPasswordInput('');
+      setMailPasswordMessage({
+        type: 'success',
+        text: trimmed.length > 0 ? 'Mail password updated.' : 'Mail password cleared.',
+      });
+      setAppSettings(result);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to update mail password.';
+      setMailPasswordMessage({ type: 'error', text: message });
+    }
+  };
+
   const serialTestMutation = useMutation({
     mutationFn: (payload: { path?: string; baudRate?: number; delimiter?: string; protocol?: string }) =>
       apiClient.post<SerialState>('/serial/connect', payload),
@@ -254,11 +362,22 @@ export function ConfigPage() {
     },
   });
 
-  const updateAppSetting = (patch: Partial<AppSettings>) => {
+const updateAppSetting = (patch: Partial<AppSettings>) => {
     if (!appSettings) return;
     const next = { ...appSettings, ...patch };
     setAppSettings(next);
     updateAppSettingsMutation.mutate(patch);
+  };
+
+  const handleAlertColorChange =
+    (key: AlertColorFieldKey) => (event: ChangeEvent<HTMLInputElement>) => {
+      updateAppSetting({ [key]: event.target.value } as Partial<AppSettings>);
+    };
+
+  const handleAlertColorReset = (key: AlertColorFieldKey, previewKey: AlertColorPreviewKey) => {
+    updateAppSetting({
+      [key]: DEFAULT_ALERT_COLORS[previewKey],
+    } as Partial<AppSettings>);
   };
 
   const updateSerialSetting = (patch: Partial<SerialConfig>) => {
@@ -302,6 +421,13 @@ export function ConfigPage() {
     if (!file) return;
     setOuiError(null);
     ouiImportMutation.mutate({ file, mode: ouiMode });
+  };
+
+  const handleJsonFeatureNotice = () => {
+    setConfigNotice({
+      type: 'info',
+      text: 'JSON import/export is not available yet.',
+    });
   };
 
   const handleTestSerial = () => {
@@ -380,7 +506,6 @@ export function ConfigPage() {
     alarmLoading ||
     appSettingsQuery.isLoading ||
     serialConfigQuery.isLoading ||
-    !localAlarm ||
     !appSettings ||
     !serialConfig;
 
@@ -400,6 +525,10 @@ export function ConfigPage() {
     );
   }
 
+  const effectiveAlertColors = extractAlertColors(appSettings!);
+  const mailInputsDisabled = !appSettings!.mailEnabled;
+  const mailPasswordReady = mailPasswordInput.trim().length > 0;
+
   return (
     <section className="panel">
       <header className="panel__header">
@@ -416,15 +545,37 @@ export function ConfigPage() {
             onClick={handleTestSerial}
             disabled={serialTestMutation.isPending}
           >
-            {serialTestMutation.isPending ? 'Testingâ€¦' : 'Test Serial'}
+            {serialTestMutation.isPending ? 'Testing…' : 'Test Serial'}
           </button>
-          <button type="button" className="control-chip">
+          <button
+            type="button"
+            className="control-chip"
+            onClick={handleJsonFeatureNotice}
+          >
             Import JSON
           </button>
-          <button type="button" className="control-chip">
+          <button
+            type="button"
+            className="control-chip"
+            onClick={handleJsonFeatureNotice}
+          >
             Export JSON
           </button>
         </div>
+        {configNotice ? (
+          <div
+            className={
+              configNotice.type === 'error'
+                ? 'form-error'
+                : configNotice.type === 'success'
+                ? 'form-success'
+                : 'form-hint'
+            }
+            role={configNotice.type === 'error' ? 'alert' : 'status'}
+          >
+            {configNotice.text}
+          </div>
+        ) : null}
         {serialTestStatus.status !== 'idle' ? (
           <div
             className={
@@ -595,6 +746,203 @@ export function ConfigPage() {
         </section>
 
         <section className="config-card">
+        <section className="config-card">
+          <header>
+            <h2>Mail Server</h2>
+            <p>Configure SMTP delivery for invitations and alert notifications.</p>
+          </header>
+          <div className="config-card__body">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={appSettings.mailEnabled}
+                onChange={(event) => updateAppSetting({ mailEnabled: event.target.checked })}
+              />
+              Enable outbound email
+            </label>
+            <div className="config-row">
+              <label>SMTP Host</label>
+              <input
+                placeholder="smtp.example.com"
+                value={appSettings.mailHost ?? ''}
+                onChange={(event) => updateAppSetting({ mailHost: event.target.value })}
+                disabled={mailInputsDisabled}
+              />
+            </div>
+            <div className="config-row">
+              <label>SMTP Port</label>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                value={appSettings.mailPort ?? ''}
+                onChange={(event) => {
+                  if (event.target.value.trim().length === 0) return;
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ mailPort: value });
+                }}
+                disabled={mailInputsDisabled}
+              />
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={appSettings.mailSecure}
+                onChange={(event) => updateAppSetting({ mailSecure: event.target.checked })}
+                disabled={mailInputsDisabled}
+              />
+              Use TLS (secure connection)
+            </label>
+            <div className="config-row">
+              <label>Username</label>
+              <input
+                value={appSettings.mailUser ?? ''}
+                onChange={(event) => updateAppSetting({ mailUser: event.target.value })}
+                disabled={mailInputsDisabled}
+              />
+            </div>
+            <div className="config-row">
+              <label>From Address</label>
+              <input
+                value={appSettings.mailFrom}
+                onChange={(event) => updateAppSetting({ mailFrom: event.target.value })}
+                disabled={mailInputsDisabled}
+              />
+              <span className="field-hint">Shown as the sender on outbound messages.</span>
+            </div>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={appSettings.mailPreview}
+                onChange={(event) => updateAppSetting({ mailPreview: event.target.checked })}
+                disabled={mailInputsDisabled}
+              />
+              Capture mail in local preview instead of sending
+            </label>
+            <div className="config-row">
+              <label>Password</label>
+              <div className="mail-password-row">
+                <input
+                  type="password"
+                  value={mailPasswordInput}
+                  placeholder={appSettings.mailPasswordSet ? '••••••••' : 'Enter SMTP password'}
+                  onChange={(event) => setMailPasswordInput(event.target.value)}
+                  disabled={mailInputsDisabled}
+                />
+                <button
+                  type="button"
+                  className="control-chip"
+                  onClick={handleMailPasswordSave}
+                  disabled={mailInputsDisabled || !mailPasswordReady || updateAppSettingsMutation.isPending}
+                >
+                  Save Password
+                </button>
+              </div>
+              <span className="field-hint">
+                {appSettings.mailPasswordSet
+                  ? 'A password is stored securely on the server.'
+                  : 'No password stored yet.'}
+              </span>
+              {mailPasswordMessage ? (
+                <div
+                  className={mailPasswordMessage.type === 'error' ? 'form-error' : 'form-success'}
+                  role={mailPasswordMessage.type === 'error' ? 'alert' : 'status'}
+                >
+                  {mailPasswordMessage.text}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Security Defaults</h2>
+            <p>Set application URLs and token expiry policies.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="config-row">
+              <label>Application URL</label>
+              <input
+                type="url"
+                placeholder="https://command-center.example.com"
+                value={appSettings.securityAppUrl}
+                onChange={(event) => updateAppSetting({ securityAppUrl: event.target.value })}
+              />
+              <span className="field-hint">Used in email templates and deep links.</span>
+            </div>
+            <div className="config-row">
+              <label>Invitation expiry (hours)</label>
+              <input
+                type="number"
+                min={1}
+                value={appSettings.invitationExpiryHours}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ invitationExpiryHours: value });
+                }}
+              />
+            </div>
+            <div className="config-row">
+              <label>Password reset expiry (hours)</label>
+              <input
+                type="number"
+                min={1}
+                value={appSettings.passwordResetExpiryHours}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (!Number.isFinite(value)) return;
+                  updateAppSetting({ passwordResetExpiryHours: value });
+                }}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>Alert Colors</h2>
+            <p>Customize map marker and radius colors for each alarm level.</p>
+          </header>
+          <div className="config-card__body">
+            <div className="alert-color-grid">
+              {ALERT_COLOR_FIELDS.map((field) => {
+                const previewColor = effectiveAlertColors[field.previewKey];
+                const isDefault =
+                  previewColor.toUpperCase() === DEFAULT_ALERT_COLORS[field.previewKey];
+                return (
+                  <div key={field.key} className="alert-color-item">
+                    <div className="alert-color-preview">
+                      <input
+                        type="color"
+                        value={previewColor}
+                        onChange={handleAlertColorChange(field.key)}
+                        aria-label={`${field.label} Color`}
+                      />
+                    </div>
+                    <div className="alert-color-details">
+                      <label>{field.label}</label>
+                      <div className="alert-color-code">{previewColor}</div>
+                      <p className="field-hint">{field.description}</p>
+                      <div className="alert-color-actions">
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => handleAlertColorReset(field.key, field.previewKey)}
+                          disabled={isDefault}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
           <header>
             <h2>Site Settings</h2>
             <p>Update site names and colors for multi-site deployments.</p>
@@ -1303,6 +1651,25 @@ function volumeKeyForLevel(level: AlarmLevel): keyof AlarmConfig {
       return 'volumeCritical';
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

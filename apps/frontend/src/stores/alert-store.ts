@@ -1,8 +1,15 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 
 import type { AlarmLevel } from '../api/types';
+import { canonicalNodeId } from './node-store';
 
-const DEFAULT_ALERT_DURATION_MS = 20_000;
+const DEFAULT_ALERT_DURATION_MS = 10_000;
+const SEVERITY_WEIGHT: Record<AlarmLevel, number> = {
+  INFO: 0,
+  NOTICE: 1,
+  ALERT: 2,
+  CRITICAL: 3,
+};
 
 export interface NodeAlert {
   nodeId: string;
@@ -36,7 +43,7 @@ interface AlertStoreState {
 }
 
 const keyForAlert = (nodeId: string, siteId?: string) =>
-  `${siteId ?? 'default'}::${nodeId}`;
+  `${siteId ?? 'default'}::${canonicalNodeId(nodeId)}`;
 
 export const useAlertStore = create<AlertStoreState>((set, get) => ({
   alerts: {},
@@ -46,28 +53,47 @@ export const useAlertStore = create<AlertStoreState>((set, get) => ({
       const duration = input.durationMs ?? DEFAULT_ALERT_DURATION_MS;
       const triggeredAt = input.timestamp ?? new Date().toISOString();
       const expiresAt = now + duration;
-
-      const nextAlerts = { ...state.alerts };
       const key = keyForAlert(input.nodeId, input.siteId);
-      nextAlerts[key] = {
-        nodeId: input.nodeId,
-        siteId: input.siteId,
-        category: input.category,
-        level: input.level,
-        message: input.message,
-        lat: typeof input.lat === 'number' ? input.lat : undefined,
-        lon: typeof input.lon === 'number' ? input.lon : undefined,
-        triggeredAt,
-        expiresAt,
-      };
+      const existing = state.alerts[key];
+      if (existing) {
+        const existingWeight = SEVERITY_WEIGHT[existing.level];
+        const incomingWeight = SEVERITY_WEIGHT[input.level];
+        if (incomingWeight < existingWeight) {
+          return {
+            alerts: {
+              ...state.alerts,
+              [key]: {
+                ...existing,
+                expiresAt: Math.max(existing.expiresAt, expiresAt),
+              },
+            },
+          };
+        }
+      }
 
-      return { alerts: nextAlerts };
+      return {
+        alerts: {
+          ...state.alerts,
+          [key]: {
+            nodeId: canonicalNodeId(input.nodeId),
+            siteId: input.siteId,
+            category: input.category,
+            level: input.level,
+            message: input.message,
+            lat: typeof input.lat === 'number' ? input.lat : undefined,
+            lon: typeof input.lon === 'number' ? input.lon : undefined,
+            triggeredAt,
+            expiresAt,
+          },
+        },
+      };
     }),
   clearAlert: (nodeId) =>
     set((state) => {
+      const canonical = canonicalNodeId(nodeId);
       const nextAlerts: Record<string, NodeAlert> = {};
       Object.entries(state.alerts).forEach(([key, alert]) => {
-        if (alert.nodeId !== nodeId) {
+        if (canonicalNodeId(alert.nodeId) !== canonical) {
           nextAlerts[key] = alert;
         }
       });
@@ -86,3 +112,4 @@ export const useAlertStore = create<AlertStoreState>((set, get) => ({
       set({ alerts: next });
     },
 }));
+

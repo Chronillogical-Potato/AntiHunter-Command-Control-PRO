@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import type { CommandRequest, InventoryDevice, Target } from '../api/types';
 import { useTargetStore } from '../stores/target-store';
+import { useAuthStore } from '../stores/auth-store';
 
 interface TriangulatePayload {
   target: Target;
@@ -40,6 +41,10 @@ async function sendCommand(body: CommandRequest) {
 
 export function TargetsPage() {
   const [search, setSearch] = useState('');
+  const role = useAuthStore((state) => state.user?.role ?? null);
+  const canManageTargets = role === 'ADMIN' || role === 'OPERATOR';
+  const canClearTargets = role === 'ADMIN';
+  const canSendCommands = canManageTargets;
 
   const { commentMap, trackingMap, setComment, setTracking, reset } = useTargetStore((state) => ({
     commentMap: state.commentMap,
@@ -176,13 +181,17 @@ export function TargetsPage() {
               if (clearTargetsMutation.isPending) {
                 return;
               }
+              if (!canClearTargets) {
+                window.alert('You need ADMIN privileges to clear all targets.');
+                return;
+              }
               const confirmed = window.confirm('Clear all targets? This removes all promoted devices.');
               if (!confirmed) {
                 return;
               }
               clearTargetsMutation.mutate();
             }}
-            disabled={clearTargetsMutation.isPending}
+            disabled={clearTargetsMutation.isPending || !canClearTargets}
           >
             {clearTargetsMutation.isPending ? 'Clearing...' : 'Clear Targets'}
           </button>
@@ -255,12 +264,19 @@ export function TargetsPage() {
                       <button
                         type="button"
                         className="control-chip"
-                        onClick={() => triangulateMutation.mutate({ target })}
+                        onClick={() => {
+                          if (!canSendCommands) {
+                            window.alert('You need OPERATOR or ADMIN privileges to start triangulation.');
+                            return;
+                          }
+                          triangulateMutation.mutate({ target });
+                        }}
                         disabled={
                           triangulateMutation.isPending ||
                           !target.mac ||
                           !target.firstNodeId ||
-                          !normalizeNodeTarget(target.firstNodeId)
+                          !normalizeNodeTarget(target.firstNodeId) ||
+                          !canSendCommands
                         }
                         title="Start triangulation from first detecting node"
                       >
@@ -269,15 +285,21 @@ export function TargetsPage() {
                       <button
                         type="button"
                         className={`control-chip ${tracking ? 'is-active' : ''}`}
-                        onClick={() =>
-                          tracking
-                            ? stopTrackingMutation.mutate({ target })
-                            : trackMutation.mutate({ target })
-                        }
+                        onClick={() => {
+                          if (!canSendCommands) {
+                            window.alert('You need OPERATOR or ADMIN privileges to control tracking.');
+                            return;
+                          }
+                          if (tracking) {
+                            stopTrackingMutation.mutate({ target });
+                          } else {
+                            trackMutation.mutate({ target });
+                          }
+                        }}
                         disabled={
                           tracking
                             ? stopTrackingMutation.isPending
-                            : trackMutation.isPending || !target.mac
+                            : trackMutation.isPending || !target.mac || !canSendCommands
                         }
                         title={tracking ? 'Stop tracking' : 'Start coordinated tracking'}
                       >
