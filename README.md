@@ -50,32 +50,32 @@ Each primary view ships with rich operator context. Replace the placeholder imag
 #### Map
 Tracks live nodes, renders trails and geofences, and highlights alerts in real time.
 
-![Map Placeholder](docs/media/map-placeholder.png)
+![Map view showing live nodes and radius overlays](images/Map.png)
 
 #### Console
 Launch commands, manage templates, and review command acknowledgements/audits.
 
-![Console Placeholder](docs/media/console-placeholder.png)
+![Console view with command orchestration](images/Console.png)
 
 #### Inventory
 Review discovered devices, signal strength history, vendor resolutions, and export datasets.
 
-![Inventory Placeholder](docs/media/inventory-placeholder.png)
+![Inventory view listing detected devices](images/InventoryFilled.png)
 
 #### Targets
 Promote detections to tracked targets, view triangulation results, and manage status notes.
 
-![Targets Placeholder](docs/media/targets-placeholder.png)
+![Targets view with active detections](images/TargetsFilled.png)
 
 #### Geofence
 Create and edit geofences, tune alarm behavior, and jump to polygons on the map.
 
-![Geofence Placeholder](docs/media/geofence-placeholder.png)
+![Geofence management interface](images/GeoFenceFilled.png)
 
 #### Nodes
 Audit node health, connectivity, and telemetry history with quick map focus actions.
 
-![Nodes Placeholder](docs/media/nodes-placeholder.png)
+![Nodes list with health indicators](images/NodesFilled.png)
 
 #### Scheduler
 Plan recurring scans, FOREVER tasks, and automated detection sequences.
@@ -85,7 +85,7 @@ Plan recurring scans, FOREVER tasks, and automated detection sequences.
 #### Config
 Adjust system defaults (alarms, detection presets, serial ports, site federation) from a single pane.
 
-![Config Placeholder](docs/media/config-placeholder.png)
+![Configuration panel with system defaults](images/Config.png)
 
 #### Exports
 Generate CSV/GeoJSON bundles for inventory, targets, commands, and audit logs.
@@ -95,7 +95,7 @@ Generate CSV/GeoJSON bundles for inventory, targets, commands, and audit logs.
 #### Account
 Manage your profile, theme preferences, and admin-level user management tasks.
 
-![Account Placeholder](docs/media/account-placeholder.png)
+![Account preferences and admin tools](images/Account.png)
 
 
 ## Architecture
