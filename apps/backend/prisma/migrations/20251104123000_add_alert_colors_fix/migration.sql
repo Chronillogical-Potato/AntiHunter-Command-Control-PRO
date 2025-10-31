@@ -1,0 +1,7 @@
+-- Ensure alert color columns exist; use IF NOT EXISTS so repeated runs are safe
+ALTER TABLE "AppConfig"
+    ADD COLUMN IF NOT EXISTS "alertColorIdle" TEXT NOT NULL DEFAULT '#38BDF8',
+    ADD COLUMN IF NOT EXISTS "alertColorInfo" TEXT NOT NULL DEFAULT '#2563EB',
+    ADD COLUMN IF NOT EXISTS "alertColorNotice" TEXT NOT NULL DEFAULT '#22C55E',
+    ADD COLUMN IF NOT EXISTS "alertColorAlert" TEXT NOT NULL DEFAULT '#F97316',
+    ADD COLUMN IF NOT EXISTS "alertColorCritical" TEXT NOT NULL DEFAULT '#EF4444';
