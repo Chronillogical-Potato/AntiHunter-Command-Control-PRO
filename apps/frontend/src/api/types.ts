@@ -142,6 +142,33 @@ export interface SerialState {
   protocol?: string | null;
 }
 
+export type TakProtocol = 'UDP' | 'TCP' | 'HTTPS';
+
+export interface TakConfig {
+  id: number;
+  enabled: boolean;
+  protocol: TakProtocol;
+  host?: string | null;
+  port?: number | null;
+  tlsEnabled: boolean;
+  cafile?: string | null;
+  certfile?: string | null;
+  keyfile?: string | null;
+  username?: string | null;
+  password?: string | null;
+  apiKey?: string | null;
+  streamNodes: boolean;
+  streamTargets: boolean;
+  streamCommandAcks: boolean;
+  streamCommandResults: boolean;
+  streamAlertInfo: boolean;
+  streamAlertNotice: boolean;
+  streamAlertAlert: boolean;
+  streamAlertCritical: boolean;
+  lastConnected?: string | null;
+  updatedAt: string;
+}
+
 export interface MqttSiteConfig {
   siteId: string;
   brokerUrl: string;

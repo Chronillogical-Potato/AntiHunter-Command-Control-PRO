@@ -388,6 +388,37 @@ enum TargetStatus {
   RESOLVED
 }
 
+enum TakProtocol {
+  UDP
+  TCP
+  HTTPS
+}
+
+model TakConfig {
+  id            Int          @id @default(1)
+  enabled       Boolean      @default(false)
+  protocol      TakProtocol  @default(UDP)
+  host          String?
+  port          Int?
+  tlsEnabled    Boolean      @default(false)
+  cafile        String?
+  certfile      String?
+  keyfile       String?
+  username      String?
+  password      String?
+  apiKey        String?
+  streamNodes          Boolean @default(true)
+  streamTargets        Boolean @default(true)
+  streamCommandAcks    Boolean @default(false)
+  streamCommandResults Boolean @default(false)
+  streamAlertInfo      Boolean @default(false)
+  streamAlertNotice    Boolean @default(true)
+  streamAlertAlert     Boolean @default(true)
+  streamAlertCritical  Boolean @default(true)
+  lastConnected DateTime?
+  updatedAt     DateTime     @updatedAt
+}
+
 model UserPermission {
   id        String   @id @default(cuid())
   userId    String

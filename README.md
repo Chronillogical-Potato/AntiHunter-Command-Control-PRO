@@ -204,8 +204,46 @@ Optional environment flags:
 | `SITE_ID` | Default site for ingest |
 | `WS_MAX_CLIENTS` | Socket.IO connection limit |
 | `SERIAL_PROTOCOL` | Parser profile (`meshtastic-like`, `nmea-like`, etc.) |
+| `TAK_ENABLED` | `true` to boot the TAK bridge automatically |
+| `TAK_PROTOCOL` | TAK transport (`UDP`, `TCP`, or `HTTPS`) |
+| `TAK_HOST` | TAK core hostname or IP |
+| `TAK_PORT` | Port that matches the TAK protocol (e.g., 6969/8088/8443) |
+| `TAK_TLS` | `true` when TLS certificates are required |
+| `TAK_USERNAME` | Optional basic-auth username for TAK gateways |
+| `TAK_PASSWORD` | Optional basic-auth password (otherwise set via UI) |
+| `TAK_API_KEY` | Optional API key for HTTPS-based TAK cores |
 
 Frontend currently consumes backend settings via API, so no extra `.env` is needed.
+
+### TAK / Cursor-on-Target Bridge
+
+The backend ships with a TAK bridge that translates node/alert telemetry into Cursor-on-Target events for ATAK/WinTAK ecosystems.
+
+1. Apply the latest Prisma migrations (`pnpm --filter @command-center/backend prisma migrate deploy`) so the `TakConfig` table exists.
+2. Set baseline values through environment variables (see table above) **or** configure them from the **Config → TAK Bridge** card in the UI.
+3. Choose the transport (`UDP` or `TCP` today; HTTPS/TLS fields are stored now for the upcoming TLS connector), then supply the host/port and any credentials.
+4. Use the **Streams** and **Alert severities** toggles to decide which telemetry (nodes, targets, command ack/results, per-level alerts) is mirrored into TAK.
+5. Click **Restart Bridge** after changes to force the connector to reconnect with the new settings.
+6. When enabled, node positions and alert severities are pushed to the TAK core in real time; triangulation results and command acks appear as CoT notes.
+
+> Passwords and API keys are write-only in the UI—enter new values when rotating credentials or use the **Clear Password** action.
+>
+> HTTPS/TLS support is staged. The configuration is persisted, but the connector currently establishes UDP or TCP sockets while the TLS transport lands.
+
+**Stream controls (defaults):**
+
+| Toggle | Default | CoT payload | Notes |
+|--------|---------|-------------|-------|
+| Node telemetry | ✅ | `AHCC-NODE-*` | Emits live node markers with last message metadata. |
+| Target detections | ✅ | `AHCC-TARGET-*` | Sends MAC detections/triangulation estimates (includes RSSI/confidence). |
+| Command acknowledgements | ⛔ | `AHCC-CMDACK-*` | Forward only if your TAK users need live command audit. |
+| Command results | ⛔ | `AHCC-CMDRES-*` | Large payloads trimmed to 240 characters in CoT detail. |
+| Alert: Info | ⛔ | `AHCC-ALERT-*` | Keep off unless you need every heartbeat-level notification. |
+| Alert: Notice | ✅ |  | Targets promoted, triangulation updates, baselines. |
+| Alert: Alert | ✅ |  | Vibration, deauth, drone detections. |
+| Alert: Critical | ✅ |  | ERASE, tamper, high-priority events. |
+
+All events are tagged under `<detail><ahcc*>…` blocks so TAK filters/overlays can key off `site`, `node`, `mac`, `status`, and more. Partial failures (e.g., TAK server offline) are logged with `TAK_BRIDGE drop (…)` lines in the backend output. If you see persistent drops, restart the bridge from the Config page after verifying connectivity.
 
 ## Database & Migrations
 
@@ -382,6 +420,7 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 - **Geofence focus:** Clicking **Focus** zooms/frames the polygon and highlights it for 10 seconds. No stale highlights remain thanks to background pruning.
 - **Alarm profiles:** Uploading a new tone immediately swaps the preview audio; re-running the preview reflects custom volume settings.
 - **Configuration cards:** Each card has expanded width (min 360px) so action buttons remain inside the panel even in dark mode.
+- **TAK bridge:** The Config → TAK Bridge card surfaces enablement, per-stream toggles (nodes, targets, command ack/results, alert severities), credentials, and the **Restart Bridge** action. Watch backend logs for lines prefixed with `TAK_BRIDGE` to confirm successful subscriptions or authentication failures.
 
 ## Troubleshooting
 

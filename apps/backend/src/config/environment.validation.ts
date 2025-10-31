@@ -80,6 +80,18 @@ const envSchema = z.object({
     .transform((val) => (val ? Number(val) : undefined))
     .pipe(z.number().int().positive().optional()),
   APP_URL: z.string().optional(),
+  TAK_ENABLED: z.string().optional(),
+  TAK_PROTOCOL: z.enum(['UDP', 'TCP', 'HTTPS']).optional(),
+  TAK_HOST: z.string().optional(),
+  TAK_PORT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().positive().optional()),
+  TAK_TLS: z.string().optional(),
+  TAK_USERNAME: z.string().optional(),
+  TAK_PASSWORD: z.string().optional(),
+  TAK_API_KEY: z.string().optional(),
 });
 
 export type EnvironmentVariables = z.infer<typeof envSchema>;

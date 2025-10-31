@@ -8,9 +8,18 @@ import { SerialModule } from '../serial/serial.module';
 import { TargetsModule } from '../targets/targets.module';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { WsModule } from '../ws/ws.module';
+import { TakModule } from '../tak/tak.module';
 
 @Module({
-  imports: [SerialModule, NodesModule, InventoryModule, CommandsModule, WsModule, TargetsModule],
+  imports: [
+    SerialModule,
+    NodesModule,
+    InventoryModule,
+    CommandsModule,
+    WsModule,
+    TargetsModule,
+    TakModule,
+  ],
   providers: [SerialIngestService, TargetTrackingService],
 })
 export class IngestModule {}

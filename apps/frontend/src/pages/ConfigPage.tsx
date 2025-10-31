@@ -10,6 +10,8 @@ import type {
   SerialState,
   SiteSummary,
   MqttSiteConfig,
+  TakConfig,
+  TakProtocol,
 } from '../api/types';
 import { DEFAULT_ALERT_COLORS, extractAlertColors } from '../constants/alert-colors';
 import { useAlarm } from '../providers/alarm-provider';
@@ -36,6 +38,8 @@ const DETECTION_MODE_OPTIONS = [
   { value: 0, label: 'WiFi Only' },
   { value: 1, label: 'BLE Only' },
 ];
+
+const TAK_PROTOCOL_OPTIONS: TakProtocol[] = ['UDP', 'TCP', 'HTTPS'];
 
 const PROTOCOL_OPTIONS = [
   { value: 'meshtastic-like', label: 'Meshtastic JSON/CBOR' },
@@ -137,6 +141,11 @@ export function ConfigPage() {
     queryFn: () => apiClient.get<MqttSiteConfig[]>('/mqtt/sites'),
   });
 
+  const takConfigQuery = useQuery({
+    queryKey: ['takConfig'],
+    queryFn: () => apiClient.get<TakConfig>('/tak/config'),
+  });
+
   const ouiStatsQuery = useQuery({
     queryKey: ['ouiStats'],
     queryFn: () => apiClient.get<{ total: number; lastUpdated?: string | null }>('/oui/stats'),
@@ -151,16 +160,22 @@ export function ConfigPage() {
   const [siteSettings, setSiteSettings] = useState<SiteSummary[]>([]);
   const [mqttConfigs, setMqttConfigs] = useState<MqttSiteConfig[]>([]);
   const [mqttPasswords, setMqttPasswords] = useState<Record<string, string>>({});
+  const [takConfig, setTakConfig] = useState<TakConfig | null>(null);
   const [mailPasswordInput, setMailPasswordInput] = useState('');
   const [mailPasswordMessage, setMailPasswordMessage] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [takPasswordInput, setTakPasswordInput] = useState('');
   const [serialTestStatus, setSerialTestStatus] = useState<{
     status: 'idle' | 'running' | 'success' | 'error';
     message?: string;
   }>({ status: 'idle' });
   const [configNotice, setConfigNotice] = useState<{
+    type: 'success' | 'error' | 'info';
+    text: string;
+  } | null>(null);
+  const [takNotice, setTakNotice] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
@@ -195,6 +210,12 @@ export function ConfigPage() {
   }, [mqttSitesQuery.data]);
 
   useEffect(() => {
+    if (takConfigQuery.data) {
+      setTakConfig(takConfigQuery.data);
+    }
+  }, [takConfigQuery.data]);
+
+  useEffect(() => {
     if (!configNotice) {
       return;
     }
@@ -209,6 +230,14 @@ export function ConfigPage() {
     }
     return undefined;
   }, [serialTestStatus]);
+
+  useEffect(() => {
+    if (!takNotice) {
+      return;
+    }
+    const timer = setTimeout(() => setTakNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [takNotice]);
 
   const sounds = useMemo<Record<AlarmLevel, string | null>>(
     () =>
@@ -245,6 +274,20 @@ export function ConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Unable to update serial configuration.';
       setConfigNotice({ type: 'error', text: message });
+    },
+  });
+
+  const updateTakConfigMutation = useMutation({
+    mutationFn: (body: Partial<TakConfig>) => apiClient.put<TakConfig>('/tak/config', body),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['takConfig'], data);
+      setTakConfig(data);
+      setTakNotice({ type: 'success', text: 'TAK configuration updated.' });
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : 'Unable to update TAK configuration.';
+      setTakNotice({ type: 'error', text: message });
     },
   });
 
@@ -291,6 +334,17 @@ export function ConfigPage() {
   ) => {
     updateMqttConfigMutation.mutate({ siteId, body: patch });
   };
+
+  const reloadTakMutation = useMutation({
+    mutationFn: () => apiClient.post<{ status: string }>('/tak/reload', {}),
+    onSuccess: () => {
+      setTakNotice({ type: 'info', text: 'TAK bridge restarted.' });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unable to restart TAK bridge.';
+      setTakNotice({ type: 'error', text: message });
+    },
+  });
 
   const handleMqttPasswordSubmit = (siteId: string) => {
     const value = mqttPasswords[siteId];
@@ -396,6 +450,63 @@ export function ConfigPage() {
     updateSerialConfigMutation.mutate({ ...patch, siteId: serialConfig.siteId });
   };
 
+  const updateTakSetting = (patch: Partial<TakConfig>) => {
+    setTakConfig((prev) => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  const commitTakConfig = (patch: Partial<TakConfig>) => {
+    if (!takConfig) {
+      return;
+    }
+    const previous = takConfig;
+    const optimistic = { ...takConfig, ...patch };
+    setTakConfig(optimistic);
+    updateTakConfigMutation.mutate(patch, {
+      onError: () => setTakConfig(previous),
+    });
+  };
+
+  const handleTakToggle = (key: keyof TakConfig) => (event: ChangeEvent<HTMLInputElement>) => {
+    const checked = event.target.checked;
+    updateTakSetting({ [key]: checked } as Partial<TakConfig>);
+    commitTakConfig({ [key]: checked } as Partial<TakConfig>);
+  };
+
+  const handleTakPasswordSave = () => {
+    const value = takPasswordInput.trim();
+    if (value.length === 0) {
+      return;
+    }
+    updateTakConfigMutation.mutate(
+      { password: value },
+      {
+        onSuccess: () => {
+          setTakPasswordInput('');
+          setTakNotice({ type: 'success', text: 'TAK password updated.' });
+        },
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : 'Unable to update TAK password.';
+          setTakNotice({ type: 'error', text: message });
+        },
+      },
+    );
+  };
+
+  const handleTakPasswordClear = () => {
+    updateTakConfigMutation.mutate(
+      { password: '' },
+      {
+        onSuccess: () => {
+          setTakNotice({ type: 'success', text: 'TAK password cleared.' });
+        },
+        onError: (error) => {
+          const message = error instanceof Error ? error.message : 'Unable to clear TAK password.';
+          setTakNotice({ type: 'error', text: message });
+        },
+      },
+    );
+  };
+
   const updateSiteSetting = (siteId: string, patch: Partial<SiteSummary>) => {
     setSiteSettings((prev) =>
       prev.map((site) => (site.id === siteId ? { ...site, ...patch } : site)),
@@ -471,6 +582,11 @@ export function ConfigPage() {
     value ? new Date(value).toLocaleString() : 'N/A';
 
   const ouiStats = ouiStatsQuery.data;
+  const takConfigError = takConfigQuery.error instanceof Error ? takConfigQuery.error : null;
+  const takLastConnected = takConfig?.lastConnected
+    ? new Date(takConfig.lastConnected).toLocaleString()
+    : 'Never';
+  const takToggleDisabled = updateTakConfigMutation.isPending;
 
   const handleVolumeChange =
     (level: AlarmLevel, key: keyof AlarmConfig) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -1254,6 +1370,344 @@ export function ConfigPage() {
                 }}
               />
             </div>
+          </div>
+        </section>
+
+        <section className="config-card">
+          <header>
+            <h2>TAK Bridge</h2>
+            <p>Stream nodes, alerts, and command acknowledgements into your TAK ecosystem.</p>
+          </header>
+          <div className="config-card__body">
+            {takConfigQuery.isLoading ? (
+              <div>Loading TAK configuration...</div>
+            ) : takConfigError ? (
+              <div className="form-error" role="alert">
+                {takConfigError.message}
+              </div>
+            ) : !takConfig ? (
+              <div className="form-hint">
+                TAK configuration is unavailable. Ensure database migrations have run.
+              </div>
+            ) : (
+              <>
+                {takNotice ? (
+                  <div
+                    className={
+                      takNotice.type === 'error'
+                        ? 'form-error'
+                        : takNotice.type === 'success'
+                          ? 'form-success'
+                          : 'form-hint'
+                    }
+                    role={takNotice.type === 'error' ? 'alert' : 'status'}
+                  >
+                    {takNotice.text}
+                  </div>
+                ) : null}
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={takConfig.enabled}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      updateTakSetting({ enabled });
+                      commitTakConfig({ enabled });
+                    }}
+                  />
+                  Enable TAK bridge
+                </label>
+                <span className="config-hint">
+                  When enabled, the backend emits Cursor-on-Target feeds for connected TAK clients.
+                </span>
+                <div className="config-subcard">
+                  <h3>Streams</h3>
+                  <p className="config-hint">
+                    Choose which Command Center events syndicate into TAK. Disable feeds you do not
+                    need on the common operational picture.
+                  </p>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamNodes}
+                      onChange={handleTakToggle('streamNodes')}
+                      disabled={takToggleDisabled}
+                    />
+                    Node telemetry (positions)
+                  </label>
+                  <span className="config-hint">
+                    Broadcast live node latitude/longitude updates as friendly unit markers.
+                  </span>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamTargets}
+                      onChange={handleTakToggle('streamTargets')}
+                      disabled={takToggleDisabled}
+                    />
+                    Target detections & triangulation
+                  </label>
+                  <span className="config-hint">
+                    Publishes MAC detections, triangulation estimates, and confidence metadata.
+                  </span>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamCommandAcks}
+                      onChange={handleTakToggle('streamCommandAcks')}
+                      disabled={takToggleDisabled}
+                    />
+                    Command acknowledgements
+                  </label>
+                  <span className="config-hint">
+                    Emits `ack` Cursor-on-Target events when nodes confirm command execution.
+                  </span>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamCommandResults}
+                      onChange={handleTakToggle('streamCommandResults')}
+                      disabled={takToggleDisabled}
+                    />
+                    Command results / telemetry blocks
+                  </label>
+                  <span className="config-hint">
+                    Forwards command result payloads (STATUS, BASELINE, TRIANGULATE, etc.) to TAK.
+                  </span>
+                </div>
+                <div className="config-subcard">
+                  <h4>Alert severities</h4>
+                  <p className="config-hint">
+                    Filter which alert severities ring out on TAK. Higher severity still respects
+                    the per-level toggles below.
+                  </p>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamAlertInfo}
+                      onChange={handleTakToggle('streamAlertInfo')}
+                      disabled={takToggleDisabled}
+                    />
+                    Info
+                  </label>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamAlertNotice}
+                      onChange={handleTakToggle('streamAlertNotice')}
+                      disabled={takToggleDisabled}
+                    />
+                    Notice
+                  </label>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamAlertAlert}
+                      onChange={handleTakToggle('streamAlertAlert')}
+                      disabled={takToggleDisabled}
+                    />
+                    Alert
+                  </label>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.streamAlertCritical}
+                      onChange={handleTakToggle('streamAlertCritical')}
+                      disabled={takToggleDisabled}
+                    />
+                    Critical
+                  </label>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Protocol</span>
+                  <select
+                    value={takConfig.protocol}
+                    onChange={(event) => {
+                      const protocol = event.target.value as TakProtocol;
+                      updateTakSetting({ protocol });
+                      commitTakConfig({ protocol });
+                    }}
+                  >
+                    {TAK_PROTOCOL_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="config-hint">
+                    UDP for LAN multicast, TCP/HTTPS for TAK servers or gateways.
+                  </span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Host</span>
+                  <input
+                    placeholder="tak.example.local"
+                    value={takConfig.host ?? ''}
+                    onChange={(event) => updateTakSetting({ host: event.target.value })}
+                    onBlur={(event) => {
+                      const raw = event.target.value.trim();
+                      commitTakConfig({ host: raw.length > 0 ? raw : null });
+                    }}
+                  />
+                  <span className="config-hint">
+                    Hostname or IP of the TAK server (omit scheme).
+                  </span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Port</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={takConfig.port ?? ''}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      updateTakSetting({ port: raw === '' ? null : Number(raw) });
+                    }}
+                    onBlur={(event) => {
+                      const raw = event.target.value;
+                      if (raw === '') {
+                        commitTakConfig({ port: null });
+                        return;
+                      }
+                      const value = Number(raw);
+                      if (Number.isFinite(value)) {
+                        commitTakConfig({ port: value });
+                      }
+                    }}
+                  />
+                  <span className="config-hint">
+                    Defaults: UDP 6969, TCP 8088, HTTPS 8443 (change to match your TAK core).
+                  </span>
+                </div>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={takConfig.tlsEnabled}
+                    onChange={(event) => {
+                      const tlsEnabled = event.target.checked;
+                      updateTakSetting({ tlsEnabled });
+                      commitTakConfig({ tlsEnabled });
+                    }}
+                  />
+                  Require TLS certificates
+                </label>
+                <span className="config-hint">
+                  Provide CA, client certificate, and key paths when connecting over TLS or HTTPS.
+                </span>
+                <div className="config-row">
+                  <span className="config-label">CA File</span>
+                  <input
+                    placeholder="/etc/tak/ca.pem"
+                    value={takConfig.cafile ?? ''}
+                    onChange={(event) => updateTakSetting({ cafile: event.target.value })}
+                    onBlur={(event) => {
+                      const raw = event.target.value.trim();
+                      commitTakConfig({ cafile: raw.length > 0 ? raw : null });
+                    }}
+                  />
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Client Certificate</span>
+                  <input
+                    placeholder="/etc/tak/client.pem"
+                    value={takConfig.certfile ?? ''}
+                    onChange={(event) => updateTakSetting({ certfile: event.target.value })}
+                    onBlur={(event) => {
+                      const raw = event.target.value.trim();
+                      commitTakConfig({ certfile: raw.length > 0 ? raw : null });
+                    }}
+                  />
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Client Key</span>
+                  <input
+                    placeholder="/etc/tak/client.key"
+                    value={takConfig.keyfile ?? ''}
+                    onChange={(event) => updateTakSetting({ keyfile: event.target.value })}
+                    onBlur={(event) => {
+                      const raw = event.target.value.trim();
+                      commitTakConfig({ keyfile: raw.length > 0 ? raw : null });
+                    }}
+                  />
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Username</span>
+                  <input
+                    placeholder="tak-agent"
+                    value={takConfig.username ?? ''}
+                    onChange={(event) => updateTakSetting({ username: event.target.value })}
+                    onBlur={(event) => {
+                      const raw = event.target.value.trim();
+                      commitTakConfig({ username: raw.length > 0 ? raw : null });
+                    }}
+                  />
+                  <span className="config-hint">
+                    Optional basic auth username when relaying through TAK Enterprise.
+                  </span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Password</span>
+                  <div className="mqtt-password-row">
+                    <input
+                      type="password"
+                      value={takPasswordInput}
+                      onChange={(event) => setTakPasswordInput(event.target.value)}
+                      placeholder="Enter new password"
+                    />
+                    <button
+                      type="button"
+                      className="control-chip"
+                      onClick={handleTakPasswordSave}
+                      disabled={
+                        takPasswordInput.trim().length === 0 || updateTakConfigMutation.isPending
+                      }
+                    >
+                      Save Password
+                    </button>
+                    <button
+                      type="button"
+                      className="control-chip"
+                      onClick={handleTakPasswordClear}
+                      disabled={updateTakConfigMutation.isPending}
+                    >
+                      Clear Password
+                    </button>
+                  </div>
+                  <span className="config-hint">
+                    Password is write-only. Use Clear to remove credentials from the backend.
+                  </span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">API Key</span>
+                  <input
+                    placeholder="Optional TAK API key"
+                    value={takConfig.apiKey ?? ''}
+                    onChange={(event) => updateTakSetting({ apiKey: event.target.value })}
+                    onBlur={(event) => {
+                      const raw = event.target.value.trim();
+                      commitTakConfig({ apiKey: raw.length > 0 ? raw : null });
+                    }}
+                  />
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Status</span>
+                  <div className="config-value">
+                    <div>Last connected: {takLastConnected}</div>
+                    <div className="controls-row">
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => reloadTakMutation.mutate()}
+                        disabled={reloadTakMutation.isPending}
+                      >
+                        {reloadTakMutation.isPending ? 'Restarting…' : 'Restart Bridge'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </section>
 

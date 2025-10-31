@@ -19,6 +19,7 @@ import { OuiModule } from './oui/oui.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SerialModule } from './serial/serial.module';
 import { SitesModule } from './sites/sites.module';
+import { TakModule } from './tak/tak.module';
 import { TargetsModule } from './targets/targets.module';
 import { UsersModule } from './users/users.module';
 import { WsModule } from './ws/ws.module';
@@ -70,6 +71,7 @@ import { WsModule } from './ws/ws.module';
     IngestModule,
     AlarmsModule,
     SitesModule,
+    TakModule,
     TargetsModule,
     OuiModule,
     MqttModule,

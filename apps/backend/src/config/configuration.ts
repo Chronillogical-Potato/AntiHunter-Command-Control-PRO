@@ -61,4 +61,14 @@ export default () => ({
       : 4,
     appUrl: process.env.APP_URL ?? 'http://localhost:5173',
   },
+  tak: {
+    enabled: process.env.TAK_ENABLED === 'true',
+    protocol: process.env.TAK_PROTOCOL ?? 'UDP',
+    host: process.env.TAK_HOST,
+    port: process.env.TAK_PORT ? Number(process.env.TAK_PORT) : undefined,
+    tlsEnabled: process.env.TAK_TLS === 'true',
+    username: process.env.TAK_USERNAME,
+    password: process.env.TAK_PASSWORD,
+    apiKey: process.env.TAK_API_KEY,
+  },
 });

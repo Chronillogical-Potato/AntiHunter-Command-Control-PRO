@@ -8,6 +8,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { NodesService } from '../nodes/nodes.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
+import { TakService } from '../tak/tak.service';
 
 @Injectable()
 export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
@@ -21,6 +22,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly commandsService: CommandsService,
     private readonly trackingService: TargetTrackingService,
     private readonly gateway: CommandCenterGateway,
+    private readonly takService: TakService,
   ) {}
 
   onModuleInit(): void {
@@ -60,6 +62,15 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           lon: event.lon,
           raw: event.raw,
           siteId,
+        });
+        void this.takService.streamNodeTelemetry({
+          nodeId: event.nodeId,
+          name: event.nodeId,
+          lat: event.lat,
+          lon: event.lon,
+          message: event.lastMessage,
+          siteId,
+          timestamp: event.timestamp ?? new Date(),
         });
         break;
       case 'target-detected':
@@ -125,6 +136,17 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             raw: event.raw,
             siteId,
           });
+          void this.takService.streamTargetDetection({
+            mac: event.mac,
+            nodeId: event.nodeId,
+            lat: latForRecord ?? undefined,
+            lon: lonForRecord ?? undefined,
+            rssi: event.rssi,
+            confidence: trackingPayload?.confidence,
+            deviceType: event.type,
+            message: `Device ${event.mac} discovered (RSSI ${event.rssi ?? 'n/a'})`,
+            siteId,
+          });
         }
         break;
       case 'alert':
@@ -148,6 +170,16 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           if (event.nodeId && event.message) {
             await this.nodesService.updateLastMessage(event.nodeId, event.message, timestamp);
           }
+          void this.takService.streamAlert({
+            level: event.level,
+            nodeId: event.nodeId,
+            lat,
+            lon,
+            message: event.message,
+            category: event.category,
+            siteId,
+            timestamp,
+          });
         }
         break;
       case 'command-ack':
@@ -160,6 +192,13 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           raw: event.raw,
           siteId,
         });
+        void this.takService.streamCommandAck({
+          nodeId: event.nodeId,
+          ackType: event.ackType,
+          status: event.status,
+          siteId,
+          timestamp: new Date(),
+        });
         break;
       case 'command-result':
         await this.commandsService.handleResult(event);
@@ -170,6 +209,13 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           payload: event.payload,
           raw: event.raw,
           siteId,
+        });
+        void this.takService.streamCommandResult({
+          nodeId: event.nodeId,
+          command: event.command,
+          siteId,
+          result: event.payload,
+          timestamp: new Date(),
         });
         break;
       case 'raw':
