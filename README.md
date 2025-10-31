@@ -83,7 +83,7 @@ Audit node health, connectivity, and telemetry history with quick map focus acti
 #### Scheduler
 Plan recurring scans, FOREVER tasks, and automated detection sequences.
 
-![Scheduler Placeholder](docs/media/scheduler-placeholder.png)
+![Scheduler automation dashboard](images/Scheduler.png)
 
 #### Config
 Adjust system defaults (alarms, detection presets, serial ports, site federation) from a single pane.

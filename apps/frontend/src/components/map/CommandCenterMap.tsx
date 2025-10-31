@@ -23,7 +23,7 @@ import type { TargetMarker } from '../../stores/target-store';
 import type { Geofence, GeofenceVertex } from '../../stores/geofence-store';
 import type { AlertColorConfig } from '../../constants/alert-colors';
 
-const FALLBACK_CENTER: LatLngExpression = [59.9139, 10.7522];
+const FALLBACK_CENTER: LatLngExpression = [0, 0];
 const DEFAULT_RADIUS_FALLBACK = 200;
 const COVERAGE_MULTIPLIER = 5;
 type HeatPoint = [number, number, number];
