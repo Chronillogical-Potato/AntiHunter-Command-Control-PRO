@@ -41,6 +41,7 @@ AntiHunter Command & Control PRO turns raw radio/mesh telemetry into actionable 
 - **Command console:** parameterized command templates, audit logs, FOREVER protections, and command lifecycle tracking.
 - **Alarms:** volume/rate limit per level, default tones, custom WAV uploads, do-not-disturb windows, and configurable color pulses on the map.
 - **Inventory & targets:** ingestion of target data, vendor/OUI resolution, promotion to targets, triangulation capture, and exports.
+- **Integrations:** TAK/CoT bridge with per-stream controls, MQTT federation, and SMTP hooks for alerting/administration.
 - **Multi-site aware:** each site can have bespoke serial/MQTT configuration, coverage overrides, and admin assignments.
 - **User management:** profile updates, admin console for user creation/role management, per-user preferences (theme, density, time format).
 - **Geofence automation:** per-geofence alarms with enter/exit triggers, map focus highlights, and wizard-driven geometry authoring.
