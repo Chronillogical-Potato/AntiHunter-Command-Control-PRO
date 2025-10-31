@@ -383,17 +383,16 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 
 ## Troubleshooting
 
-| Issue | Fix |
-|-------|-----|
-| Build warns about CSS backticks | Update to latest README instructions (no more `` `n `` artifacts) |
-| Serial port permission denied (Linux) | Add user to `dialout` and re-login (`sudo usermod -aG dialout $USER`) |
-| Backend fails to start (`DATABASE_URL`) | Ensure Postgres is reachable and migrations have run |
-| Targets/nodes reappear after clearing | Confirm backend is on latest code — clearing now removes DB + cache entries |
-| Custom alarm volume not applied | Ensure upload succeeded; new implementation reloads and applies the config immediately |
-| Large JS bundle warning | Vite warns for bundles >500 kB; consider future code-splitting if necessary |
-| `tsc` not found when running scripts | Use `pnpm --filter <pkg> run build` (Corepack installs TypeScript locally per workspace) |
+| Symptom | Suggested Fix |
+|---------|----------------|
+| **Frontend shows a blank page or 404 after deploy** | Ensure the SPA is served from the `/` root and that your reverse proxy rewrites unknown routes to `index.html`. In Docker, the bundled Nginx config already handles this. |
+| **Cannot log in with default credentials** | Confirm the seed ran: the backend container logs should show “Running database migrations…”. If you customized `ADMIN_EMAIL`/`ADMIN_PASSWORD`, restart the backend with the new env values. |
+| **Backend returns `ECONNREFUSED` for Postgres** | Check `docker compose logs postgres`; the DB must be healthy before the backend starts. If running locally, verify `DATABASE_URL` matches your Postgres host/port and that migrations were applied. |
+| **Serial device not detected** | On Windows note the `COM` port, on Linux grant access (`sudo usermod -aG dialout $USER` then re-login). Update the Config page or `.env` `SERIAL_DEVICE` with the correct path and restart the backend. |
+| **No alerts despite telemetry** | Confirm devices flashed with the companion firmware send events, sockets are connected (check `/healthz`), and that the alert filters on the terminal/alert drawer are not silencing the severity you expect. |
+| **Custom alarm audio silent or too loud** | After uploading a WAV file, adjust per-level volume sliders and click “Test”. If volume does not change, refresh the page to reload cached audio. Supported formats: 16-bit PCM WAV. |
+| **Docker push fails due to upstream changes** | Run `git pull --rebase origin main` locally, resolve conflicts, then `git push`. This keeps your fork in sync before building new images. |
 
 ---
 
-Feel free to extend any module—serial ingest, map rendering, exports, or auth. Keep the SRS as the north star and continue iterating on automation, telemetry, and operator tooling.
 
