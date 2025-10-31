@@ -71,4 +71,7 @@ export default () => ({
     password: process.env.TAK_PASSWORD,
     apiKey: process.env.TAK_API_KEY,
   },
+  video: {
+    fpvEnabled: process.env.FPV_DECODER_ENABLED === 'true',
+  },
 });

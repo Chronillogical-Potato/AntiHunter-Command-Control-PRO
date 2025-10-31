@@ -70,5 +70,8 @@
     },
     "prisma": {
         "seed": "ts-node --transpile-only prisma/seed.ts"
+    },
+    "optionalDependencies": {
+        "@command-center/fpv-decoder": "workspace:*"
     }
 }

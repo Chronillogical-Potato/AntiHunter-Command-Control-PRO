@@ -246,6 +246,10 @@ The backend ships with a TAK bridge that translates node/alert telemetry into Cu
 
 All events are tagged under `<detail><ahcc*>…` blocks so TAK filters/overlays can key off `site`, `node`, `mac`, `status`, and more. Partial failures (e.g., TAK server offline) are logged with `TAK_BRIDGE drop (…)` lines in the backend output. If you see persistent drops, restart the bridge from the Config page after verifying connectivity.
 
+### Optional Addons
+
+- **FPV Decoder (experimental):** Optional NTSC/FPV ingest pipeline scaffolded as `@command-center/fpv-decoder`. Install it with `pnpm install --filter @command-center/fpv-decoder` (or create a helper script such as `pnpm addon:fpv`), then enable the backend bridge by setting `FPV_DECODER_ENABLED=true`. The Config → “FPV Decoder Addon” card surfaces whether the addon loaded and how many frames have been observed. Replace the stub implementation in `addons/fpv-decoder` with a real SoapySDR/NTSC demodulator when you are ready to stream live video frames into the Command Center.
+
 ## Database & Migrations
 
 All Prisma migrations and seed scripts live in `apps/backend/prisma`. Run once after configuring Postgres:

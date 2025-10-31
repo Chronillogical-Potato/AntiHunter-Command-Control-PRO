@@ -142,6 +142,14 @@ export interface SerialState {
   protocol?: string | null;
 }
 
+export interface FpvStatus {
+  enabled: boolean;
+  available: boolean;
+  message?: string | null;
+  framesReceived: number;
+  lastFrameAt?: string | null;
+}
+
 export type TakProtocol = 'UDP' | 'TCP' | 'HTTPS';
 
 export interface TakConfig {
