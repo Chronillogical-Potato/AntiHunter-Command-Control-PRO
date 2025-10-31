@@ -89,7 +89,7 @@ Adjust system defaults (alarms, detection presets, serial ports, site federation
 #### Exports
 Generate CSV/GeoJSON bundles for inventory, targets, commands, and audit logs.
 
-![Exports Placeholder](docs/media/exports-placeholder.png)
+![Exports module with CSV and GeoJSON actions](images/Exports.png)
 
 #### Account
 Manage your profile, theme preferences, and admin-level user management tasks.
@@ -355,6 +355,8 @@ The sniffer is a zero-dependency TypeScript script that mirrors frames to stdout
 ### Meshtastic firmware configuration
 
 When preparing a gateway node, open the Meshtastic device settings and enable **Override console serial port** so the mesh firmware exposes the command channel on the USB/serial interface used by the Command Center. The screenshot below shows the required toggle.
+
+> **Note:** On the iOS and macOS Meshtastic apps this toggle may be missing. If you cannot enable it from the firmware UI, leave the device in its default state and specify the correct serial path/baud in the Command Center **Config → Serial** card instead.
 
 ![Meshtastic override console serial settings](images/meshtasticsettings.png)
 
