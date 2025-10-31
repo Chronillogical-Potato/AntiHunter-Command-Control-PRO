@@ -1,6 +1,6 @@
 # AntiHunter Command & Control Pro
 
-AntiHunter Command & Control PRO is the companion operations platform for the AntiHunter mesh firmware. Flash your AntiHunter detection nodes with the AntiHunter builds, then connect them here to orchestrate the entire perimeter defense mission. The Command Center ingests every heartbeat, target hit, triangulation update, and vibration alert from the mesh, renders nodes and geofences on a live map, automates scan/baseline/triangulation workflows, and drives alarm cues, exports, and audit trails.
+AntiHunter Command & Control PRO is the companion operations platform for the AntiHunter SIGINT mesh network. Flash your AntiHunter detection nodes with the AntiHunter builds, then connect them here to orchestrate the entire perimeter defense mission. The Command Center ingests every heartbeat, target hit, triangulation update, and vibration alert from the mesh, renders nodes and geofences on a live map, automates scan/baseline/triangulation workflows, and drives alarm cues, exports, and audit trails.
 
 
 
