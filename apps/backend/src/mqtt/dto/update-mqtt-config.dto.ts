@@ -13,6 +13,7 @@ export class UpdateMqttConfigDto {
   @IsOptional()
   @IsUrl({
     require_protocol: true,
+    protocols: ['mqtt', 'mqtts', 'ws', 'wss', 'tcp', 'ssl', 'tls', 'http', 'https'],
   })
   brokerUrl?: string;
 

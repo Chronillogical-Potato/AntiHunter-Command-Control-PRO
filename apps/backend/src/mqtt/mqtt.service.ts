@@ -99,13 +99,22 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   async updateSiteConfig(siteId: string, dto: UpdateMqttConfigDto) {
+    const brokerUrl = dto.brokerUrl?.trim();
+    const clientId = dto.clientId?.trim();
+    const username = dto.username?.trim();
+
+    const normalizedBrokerUrl = brokerUrl && brokerUrl.length > 0 ? brokerUrl : undefined;
+    const normalizedClientId = clientId && clientId.length > 0 ? clientId : undefined;
+    const normalizedUsername =
+      username && username.length > 0 ? username : dto.username === null ? null : undefined;
+
     const config = await this.prisma.mqttConfig.upsert({
       where: { siteId },
       create: {
         siteId,
-        brokerUrl: dto.brokerUrl ?? 'mqtt://localhost:1883',
-        clientId: dto.clientId ?? `command-center-${siteId}`,
-        username: dto.username ?? null,
+        brokerUrl: normalizedBrokerUrl ?? 'mqtt://localhost:1883',
+        clientId: normalizedClientId ?? `command-center-${siteId}`,
+        username: dto.username === null ? null : (normalizedUsername ?? null),
         password: dto.password ?? null,
         tlsEnabled: dto.tlsEnabled ?? false,
         caPem: dto.caPem ?? null,
@@ -116,9 +125,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         enabled: dto.enabled ?? false,
       },
       update: {
-        brokerUrl: dto.brokerUrl ?? undefined,
-        clientId: dto.clientId ?? undefined,
-        username: dto.username ?? undefined,
+        brokerUrl: normalizedBrokerUrl ?? undefined,
+        clientId: normalizedClientId ?? undefined,
+        username: dto.username === null ? null : (normalizedUsername ?? undefined),
         password: dto.password ?? undefined,
         tlsEnabled: dto.tlsEnabled ?? undefined,
         caPem: dto.caPem ?? undefined,

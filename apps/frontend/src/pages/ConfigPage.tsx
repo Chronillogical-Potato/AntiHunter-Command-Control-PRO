@@ -1982,9 +1982,13 @@ export function ConfigPage() {
                         onChange={(event) =>
                           setLocalMqttConfig(cfg.siteId, { brokerUrl: event.target.value })
                         }
-                        onBlur={(event) =>
-                          commitMqttConfig(cfg.siteId, { brokerUrl: event.target.value })
-                        }
+                        onBlur={(event) => {
+                          const value = event.target.value.trim();
+                          setLocalMqttConfig(cfg.siteId, { brokerUrl: value });
+                          if (value.length > 0) {
+                            commitMqttConfig(cfg.siteId, { brokerUrl: value });
+                          }
+                        }}
                       />
                     </div>
                     <div className="config-row">
@@ -1994,9 +1998,14 @@ export function ConfigPage() {
                         onChange={(event) =>
                           setLocalMqttConfig(cfg.siteId, { clientId: event.target.value })
                         }
-                        onBlur={(event) =>
-                          commitMqttConfig(cfg.siteId, { clientId: event.target.value })
-                        }
+                        onBlur={(event) => {
+                          const value = event.target.value.trim();
+                          if (value.length === 0) {
+                            return;
+                          }
+                          setLocalMqttConfig(cfg.siteId, { clientId: value });
+                          commitMqttConfig(cfg.siteId, { clientId: value });
+                        }}
                       />
                     </div>
                     <div className="config-row">
@@ -2006,11 +2015,14 @@ export function ConfigPage() {
                         onChange={(event) =>
                           setLocalMqttConfig(cfg.siteId, { username: event.target.value || null })
                         }
-                        onBlur={(event) =>
+                        onBlur={(event) => {
+                          const value = event.target.value.trim();
+                          const normalized = value.length > 0 ? value : null;
+                          setLocalMqttConfig(cfg.siteId, { username: normalized });
                           commitMqttConfig(cfg.siteId, {
-                            username: event.target.value || null,
-                          })
-                        }
+                            username: normalized,
+                          });
+                        }}
                       />
                     </div>
                     <div className="config-row">
