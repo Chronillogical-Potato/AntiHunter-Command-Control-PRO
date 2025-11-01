@@ -19,12 +19,7 @@ FROM deps AS builder
 COPY . .
 
 # Generate Prisma client and build the NestJS backend
-RUN pnpm --filter @command-center/backend prisma:generate \
- && pnpm --filter @command-center/backend build
-
-FROM builder AS pruner
-# Strip dev dependencies to shrink the runtime image
-RUN pnpm prune --prod --filter @command-center/backend...
+RUN pnpm --filter @command-center/backend prisma:generate  && pnpm --filter @command-center/backend build
 
 FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
@@ -40,14 +35,14 @@ COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/tsconfig.base.json ./tsconfig.base.json
+RUN mkdir -p apps/backend
+COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
+
+# Install production dependencies only for @command-center/backend
+RUN pnpm install --frozen-lockfile --prod --filter @command-center/backend...
 
 # Provide udevadm for serialport enumeration inside the container
-RUN apt-get update \
- && apt-get install -y --no-install-recommends udev \
- && rm -rf /var/lib/apt/lists/*
-
-# Copy production node_modules after pruning
-COPY --from=pruner /app/node_modules ./node_modules
+RUN apt-get update  && apt-get install -y --no-install-recommends udev  && rm -rf /var/lib/apt/lists/*
 
 # Copy backend artefacts
 COPY --from=builder /app/apps/backend ./apps/backend
