@@ -54,14 +54,14 @@ export function AuthOverlay() {
     <div className="auth-overlay" role="dialog" aria-modal="true">
       <div className="auth-overlay__panel">
         <header className="auth-overlay__header">
-          <div className="auth-overlay__logo">
-            <img
-              className="auth-overlay__logo-mark"
-              src="/logo111.png"
-              alt="AntiHunter Shield Logo"
-            />
-          </div>
-          <h1 className="auth-overlay__brand-title">AntiHunter Command & Control Pro</h1>
+          <img
+            className="auth-overlay__logo-mark"
+            src="/logo111.png"
+            alt="AntiHunter Shield Logo"
+          />
+          <h1 className="auth-overlay__brand-title">
+            <span className="auth-overlay__brand-name">AntiHunter</span> Command &amp; Control Pro
+          </h1>
         </header>
 
         {error ? <div className="auth-overlay__error">{error}</div> : null}
