@@ -54,6 +54,8 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 
 16. [Troubleshooting](#troubleshooting)
 
+17. [Legal Disclaimer](#legal-disclaimer)
+
 
 
 ---
