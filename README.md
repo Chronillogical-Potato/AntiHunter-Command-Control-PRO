@@ -227,15 +227,10 @@ Manage your profile, theme preferences, and admin-level user management tasks.
 
 
 | Layer        | Technology                                              | Notes                                                              |
-
 | ------------ | ------------------------------------------------------- | ------------------------------------------------------------------ |
-
 | **Backend**  | NestJS, Prisma, Socket.IO                               | REST + WS APIs, serial ingest worker, command queue, alarm service |
-
 | **Database** | PostgreSQL                                              | Prisma migrations, seeds for singleton config tables, audit trail  |
-
 | **Frontend** | React (Vite), Zustand, React Query, Leaflet (map)       | SPA with map, targets, inventory, console, config modules          |
-
 | **Tooling**  | pnpm workspace, TypeScript strict mode, ESLint/Prettier | developer experience, linting, formatting                          |
 
 
@@ -408,31 +403,18 @@ Optional environment flags:
 
 
 | Variable          | Description                                               |
-
 | ----------------- | --------------------------------------------------------- |
-
 | `JWT_SECRET`      | If auth is enabled later                                  |
-
 | `SITE_ID`         | Default site for ingest                                   |
-
 | `WS_MAX_CLIENTS`  | Socket.IO connection limit                                |
-
 | `SERIAL_PROTOCOL` | Parser profile (`meshtastic-like`, `nmea-like`, etc.)     |
-
 | `TAK_ENABLED`     | `true` to boot the TAK bridge automatically               |
-
 | `TAK_PROTOCOL`    | TAK transport (`UDP`, `TCP`, or `HTTPS`)                  |
-
 | `TAK_HOST`        | TAK core hostname or IP                                   |
-
 | `TAK_PORT`        | Port that matches the TAK protocol (e.g., 6969/8088/8443) |
-
 | `TAK_TLS`         | `true` when TLS certificates are required                 |
-
 | `TAK_USERNAME`    | Optional basic-auth username for TAK gateways             |
-
 | `TAK_PASSWORD`    | Optional basic-auth password (otherwise set via UI)       |
-
 | `TAK_API_KEY`     | Optional API key for HTTPS-based TAK cores                |
 
 
@@ -476,23 +458,14 @@ The backend ships with a TAK bridge that translates node/alert telemetry into Cu
 
 
 | Toggle                   | Default | CoT payload     | Notes                                                                    |
-
 | ------------------------ | ------- | --------------- | ------------------------------------------------------------------------ |
-
 | Node telemetry           | Yes      | `AHCC-NODE-*`   | Emits live node markers with last message metadata.                      |
-
 | Target detections        | Yes      | `AHCC-TARGET-*` | Sends MAC detections/triangulation estimates (includes RSSI/confidence). |
-
 | Command acknowledgements | No      | `AHCC-CMDACK-*` | Forward only if your TAK users need live command audit.                  |
-
 | Command results          | No      | `AHCC-CMDRES-*` | Large payloads trimmed to 240 characters in CoT detail.                  |
-
 | Alert: Info              | No      | `AHCC-ALERT-*`  | Keep off unless you need every heartbeat-level notification.             |
-
 | Alert: Notice            | Yes      |                 | Targets promoted, triangulation updates, baselines.                      |
-
 | Alert: Alert             | Yes      |                 | Vibration, deauth, drone detections.                                     |
-
 | Alert: Critical          | Yes      |                 | ERASE, tamper, high-priority events.                                     |
 
 
@@ -672,11 +645,8 @@ On first boot the seed script provisions:
 
 
 | Variable         | Default             | Override                              |
-
 | ---------------- | ------------------- | ------------------------------------- |
-
 | `ADMIN_EMAIL`    | `admin@example.com` | set `ADMIN_EMAIL` in your env file    |
-
 | `ADMIN_PASSWORD` | `admin`             | set `ADMIN_PASSWORD` in your env file |
 
 
@@ -826,17 +796,11 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 
 
 | Command                                               | Description                      |
-
 | ----------------------------------------------------- | -------------------------------- |
-
 | `pnpm lint`                                           | ESLint across backend + frontend |
-
 | `pnpm format`                                         | Prettier writes                  |
-
 | `pnpm --filter @command-center/backend prisma:studio` | Inspect DB via Prisma Studio     |
-
 | `pnpm --filter @command-center/backend prisma:seed`   | Reseed config rows               |
-
 | `pnpm --filter @command-center/frontend preview`      | Preview SPA production build     |
 
 
@@ -862,21 +826,13 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 
 
 | Symptom                                             | Suggested Fix                                                                                                                                                                                                 |
-
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-
 | **Frontend shows a blank page or 404 after deploy** | Ensure the SPA is served from the `/` root and that your reverse proxy rewrites unknown routes to `index.html`. In Docker, the bundled Nginx config already handles this.                                     |
-
 | **Cannot log in with default credentials**          | Confirm the seed ran: the backend container logs should show "Running database migrations...". If you customized `ADMIN_EMAIL`/`ADMIN_PASSWORD`, restart the backend with the new env values.                   |
-
 | **Backend returns `ECONNREFUSED` for Postgres**     | Check `docker compose logs postgres`; the DB must be healthy before the backend starts. If running locally, verify `DATABASE_URL` matches your Postgres host/port and that migrations were applied.           |
-
 | **Serial device not detected**                      | On Windows note the `COM` port, on Linux grant access (`sudo usermod -aG dialout $USER` then re-login). Update the Config page or `.env` `SERIAL_DEVICE` with the correct path and restart the backend.       |
-
 | **No alerts despite telemetry**                     | Confirm devices flashed with the companion firmware send events, sockets are connected (check `/healthz`), and that the alert filters on the terminal/alert drawer are not silencing the severity you expect. |
-
 | **Custom alarm audio silent or too loud**           | After uploading a WAV file, adjust per-level volume sliders and click "Test". If volume does not change, refresh the page to reload cached audio. Supported formats: 16-bit PCM WAV.                          |
-
 | **Docker push fails due to upstream changes**       | Run `git pull --rebase origin main` locally, resolve conflicts, then `git push`. This keeps your fork in sync before building new images.                                                                     |
 
 
