@@ -179,6 +179,7 @@ export function ConfigPage() {
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
+  const [takSendPayload, setTakSendPayload] = useState('');
 
   useEffect(() => {
     if (alarmSettings?.config) {
@@ -342,6 +343,18 @@ export function ConfigPage() {
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : 'Unable to restart TAK bridge.';
+      setTakNotice({ type: 'error', text: message });
+    },
+  });
+  const takSendMutation = useMutation({
+    mutationFn: (payload: string) =>
+      apiClient.post<{ status: string }>('/tak/send', { payload }),
+    onSuccess: () => {
+      setTakNotice({ type: 'success', text: 'TAK payload transmitted.' });
+      setTakSendPayload('');
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unable to send CoT payload.';
       setTakNotice({ type: 'error', text: message });
     },
   });
@@ -1689,6 +1702,45 @@ export function ConfigPage() {
                       commitTakConfig({ apiKey: raw.length > 0 ? raw : null });
                     }}
                   />
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Send CoT Test</span>
+                  <div className="config-value">
+                    <textarea
+                      rows={5}
+                      value={takSendPayload}
+                      onChange={(event) => setTakSendPayload(event.target.value)}
+                      placeholder="<event ...>Paste raw Cursor-on-Target XML here</event>"
+                    />
+                    <div className="controls-row">
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => {
+                          const trimmed = takSendPayload.trim();
+                          if (trimmed.length === 0 || takSendMutation.isPending) {
+                            return;
+                          }
+                          takSendMutation.mutate(trimmed);
+                        }}
+                        disabled={takSendPayload.trim().length === 0 || takSendMutation.isPending}
+                      >
+                        {takSendMutation.isPending ? 'Sending…' : 'Send Payload'}
+                      </button>
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => setTakSendPayload('')}
+                        disabled={takSendMutation.isPending || takSendPayload.length === 0}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <span className="config-hint">
+                      Useful for validating the TAK bridge end-to-end. The payload is forwarded
+                      exactly as entered.
+                    </span>
+                  </div>
                 </div>
                 <div className="config-row">
                   <span className="config-label">Status</span>

@@ -17,7 +17,6 @@ import { AuthService } from '../auth/auth.service';
 import { CommandState, CommandsService } from '../commands/commands.service';
 import { SendCommandDto } from '../commands/dto/send-command.dto';
 import { NodesService } from '../nodes/nodes.service';
-import { VideoAddonService } from '../video/video-addon.service';
 
 @WebSocketGateway({
   namespace: '/ws',
@@ -31,22 +30,16 @@ export class CommandCenterGateway
 
   private readonly clientDiffSubscriptions = new Map<string, Subscription>();
   private commandSubscription?: Subscription;
-  private fpvFrameUnsubscribe?: () => void;
 
   constructor(
     private readonly nodesService: NodesService,
     private readonly commandsService: CommandsService,
     private readonly authService: AuthService,
-    private readonly videoAddonService: VideoAddonService,
   ) {}
 
   afterInit(server: Server): void {
     this.commandSubscription = this.commandsService.getUpdatesStream().subscribe((command) => {
       server.emit('command.update', command);
-    });
-
-    this.fpvFrameUnsubscribe = this.videoAddonService.onFrame((frame) => {
-      server.emit('video.fpv.frame', frame);
     });
   }
 
@@ -74,11 +67,6 @@ export class CommandCenterGateway
       nodes: this.nodesService.getSnapshot(),
     });
 
-    const lastFrame = this.videoAddonService.getLastFrame();
-    if (lastFrame) {
-      client.emit('video.fpv.frame', lastFrame);
-    }
-
     const subscription = this.nodesService.getDiffStream().subscribe((diff) => {
       client.emit('nodes', diff);
     });
@@ -94,7 +82,6 @@ export class CommandCenterGateway
 
   onModuleDestroy(): void {
     this.commandSubscription?.unsubscribe();
-    this.fpvFrameUnsubscribe?.();
     this.clientDiffSubscriptions.forEach((subscription) => subscription.unsubscribe());
     this.clientDiffSubscriptions.clear();
   }

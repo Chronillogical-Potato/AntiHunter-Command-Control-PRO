@@ -22,7 +22,6 @@ import { SitesModule } from './sites/sites.module';
 import { TakModule } from './tak/tak.module';
 import { TargetsModule } from './targets/targets.module';
 import { UsersModule } from './users/users.module';
-import { VideoModule } from './video/video.module';
 import { WsModule } from './ws/ws.module';
 
 @Module({
@@ -79,7 +78,6 @@ import { WsModule } from './ws/ws.module';
     MailModule,
     UsersModule,
     ExportsModule,
-    VideoModule,
   ],
 })
 export class AppModule {}

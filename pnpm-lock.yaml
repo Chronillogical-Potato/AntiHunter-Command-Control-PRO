@@ -28,8 +28,6 @@ importers:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@20.19.23)(typescript@5.9.3)
 
-  addons/fpv-decoder: {}
-
   apps/backend:
     dependencies:
       '@bufbuild/protobuf':
@@ -131,10 +129,6 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
-    optionalDependencies:
-      '@command-center/fpv-decoder':
-        specifier: workspace:*
-        version: link:../../addons/fpv-decoder
     devDependencies:
       '@nestjs/cli':
         specifier: ^10.4.5

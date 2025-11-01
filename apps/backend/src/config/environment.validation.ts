@@ -92,7 +92,6 @@ const envSchema = z.object({
   TAK_USERNAME: z.string().optional(),
   TAK_PASSWORD: z.string().optional(),
   TAK_API_KEY: z.string().optional(),
-  FPV_DECODER_ENABLED: z.string().optional(),
 });
 
 export type EnvironmentVariables = z.infer<typeof envSchema>;
