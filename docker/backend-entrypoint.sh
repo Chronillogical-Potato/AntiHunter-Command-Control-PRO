@@ -1,5 +1,10 @@
 #!/bin/sh
-set -euo pipefail
+set -eu
+
+# BusyBox / dash do not support pipefail. Only enable when available.
+if [ -n "${BASH:-}" ]; then
+  set -o pipefail
+fi
 
 cd /app/apps/backend
 

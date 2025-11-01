@@ -496,7 +496,7 @@ pnpm prisma:seed
 
 ```
 
-
+> **Managed Postgres note:** The `pnpm prisma:migrate` script runs `prisma migrate deploy`, so it works with database roles that cannot create new databases. When authoring new migrations locally, use `pnpm prisma:migrate:dev` against a development instance that grants `CREATE DATABASE`.
 
 Seed inserts singleton config rows (AppConfig, AlarmConfig, VisualConfig, CoverageConfig) plus a default site and admin user stub.
 
@@ -713,7 +713,7 @@ Add `--volumes` if you also want to delete the Postgres data volume.
 
   On macOS/Windows Docker Desktop, direct serial passthrough is not supported; run the backend natively or via WSL if hardware access is required.
 
-- **Skipping migrations:** set `RUN_MIGRATIONS=false` if you manage schema deploys externally.
+- **Skipping migrations:** set `RUN_MIGRATIONS=false` if you manage schema deploys externally or if your database role cannot create shadow databases (then run `pnpm prisma:migrate` from a privileged environment).
 
 - **Live reload:** the Docker workflow runs compiled artefacts. For day-to-day development, prefer the pnpm workflow described earlier (`pnpm dev` + hot reload).
 
