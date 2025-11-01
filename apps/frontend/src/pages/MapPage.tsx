@@ -107,11 +107,13 @@ export function MapPage() {
     followEnabled,
     targetsEnabled,
     coverageEnabled,
+    mapStyle,
     toggleTrails,
     toggleRadius,
     toggleFollow,
     toggleTargets,
   } = useMapPreferences();
+  const setMapStyle = useMapPreferences((state) => state.setMapStyle);
 
   const nodeList = useMemo(() => order.map((id) => nodes[id]).filter(Boolean), [nodes, order]);
 
@@ -338,6 +340,8 @@ export function MapPage() {
           showTargets={targetsEnabled}
           followEnabled={followEnabled}
           showCoverage={coverageEnabled}
+          mapStyle={mapStyle}
+          onMapStyleChange={setMapStyle}
           geofences={geofences}
           geofenceHighlights={geofenceHighlights}
           drawing={

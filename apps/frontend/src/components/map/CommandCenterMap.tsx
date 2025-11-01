@@ -241,6 +241,7 @@ interface CommandCenterMapProps {
   showCoverage: boolean;
   geofences: Geofence[];
   geofenceHighlights: Record<string, number>;
+  mapStyle: string;
   drawing?: {
     enabled: boolean;
     points: GeofenceVertex[];
@@ -249,6 +250,7 @@ interface CommandCenterMapProps {
     onHover: (vertex: GeofenceVertex | null) => void;
   };
   onReady?: (map: LeafletMap) => void;
+  onMapStyleChange?: (style: string) => void;
 }
 
 export function CommandCenterMap({
@@ -265,10 +267,26 @@ export function CommandCenterMap({
   showCoverage,
   geofences,
   geofenceHighlights: _geofenceHighlights,
+  mapStyle,
   drawing,
   onReady,
+  onMapStyleChange,
 }: CommandCenterMapProps) {
   const mapRef = useRef<LeafletMap | null>(null);
+  const baseLayerKeys = useMemo(() => BASE_LAYERS.map((layer) => layer.key), []);
+  const activeBaseLayerKey = useMemo(() => {
+    if (baseLayerKeys.includes(mapStyle)) {
+      return mapStyle;
+    }
+    return BASE_LAYERS[0]?.key ?? 'osm';
+  }, [baseLayerKeys, mapStyle]);
+
+  useEffect(() => {
+    if (mapStyle !== activeBaseLayerKey && onMapStyleChange) {
+      onMapStyleChange(activeBaseLayerKey);
+    }
+  }, [mapStyle, activeBaseLayerKey, onMapStyleChange]);
+
   const effectiveRadius = useMemo(
     () => Math.max(25, Number.isFinite(defaultRadius) ? defaultRadius : DEFAULT_RADIUS_FALLBACK),
     [defaultRadius],
@@ -321,19 +339,24 @@ export function CommandCenterMap({
         onPoint={drawing?.onPoint}
         onHover={drawing?.onHover}
       />
-      <LayersControl position="topright">
-        {BASE_LAYERS.map((layer, index) => (
-          <LayersControl.BaseLayer key={layer.key} checked={index === 0} name={layer.name}>
-            <TileLayer
-              attribution={layer.attribution}
-              url={layer.url}
-              {...(layer.tileOptions ?? {})}
-            />
-          </LayersControl.BaseLayer>
-        ))}
-      </LayersControl>
+        <LayersControl position="topright">
+          {BASE_LAYERS.map((layer) => (
+            <LayersControl.BaseLayer
+              key={layer.key}
+              checked={layer.key === activeBaseLayerKey}
+              name={layer.name}
+            >
+              <TileLayer
+                attribution={layer.attribution}
+                url={layer.url}
+                {...(layer.tileOptions ?? {})}
+              />
+            </LayersControl.BaseLayer>
+          ))}
+        </LayersControl>
+        <BaseLayerChangeListener onChange={onMapStyleChange} />
 
-      <CoverageHeatLayer enabled={showCoverage} nodes={nodes} baseRadius={effectiveRadius} />
+        <CoverageHeatLayer enabled={showCoverage} nodes={nodes} baseRadius={effectiveRadius} />
 
       {geofences.map((geofence) => {
         if (geofence.polygon.length < 3) {
@@ -524,6 +547,28 @@ function GeofenceDrawingHandler({
       onHover(null);
     },
   });
+  return null;
+}
+
+function BaseLayerChangeListener({ onChange }: { onChange?: (style: string) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!onChange) {
+      return;
+    }
+    const handler = (event: L.LayersControlEvent) => {
+      const match = BASE_LAYERS.find((layer) => layer.name === event.name);
+      if (match) {
+        onChange(match.key);
+      }
+    };
+    map.on('baselayerchange', handler);
+    return () => {
+      map.off('baselayerchange', handler);
+    };
+  }, [map, onChange]);
+
   return null;
 }
 

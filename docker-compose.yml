@@ -20,6 +20,10 @@ services:
       context: .
       dockerfile: docker/backend.Dockerfile
     container_name: cc_backend
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    group_add:
+      - dialout
     networks:
       default:
         aliases:
@@ -32,7 +36,7 @@ services:
       PORT: 3000
       HTTP_PREFIX: api
       LOG_LEVEL: info
-      SERIAL_DEVICE: ""
+      SERIAL_DEVICE: "/dev/ttyUSB0"
       SERIAL_BAUD: "115200"
       ALLOW_FOREVER: "true"
       ALLOW_ERASE_FORCE: "false"
