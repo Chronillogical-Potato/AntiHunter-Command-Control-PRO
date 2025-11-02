@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { InventoryDevice, Prisma } from '@prisma/client';
+import { Observable, Subject } from 'rxjs';
 
 import { OuiService } from '../oui/oui.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,14 +19,39 @@ interface PromoteTargetOptions {
   siteId?: string;
 }
 
+export interface InventoryUpsertPayload {
+  mac: string;
+  siteId?: string | null;
+  vendor?: string | null;
+  type?: string | null;
+  ssid?: string | null;
+  hits: number;
+  lastSeen?: string | null;
+  maxRSSI?: number | null;
+  minRSSI?: number | null;
+  avgRSSI?: number | null;
+  locallyAdministered: boolean;
+  multicast: boolean;
+  lastNodeId?: string | null;
+  lastLat?: number | null;
+  lastLon?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
+  private readonly updates$ = new Subject<InventoryDevice>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly ouiService: OuiService,
   ) {}
+
+  getUpdatesStream(): Observable<InventoryDevice> {
+    return this.updates$.asObservable();
+  }
 
   async recordDetection(
     event: SerialTargetDetected,
@@ -81,7 +107,7 @@ export class InventoryService {
       }
     }
 
-    await this.prisma.inventoryDevice.upsert({
+    const record = (await this.prisma.inventoryDevice.upsert({
       where: { mac: normalizedMac },
       create: {
         mac: normalizedMac,
@@ -116,7 +142,60 @@ export class InventoryService {
         lastLon: lonCandidate ?? existing?.lastLon ?? undefined,
         siteId: siteId ?? existing?.siteId ?? undefined,
       } as Prisma.InventoryDeviceUncheckedUpdateInput,
-    });
+    })) as InventoryDevice;
+
+    this.updates$.next(record);
+  }
+
+  async syncRemoteInventory(payload: InventoryUpsertPayload): Promise<void> {
+    const mac = normalizeMac(payload.mac);
+    const lastSeen = payload.lastSeen ? new Date(payload.lastSeen) : null;
+    const createdAt = payload.createdAt ? new Date(payload.createdAt) : undefined;
+    const maxRSSI = payload.maxRSSI ?? null;
+    const minRSSI = payload.minRSSI ?? null;
+    const avgRSSI = payload.avgRSSI ?? null;
+    const lastLat = payload.lastLat ?? null;
+    const lastLon = payload.lastLon ?? null;
+
+    const record = (await this.prisma.inventoryDevice.upsert({
+      where: { mac },
+      create: {
+        mac,
+        siteId: payload.siteId ?? null,
+        vendor: payload.vendor ?? null,
+        type: payload.type ?? null,
+        ssid: payload.ssid ?? null,
+        hits: payload.hits,
+        lastSeen,
+        maxRSSI,
+        minRSSI,
+        avgRSSI,
+        locallyAdministered: payload.locallyAdministered,
+        multicast: payload.multicast,
+        lastNodeId: payload.lastNodeId ?? null,
+        lastLat,
+        lastLon,
+        createdAt,
+      } as Prisma.InventoryDeviceUncheckedCreateInput,
+      update: {
+        siteId: payload.siteId ?? null,
+        vendor: payload.vendor ?? null,
+        type: payload.type ?? null,
+        ssid: payload.ssid ?? null,
+        hits: payload.hits,
+        lastSeen,
+        maxRSSI,
+        minRSSI,
+        avgRSSI,
+        locallyAdministered: payload.locallyAdministered,
+        multicast: payload.multicast,
+        lastNodeId: payload.lastNodeId ?? null,
+        lastLat,
+        lastLon,
+      } as Prisma.InventoryDeviceUncheckedUpdateInput,
+    })) as InventoryDevice;
+
+    this.updates$.next(record);
   }
 
   async listDevices(options: ListOptions = {}) {
