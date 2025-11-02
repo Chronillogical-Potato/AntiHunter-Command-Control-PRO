@@ -13,6 +13,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TargetsModule } from '../targets/targets.module';
+import { WsModule } from '../ws/ws.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TargetsModule } from '../targets/targets.module';
     CommandsModule,
     InventoryModule,
     TargetsModule,
+    WsModule,
   ],
   providers: [
     MqttService,
