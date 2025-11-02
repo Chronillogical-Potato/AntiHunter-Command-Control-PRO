@@ -273,6 +273,8 @@ Configure federation per site in **Config → MQTT** (or directly via the `MqttC
 **Environment defaults:**  
 Set `SITE_ID` to the local site identifier (defaults to `default`). Each Command Center deployment **must use a unique `SITE_ID`** so MQTT replication distinguishes the origin site (e.g., `SITE_ID=alpha`, `SITE_ID=bravo`). Restart the backend after changing it. Optional flags like `MQTT_ENABLED`, `MQTT_COMMANDS_ENABLED`, and `MQTT_NAMESPACE` seed runtime config before any database records exist.
 
+> **Tip:** Set `SITE_ID` (and optionally `SITE_NAME`) in the root `.env` **before** running `pnpm prisma db seed`. The seed script now creates the initial `Site`, `SerialConfig`, and `MqttConfig` rows with that identifier, so make sure it matches the value you expect the backend to advertise.
+
 ## Repository Layout
 
 
