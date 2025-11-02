@@ -14,6 +14,8 @@ import { UpdateMqttConfigDto } from './dto/update-mqtt-config.dto';
 export interface SiteMqttContext {
   siteId: string;
   client: MqttClient;
+  qosEvents: number;
+  qosCommands: number;
 }
 
 type MqttStatusState = 'not_configured' | 'disabled' | 'connecting' | 'connected' | 'error';
@@ -58,7 +60,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         .map(async (config) => {
           try {
             const client = await this.createClient(config);
-            this.registerClient({ siteId: config.siteId, client });
+            this.registerClient({
+              siteId: config.siteId,
+              client,
+              qosEvents: config.qosEvents ?? 1,
+              qosCommands: config.qosCommands ?? 1,
+            });
             this.logger.log(`Connected MQTT client for site ${config.siteId}`);
             this.updateStatus(config.siteId, 'connected', 'Connected');
           } catch (error) {
@@ -230,7 +237,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const client = await this.createClient(config);
-      this.registerClient({ siteId, client });
+      this.registerClient({
+        siteId,
+        client,
+        qosEvents: config.qosEvents ?? 1,
+        qosCommands: config.qosCommands ?? 1,
+      });
       this.logger.log(`Reconnected MQTT client for site ${siteId}`);
       this.updateStatus(siteId, 'connected', 'Connected');
     } catch (error) {
@@ -267,13 +279,20 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     topic: string,
     message: string | Buffer,
     options?: IClientPublishOptions,
+    kind: 'events' | 'commands' = 'events',
   ): Promise<void> {
     const payload = typeof message === 'string' || Buffer.isBuffer(message) ? message : message;
     await Promise.all(
       Array.from(this.clients.values()).map(
         (context) =>
           new Promise<void>((resolve, reject) => {
-            context.client.publish(topic, payload, options, (err) => {
+            const publishOptions: IClientPublishOptions = {
+              ...(options ?? {}),
+            };
+            if (publishOptions.qos === undefined) {
+              publishOptions.qos = kind === 'commands' ? context.qosCommands : context.qosEvents;
+            }
+            context.client.publish(topic, payload, publishOptions, (err) => {
               if (err) {
                 this.logger.warn(
                   `Failed to publish MQTT message for site ${context.siteId} on topic ${topic}: ${

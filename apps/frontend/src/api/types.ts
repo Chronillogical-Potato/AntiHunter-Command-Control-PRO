@@ -20,6 +20,7 @@ export interface CommandRequest {
   target: string;
   name: string;
   params: string[];
+  siteId?: string;
 }
 
 export interface CommandResponse {
