@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { connect, IClientPublishOptions, MqttClient } from 'mqtt';
+import { connect, IClientOptions, IClientPublishOptions, MqttClient } from 'mqtt';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateMqttConfigDto } from './dto/update-mqtt-config.dto';
@@ -58,7 +58,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         .map(async (config) => {
           try {
             const client = await this.createClient(config);
-            this.clients.push({ siteId: config.siteId, client });
+            this.registerClient({ siteId: config.siteId, client });
             this.logger.log(`Connected MQTT client for site ${config.siteId}`);
             this.updateStatus(config.siteId, 'connected', 'Connected');
           } catch (error) {
@@ -315,10 +315,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     certPem: string | null;
     keyPem: string | null;
   }): Promise<MqttClient> {
-    const options: Record<string, unknown> = {
+    const connectTimeoutMs = Number(process.env.MQTT_CONNECT_TIMEOUT_MS ?? 10_000);
+
+    const options: IClientOptions = {
       clientId: config.clientId,
       clean: true,
       reconnectPeriod: 5_000,
+      connectTimeout: connectTimeoutMs,
     };
 
     if (config.username) {
@@ -343,18 +346,31 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     return new Promise((resolve, reject) => {
       const client = connect(config.brokerUrl, options);
+      let settled = false;
+      const timer = setTimeout(() => finish(new Error('MQTT connect timeout')), connectTimeoutMs);
 
-      const onError = (error: Error) => {
-        client.removeListener('connect', onConnect);
-        reject(error);
-      };
-      const onConnect = () => {
-        client.removeListener('error', onError);
-        resolve(client);
+      const finish = (error?: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        client.removeListener('connect', handleConnect);
+        client.removeListener('error', handleError);
+
+        if (error) {
+          client.end(true);
+          reject(error);
+        } else {
+          resolve(client);
+        }
       };
 
-      client.once('error', onError);
-      client.once('connect', onConnect);
+      const handleConnect = () => finish();
+      const handleError = (error: Error) => finish(error);
+
+      client.once('connect', handleConnect);
+      client.once('error', handleError);
     });
   }
 

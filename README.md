@@ -852,6 +852,8 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 | **No alerts despite telemetry**                     | Confirm devices flashed with the companion firmware send events, sockets are connected (check `/healthz`), and that the alert filters on the terminal/alert drawer are not silencing the severity you expect. |
 | **Custom alarm audio silent or too loud**           | After uploading a WAV file, adjust per-level volume sliders and click "Test". If volume does not change, refresh the page to reload cached audio. Supported formats: 16-bit PCM WAV.                          |
 | **Docker push fails due to upstream changes**       | Run `git pull --rebase origin main` locally, resolve conflicts, then `git push`. This keeps your fork in sync before building new images.                                                                     |
+| **Client notification: _Invalid Serial config…_**   | That toast is emitted by the Meshtastic radio itself. It appears when “Override console serial port” is enabled on the radio while it is running an interactive profile. Either disable the override in the Meshtastic firmware or switch the device to an output-only profile (NMEA/CalTopo).                                            |
+| **MQTT connect timeout**                            | Ensure the backend is running (check `/healthz`) and that you’re using a reachable endpoint. Some public brokers require WebSockets (`ws://…`) instead of raw TCP (`mqtt://…`). Leave username/password blank when the broker is anonymous, and make sure “Enable site replication” is on before expecting events.                         |
 
 
 
