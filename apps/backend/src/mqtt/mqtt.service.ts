@@ -14,8 +14,8 @@ import { UpdateMqttConfigDto } from './dto/update-mqtt-config.dto';
 export interface SiteMqttContext {
   siteId: string;
   client: MqttClient;
-  qosEvents: number;
-  qosCommands: number;
+  qosEvents: 0 | 1 | 2;
+  qosCommands: 0 | 1 | 2;
 }
 
 type MqttStatusState = 'not_configured' | 'disabled' | 'connecting' | 'connected' | 'error';
@@ -63,8 +63,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
             this.registerClient({
               siteId: config.siteId,
               client,
-              qosEvents: config.qosEvents ?? 1,
-              qosCommands: config.qosCommands ?? 1,
+              qosEvents: this.normalizeQos(config.qosEvents),
+              qosCommands: this.normalizeQos(config.qosCommands),
             });
             this.logger.log(`Connected MQTT client for site ${config.siteId}`);
             this.updateStatus(config.siteId, 'connected', 'Connected');
@@ -240,8 +240,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.registerClient({
         siteId,
         client,
-        qosEvents: config.qosEvents ?? 1,
-        qosCommands: config.qosCommands ?? 1,
+        qosEvents: this.normalizeQos(config.qosEvents),
+        qosCommands: this.normalizeQos(config.qosCommands),
       });
       this.logger.log(`Reconnected MQTT client for site ${siteId}`);
       this.updateStatus(siteId, 'connected', 'Connected');
@@ -399,5 +399,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       message,
       updatedAt: new Date(),
     });
+  }
+
+  private normalizeQos(value?: number | null): 0 | 1 | 2 {
+    return value === 0 || value === 1 || value === 2 ? value : 1;
   }
 }

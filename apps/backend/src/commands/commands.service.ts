@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CommandLog, CommandStatus } from '@prisma/client';
+import { CommandLog, CommandStatus, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { Observable, Subject } from 'rxjs';
 
@@ -234,22 +234,39 @@ export class CommandsService {
     const startedAt = event.startedAt ? new Date(event.startedAt) : null;
     const finishedAt = event.finishedAt ? new Date(event.finishedAt) : null;
 
-    const baseData = {
+    const updateData: Prisma.CommandLogUncheckedUpdateInput = {
       siteId,
       target: event.target,
       name: event.name,
       params: event.params,
       status,
-      userId: event.userId ?? null,
-      ackKind: event.ackKind ?? null,
-      ackStatus: event.ackStatus ?? null,
-      ackNode: event.ackNode ?? null,
-      resultText: event.resultText ?? null,
-      errorText: event.errorText ?? null,
       createdAt,
-      startedAt,
-      finishedAt,
     };
+
+    if (typeof event.userId !== 'undefined') {
+      updateData.userId = event.userId;
+    }
+    if (typeof event.ackKind !== 'undefined') {
+      updateData.ackKind = event.ackKind;
+    }
+    if (typeof event.ackStatus !== 'undefined') {
+      updateData.ackStatus = event.ackStatus;
+    }
+    if (typeof event.ackNode !== 'undefined') {
+      updateData.ackNode = event.ackNode;
+    }
+    if (typeof event.resultText !== 'undefined') {
+      updateData.resultText = event.resultText;
+    }
+    if (typeof event.errorText !== 'undefined') {
+      updateData.errorText = event.errorText;
+    }
+    if (startedAt) {
+      updateData.startedAt = startedAt;
+    }
+    if (finishedAt) {
+      updateData.finishedAt = finishedAt;
+    }
 
     let record: CommandLog;
     const existing = await this.prisma.commandLog.findUnique({ where: { id: event.id } });
@@ -257,16 +274,19 @@ export class CommandsService {
     if (existing) {
       record = await this.prisma.commandLog.update({
         where: { id: event.id },
-        data: {
-          ...baseData,
-        },
+        data: updateData,
       });
     } else {
+      const createData = this.buildCreateDataFromEvent(
+        event,
+        siteId,
+        status,
+        createdAt,
+        startedAt,
+        finishedAt,
+      );
       record = await this.prisma.commandLog.create({
-        data: {
-          id: event.id,
-          ...baseData,
-        },
+        data: createData,
       });
     }
 
@@ -287,7 +307,7 @@ export class CommandsService {
           name: request.name,
           params: request.params,
           status: 'PENDING',
-          userId: request.userId ?? null,
+          ...(typeof request.userId !== 'undefined' ? { userId: request.userId } : {}),
         },
       });
     }
@@ -329,6 +349,52 @@ export class CommandsService {
       this.emitUpdate(failed);
       throw error;
     }
+  }
+
+  private buildCreateDataFromEvent(
+    event: ExternalCommandEventInput,
+    siteId: string,
+    status: CommandStatus,
+    createdAt: Date,
+    startedAt: Date | null,
+    finishedAt: Date | null,
+  ): Prisma.CommandLogUncheckedCreateInput {
+    const data: Prisma.CommandLogUncheckedCreateInput = {
+      id: event.id,
+      siteId,
+      target: event.target,
+      name: event.name,
+      params: event.params,
+      status,
+      createdAt,
+    };
+
+    if (typeof event.userId !== 'undefined') {
+      data.userId = event.userId;
+    }
+    if (typeof event.ackKind !== 'undefined') {
+      data.ackKind = event.ackKind;
+    }
+    if (typeof event.ackStatus !== 'undefined') {
+      data.ackStatus = event.ackStatus;
+    }
+    if (typeof event.ackNode !== 'undefined') {
+      data.ackNode = event.ackNode;
+    }
+    if (typeof event.resultText !== 'undefined') {
+      data.resultText = event.resultText;
+    }
+    if (typeof event.errorText !== 'undefined') {
+      data.errorText = event.errorText;
+    }
+    if (startedAt) {
+      data.startedAt = startedAt;
+    }
+    if (finishedAt) {
+      data.finishedAt = finishedAt;
+    }
+
+    return data;
   }
 
   private mapCommand(command: CommandLog): CommandState {

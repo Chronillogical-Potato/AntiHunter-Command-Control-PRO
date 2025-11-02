@@ -131,22 +131,18 @@ export class MqttCommandsService implements OnModuleInit, OnModuleDestroy {
   private async attachInboundSubscriptions(context: SiteMqttContext): Promise<void> {
     await Promise.all([
       new Promise<void>((resolve, reject) => {
-        context.client.subscribe(
-          COMMAND_EVENT_TOPIC_PATTERN,
-          { qos: context.qosEvents ?? 1 },
-          (err) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          },
-        );
+        context.client.subscribe(COMMAND_EVENT_TOPIC_PATTERN, { qos: context.qosEvents }, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
       }),
       new Promise<void>((resolve, reject) => {
         context.client.subscribe(
           COMMAND_REQUEST_TOPIC_PATTERN,
-          { qos: context.qosCommands ?? 1 },
+          { qos: context.qosCommands },
           (err) => {
             if (err) {
               reject(err);
@@ -241,7 +237,7 @@ export class MqttCommandsService implements OnModuleInit, OnModuleDestroy {
       },
     };
 
-    await this.mqttService.publishToAll(topic, JSON.stringify(message), { qos: 1 }, 'commands');
+    await this.mqttService.publishToAll(topic, JSON.stringify(message), undefined, 'commands');
   }
 
   private async handleInboundCommandEvent(topic: string, payload: Buffer): Promise<void> {
