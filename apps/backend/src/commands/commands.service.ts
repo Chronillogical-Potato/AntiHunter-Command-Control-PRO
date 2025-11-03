@@ -249,6 +249,8 @@ export class CommandsService {
       await this.ensureSiteRecord(siteId);
     }
 
+    const resolvedUserId = await this.resolveUserId(event.userId);
+
     const updateData: Prisma.CommandLogUncheckedUpdateInput = {
       siteId,
       originSiteId,
@@ -259,8 +261,8 @@ export class CommandsService {
       createdAt,
     };
 
-    if (typeof event.userId !== 'undefined') {
-      updateData.userId = event.userId;
+    if (typeof resolvedUserId !== 'undefined') {
+      updateData.userId = resolvedUserId;
     }
     if (typeof event.ackKind !== 'undefined') {
       updateData.ackKind = event.ackKind;
@@ -301,6 +303,7 @@ export class CommandsService {
         createdAt,
         startedAt,
         finishedAt,
+        resolvedUserId,
       );
       record = await this.prisma.commandLog.create({
         data: createData,
@@ -313,6 +316,8 @@ export class CommandsService {
 
   async executeRemoteRequest(request: RemoteCommandRequest): Promise<CommandState> {
     await this.ensureSiteRecord(request.originSiteId);
+
+    const resolvedUserId = await this.resolveUserId(request.userId);
 
     const existing = await this.prisma.commandLog.findUnique({ where: { id: request.id } });
     let command = existing;
@@ -327,7 +332,7 @@ export class CommandsService {
           name: request.name,
           params: request.params,
           status: 'PENDING',
-          ...(typeof request.userId !== 'undefined' ? { userId: request.userId } : {}),
+          ...(typeof resolvedUserId !== 'undefined' ? { userId: resolvedUserId } : {}),
         },
       });
     }
@@ -343,7 +348,7 @@ export class CommandsService {
         name: request.name,
         params: request.params,
         line: request.line,
-        userId: request.userId ?? undefined,
+        userId: resolvedUserId ?? undefined,
       });
 
       const updated = await this.prisma.commandLog.update({
@@ -379,6 +384,7 @@ export class CommandsService {
     createdAt: Date,
     startedAt: Date | null,
     finishedAt: Date | null,
+    userId?: string,
   ): Prisma.CommandLogUncheckedCreateInput {
     const data: Prisma.CommandLogUncheckedCreateInput = {
       id: event.id,
@@ -391,8 +397,8 @@ export class CommandsService {
       createdAt,
     };
 
-    if (typeof event.userId !== 'undefined') {
-      data.userId = event.userId;
+    if (typeof userId !== 'undefined') {
+      data.userId = userId;
     }
     if (typeof event.ackKind !== 'undefined') {
       data.ackKind = event.ackKind;
@@ -484,6 +490,25 @@ export class CommandsService {
       return normalized as CommandStatus;
     }
     return 'PENDING';
+  }
+
+  private async resolveUserId(userId?: string | null): Promise<string | undefined> {
+    if (!userId) {
+      return undefined;
+    }
+
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      return user?.id;
+    } catch (error) {
+      this.logger.warn(
+        `Failed to resolve remote user ${userId}: ${error instanceof Error ? error.message : error}`,
+      );
+      return undefined;
+    }
   }
 
   private async ensureSiteRecord(siteId: string) {

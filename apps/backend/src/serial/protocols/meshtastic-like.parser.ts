@@ -173,6 +173,13 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
   private parseText(line: string): SerialParseResult[] | null {
     const results: SerialParseResult[] = [];
     let handled = false;
+
+    // Normalize router forwarded text frames (credit: @lukeswitz)
+    const routerMatch = /\[Router\]\s+Received text msg.*?msg=([^$]+)/i.exec(line);
+    if (routerMatch?.[1]) {
+      line = routerMatch[1].trim().replace(/#$/, '');
+    }
+
     this.flushExpiredStatuses(results);
     if (isLogLine(line)) {
       const log = parseLogLine(line);
