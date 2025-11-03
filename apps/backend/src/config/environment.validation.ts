@@ -9,6 +9,16 @@ const envSchema = z.object({
     .transform((val) => Number(val))
     .pipe(z.number().int().min(0).max(65535)),
   HTTP_PREFIX: z.string().default('api'),
+  HTTP_REDIRECT_PORT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).max(65535).optional()),
+  HTTPS_ENABLED: z.string().optional(),
+  HTTPS_KEY_PATH: z.string().optional(),
+  HTTPS_CERT_PATH: z.string().optional(),
+  HTTPS_CA_PATH: z.string().optional(),
+  HTTPS_PASSPHRASE: z.string().optional(),
   DATABASE_URL: z.string().url('DATABASE_URL must be a valid PostgreSQL connection string'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   STRUCTURED_LOGS: z

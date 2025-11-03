@@ -15,6 +15,15 @@ export const SocketProvider = ({ children }: PropsWithChildren) => {
   const [connected, setConnected] = useState(false);
   const status = useAuthStore((state) => state.status);
   const token = useAuthStore((state) => state.token);
+  const backendBase = useMemo(() => {
+    const envValue = (import.meta.env as Record<string, string | undefined>).VITE_BACKEND_URL;
+    if (!envValue) {
+      return undefined;
+    }
+    return envValue.endsWith('/') ? envValue.slice(0, -1) : envValue;
+  }, []);
+  const defaultSecure =
+    typeof window !== 'undefined' ? window.location.protocol === 'https:' : false;
 
   useEffect(() => {
     if (status !== 'authenticated' || !token) {
@@ -23,10 +32,14 @@ export const SocketProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    const instance = io('/ws', {
+    const namespace = backendBase ? `${backendBase}/ws` : '/ws';
+    const secure = backendBase ? backendBase.startsWith('https://') : defaultSecure;
+
+    const instance = io(namespace, {
       transports: ['websocket'],
       autoConnect: true,
       auth: { token },
+      secure,
     });
 
     instance.on('connect', () => {
@@ -50,7 +63,7 @@ export const SocketProvider = ({ children }: PropsWithChildren) => {
       setSocket(null);
       setConnected(false);
     };
-  }, [status, token]);
+  }, [status, token, backendBase, defaultSecure]);
 
   const value = useMemo<SocketContextValue>(
     () => ({

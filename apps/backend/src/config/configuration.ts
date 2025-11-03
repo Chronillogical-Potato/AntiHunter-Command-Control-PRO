@@ -6,6 +6,19 @@ export default () => ({
   http: {
     port: Number(process.env.PORT ?? 3000),
     prefix: process.env.HTTP_PREFIX ?? 'api',
+    redirectPort: process.env.HTTP_REDIRECT_PORT
+      ? Number(process.env.HTTP_REDIRECT_PORT)
+      : undefined,
+  },
+  https: {
+    enabled:
+      process.env.HTTPS_ENABLED === 'true' ||
+      (!!process.env.HTTPS_KEY_PATH && !!process.env.HTTPS_CERT_PATH),
+    keyPath: process.env.HTTPS_KEY_PATH,
+    certPath: process.env.HTTPS_CERT_PATH,
+    caPath: process.env.HTTPS_CA_PATH,
+    passphrase: process.env.HTTPS_PASSPHRASE,
+    active: false,
   },
   database: {
     url: process.env.DATABASE_URL ?? '',

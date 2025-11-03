@@ -134,6 +134,17 @@ export interface RuntimeConfig {
     commandsEnabled: boolean;
     namespace: string;
   };
+  http: {
+    port: number;
+    redirectPort?: number;
+  };
+  https: {
+    enabled: boolean;
+    active: boolean;
+  };
+  websocket: {
+    secure: boolean;
+  };
 }
 
 export interface SiteSummary {

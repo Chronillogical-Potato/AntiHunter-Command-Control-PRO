@@ -169,11 +169,10 @@ export class MqttFederationService implements OnModuleInit, OnModuleDestroy {
     }
 
     const { payload: nodePayload } = message;
-    const lat = Number(nodePayload.lat);
-    const lon = Number(nodePayload.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      return;
-    }
+    const latValue = Number(nodePayload.lat);
+    const lonValue = Number(nodePayload.lon);
+    const lat = Number.isFinite(latValue) ? latValue : 0;
+    const lon = Number.isFinite(lonValue) ? lonValue : 0;
 
     const nodeTs = nodePayload.ts ? new Date(nodePayload.ts) : new Date();
     const nodeLastSeen = nodePayload.lastSeen ? new Date(nodePayload.lastSeen) : undefined;
