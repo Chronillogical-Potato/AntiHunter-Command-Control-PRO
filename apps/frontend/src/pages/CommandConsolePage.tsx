@@ -136,7 +136,7 @@ function normalizeParamValue(param: CommandParameter, raw: string): string {
   }
 }
 
-function deriveNodeTarget(node: NodeSummary): { value: string; label: string } {
+function deriveNodeTarget(node: NodeSummary): { value: string; baseLabel: string } {
   const rawId = (node.id ?? '').toUpperCase().replace(/^@/, '').replace(/\s+/g, '');
   const rawName = (node.name ?? '').toUpperCase().replace(/\s+/g, '');
 
@@ -151,7 +151,7 @@ function deriveNodeTarget(node: NodeSummary): { value: string; label: string } {
 
   return {
     value: normalizeTarget(safeLabel),
-    label: safeLabel,
+    baseLabel: safeLabel,
   };
 }
 
@@ -259,8 +259,11 @@ export function CommandConsolePage() {
     const dedup = new Map<string, { value: string; label: string }>();
     availableNodes.forEach((node) => {
       const target = deriveNodeTarget(node);
-      if (!dedup.has(target.value)) {
-        dedup.set(target.value, target);
+      const siteLabel = node.siteName ?? node.siteId ?? null;
+      const displayLabel = siteLabel ? `${target.baseLabel} (${siteLabel})` : target.baseLabel;
+      const dedupKey = `${target.value}::${siteLabel ?? 'local'}`;
+      if (!dedup.has(dedupKey)) {
+        dedup.set(dedupKey, { value: target.value, label: displayLabel });
       }
     });
     return Array.from(dedup.values());
