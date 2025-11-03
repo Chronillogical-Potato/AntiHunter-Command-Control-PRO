@@ -348,19 +348,60 @@ sudo usermod -aG dialout "$USER"   # access to /dev/ttyUSB*
 
 ### macOS
 
-
-
 ```bash
-
 xcode-select --install
-
 brew install node@20 pnpm git postgresql
-
 brew services start postgresql
-
 ```
 
+<details>
+<summary>macOS Command Center install checklist</summary>
 
+1. **Clone & install dependencies**
+   ```bash
+   git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
+   cd AntiHunter-Command-Control-PRO
+   pnpm install
+   ```
+
+2. **Install the USB serial driver for your adapter**
+   - WCH CH34x: https://www.wch.cn/download/CH34XSER_MAC_ZIP.html
+   - Silicon Labs CP210x: `brew install --cask silicon-labs-vcp-driver`
+   - Reboot so `/dev/tty.wchusbserial*` (or `/dev/tty.SLAB_USBtoUART*`) appears.
+
+3. **Create `.env` with a unique `SITE_ID` before seeding**
+   ```env
+   SITE_ID=ahcc
+   SITE_NAME=AHCC
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/command_center
+   FPV_DECODER_ENABLED=true
+   PORT=3000
+   ```
+
+4. **Seed the database**
+   ```bash
+   pnpm --filter @command-center/backend prisma db seed
+   ```
+
+5. **Start backend (and frontend if desired)**
+   ```bash
+   pnpm --filter @command-center/backend dev
+   pnpm --filter @command-center/frontend dev
+   ```
+
+6. **Configure serial** – list ports, then set Config → Serial
+   ```bash
+   pnpm --filter @command-center/backend exec node -e "const { SerialPortStream } = require('@serialport/stream'); SerialPortStream.list().then(list => console.log(list));"
+   ```
+
+7. **Enable MQTT federation** in Config → MQTT (set broker URL/credentials and enable replication).
+
+8. **Verify runtime site**
+   ```bash
+   curl http://localhost:3000/api/config/runtime
+   ```
+   Should return `"siteId":"ahcc"`.
+</details>
 
 ### Windows 10/11 (PowerShell)
 

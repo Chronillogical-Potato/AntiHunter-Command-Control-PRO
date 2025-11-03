@@ -27,6 +27,7 @@ const ACK_TO_COMMAND: Record<string, string> = {
 export interface CommandState {
   id: string;
   siteId?: string | null;
+  originSiteId?: string | null;
   target: string;
   name: string;
   params: string[];
@@ -45,6 +46,7 @@ export interface CommandState {
 export interface RemoteCommandRequest {
   id: string;
   siteId: string;
+  originSiteId: string;
   target: string;
   name: string;
   params: string[];
@@ -55,6 +57,7 @@ export interface RemoteCommandRequest {
 export interface ExternalCommandEventInput {
   id: string;
   siteId: string;
+  originSiteId?: string | null;
   target: string;
   name: string;
   params: string[];
@@ -107,6 +110,7 @@ export class CommandsService {
       data: {
         id: commandId,
         siteId: targetSiteId,
+        originSiteId: this.localSiteId,
         userId,
         target: built.target,
         name: built.name,
@@ -118,9 +122,11 @@ export class CommandsService {
     this.emitUpdate(command);
 
     if (targetSiteId !== this.localSiteId) {
+      await this.ensureSiteRecord(targetSiteId);
       this.remoteRequests$.next({
         id: commandId,
         siteId: targetSiteId,
+        originSiteId: this.localSiteId,
         target: built.target,
         name: built.name,
         params: built.params,
@@ -233,9 +239,19 @@ export class CommandsService {
     const createdAt = event.createdAt ? new Date(event.createdAt) : new Date();
     const startedAt = event.startedAt ? new Date(event.startedAt) : null;
     const finishedAt = event.finishedAt ? new Date(event.finishedAt) : null;
+    const originSiteId =
+      event.originSiteId && event.originSiteId.trim().length > 0
+        ? event.originSiteId.trim()
+        : siteId;
+
+    await this.ensureSiteRecord(originSiteId);
+    if (siteId !== originSiteId) {
+      await this.ensureSiteRecord(siteId);
+    }
 
     const updateData: Prisma.CommandLogUncheckedUpdateInput = {
       siteId,
+      originSiteId,
       target: event.target,
       name: event.name,
       params: event.params,
@@ -280,6 +296,7 @@ export class CommandsService {
       const createData = this.buildCreateDataFromEvent(
         event,
         siteId,
+        originSiteId,
         status,
         createdAt,
         startedAt,
@@ -295,6 +312,8 @@ export class CommandsService {
   }
 
   async executeRemoteRequest(request: RemoteCommandRequest): Promise<CommandState> {
+    await this.ensureSiteRecord(request.originSiteId);
+
     const existing = await this.prisma.commandLog.findUnique({ where: { id: request.id } });
     let command = existing;
 
@@ -303,6 +322,7 @@ export class CommandsService {
         data: {
           id: request.id,
           siteId: this.localSiteId,
+          originSiteId: request.originSiteId,
           target: request.target,
           name: request.name,
           params: request.params,
@@ -354,6 +374,7 @@ export class CommandsService {
   private buildCreateDataFromEvent(
     event: ExternalCommandEventInput,
     siteId: string,
+    originSiteId: string,
     status: CommandStatus,
     createdAt: Date,
     startedAt: Date | null,
@@ -362,6 +383,7 @@ export class CommandsService {
     const data: Prisma.CommandLogUncheckedCreateInput = {
       id: event.id,
       siteId,
+      originSiteId,
       target: event.target,
       name: event.name,
       params: event.params,
@@ -401,6 +423,7 @@ export class CommandsService {
     return {
       id: command.id,
       siteId: command.siteId ?? undefined,
+      originSiteId: command.originSiteId ?? undefined,
       target: command.target,
       name: command.name,
       params: Array.isArray(command.params) ? (command.params as string[]) : [],
@@ -461,5 +484,21 @@ export class CommandsService {
       return normalized as CommandStatus;
     }
     return 'PENDING';
+  }
+
+  private async ensureSiteRecord(siteId: string) {
+    if (!siteId || siteId === this.localSiteId) {
+      return;
+    }
+
+    await this.prisma.site.upsert({
+      where: { id: siteId },
+      update: {},
+      create: {
+        id: siteId,
+        name: siteId,
+        color: '#2563EB',
+      },
+    });
   }
 }

@@ -15,6 +15,7 @@ type CommandEventMessage = {
   originSiteId: string;
   commandId: string;
   payload: {
+    siteId: string;
     status: CommandState['status'];
     target: string;
     name: string;
@@ -201,6 +202,7 @@ export class MqttCommandsService implements OnModuleInit, OnModuleDestroy {
       originSiteId: siteId,
       commandId: command.id,
       payload: {
+        siteId: command.siteId ?? siteId,
         status: command.status,
         target: command.target,
         name: command.name,
@@ -225,7 +227,7 @@ export class MqttCommandsService implements OnModuleInit, OnModuleDestroy {
     const topic = this.buildCommandRequestTopic(request.siteId);
     const message: CommandRequestMessage = {
       type: 'command.request',
-      originSiteId: this.localSiteId,
+      originSiteId: request.originSiteId,
       targetSiteId: request.siteId,
       commandId: request.id,
       payload: {
@@ -265,9 +267,12 @@ export class MqttCommandsService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const siteId = parsed.payload.siteId ?? originSiteId;
+
     const event: ExternalCommandEventInput = {
       id: parsed.commandId,
-      siteId: originSiteId,
+      siteId,
+      originSiteId,
       target: parsed.payload.target,
       name: parsed.payload.name,
       params: parsed.payload.params,
@@ -318,6 +323,7 @@ export class MqttCommandsService implements OnModuleInit, OnModuleDestroy {
     const request: RemoteCommandRequest = {
       id: parsed.commandId,
       siteId: targetSiteId,
+      originSiteId: parsed.originSiteId ?? topicSiteId ?? this.localSiteId,
       target: parsed.payload.target,
       name: parsed.payload.name,
       params: parsed.payload.params ?? [],
