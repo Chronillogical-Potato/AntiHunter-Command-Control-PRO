@@ -72,6 +72,121 @@ export interface Target {
   updatedAt: string;
 }
 
+export type FirewallPolicy = 'ALLOW' | 'DENY';
+export type FirewallGeoMode = 'DISABLED' | 'ALLOW_LIST' | 'BLOCK_LIST';
+export type FirewallRuleType = 'ALLOW' | 'BLOCK' | 'TEMP_BLOCK';
+export type FirewallLogOutcome =
+  | 'ALLOWED'
+  | 'BLOCKED'
+  | 'GEO_BLOCK'
+  | 'DEFAULT_DENY'
+  | 'AUTH_FAILURE'
+  | 'AUTH_SUCCESS';
+
+export interface FirewallConfig {
+  enabled: boolean;
+  defaultPolicy: FirewallPolicy;
+  geoMode: FirewallGeoMode;
+  allowedCountries: string[];
+  blockedCountries: string[];
+  failThreshold: number;
+  failWindowSeconds: number;
+  banDurationSeconds: number;
+  updatedAt: string;
+}
+
+export interface FirewallRule {
+  id: string;
+  ip: string;
+  type: FirewallRuleType;
+  reason?: string | null;
+  expiresAt?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FirewallLog {
+  id: string;
+  ip: string;
+  country?: string | null;
+  path: string;
+  method: string;
+  outcome: FirewallLogOutcome;
+  ruleId?: string | null;
+  attempts: number;
+  firstSeen: string;
+  lastSeen: string;
+  blocked: boolean;
+  reason?: string | null;
+  userAgent?: string | null;
+}
+
+export interface FirewallOverview {
+  config: FirewallConfig;
+  rules: FirewallRule[];
+  stats: {
+    totalRules: number;
+    totalBlockedRules: number;
+    totalLogs: number;
+    blockedLast24h: number;
+    authFailuresLast24h: number;
+  };
+}
+
+export interface GeofenceVertex {
+  lat: number;
+  lon: number;
+}
+
+export interface GeofenceAlarmConfig {
+  enabled: boolean;
+  level: AlarmLevel;
+  message: string;
+  triggerOnExit?: boolean;
+}
+
+export interface GeofenceSiteInfo {
+  id: string;
+  name?: string | null;
+  color?: string | null;
+  country?: string | null;
+  city?: string | null;
+}
+
+export interface Geofence {
+  id: string;
+  siteId?: string | null;
+  originSiteId?: string | null;
+  name: string;
+  description?: string | null;
+  color: string;
+  polygon: GeofenceVertex[];
+  alarm: GeofenceAlarmConfig;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  site?: GeofenceSiteInfo | null;
+}
+
+export interface CreateGeofenceRequest {
+  name: string;
+  description?: string | null;
+  color?: string;
+  siteId?: string | null;
+  polygon: GeofenceVertex[];
+  alarm: GeofenceAlarmConfig;
+}
+
+export interface UpdateGeofenceRequest {
+  name?: string;
+  description?: string | null;
+  color?: string;
+  siteId?: string | null;
+  polygon?: GeofenceVertex[];
+  alarm?: Partial<GeofenceAlarmConfig>;
+}
+
 export interface AppSettings {
   id: number;
   appName: string;
@@ -285,6 +400,8 @@ export interface AuthUser {
   isActive: boolean;
   legalAccepted: boolean;
   legalAcceptedAt?: string | null;
+  twoFactorEnabled: boolean;
+  twoFactorEnabledAt?: string | null;
   createdAt: string;
   updatedAt: string;
   preferences: UserPreferences;
@@ -297,12 +414,34 @@ export interface LoginResponse {
   user: AuthUser;
   legalAccepted: boolean;
   disclaimer?: string;
+  twoFactorRequired?: boolean;
 }
 
 export interface MeResponse {
   user: AuthUser;
   legalAccepted: boolean;
   disclaimer?: string;
+}
+
+export interface TwoFactorSetupResponse {
+  secret: string;
+  otpauthUrl: string;
+}
+
+export interface TwoFactorConfirmResponse {
+  user: AuthUser;
+  recoveryCodes: string[];
+}
+
+export interface TwoFactorVerifyResponse {
+  token: string;
+  user: AuthUser;
+  legalAccepted: boolean;
+  recoveryUsed?: boolean;
+}
+
+export interface TwoFactorRegenerateResponse {
+  recoveryCodes: string[];
 }
 
 export interface UserSummary extends AuthUser {}

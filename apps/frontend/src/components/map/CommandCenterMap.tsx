@@ -16,8 +16,8 @@ import {
 } from 'react-leaflet';
 import 'leaflet.heat';
 
+import type { Geofence, GeofenceVertex } from '../../api/types';
 import type { AlertColorConfig } from '../../constants/alert-colors';
-import type { Geofence, GeofenceVertex } from '../../stores/geofence-store';
 import type { NodeHistoryPoint, NodeSummary } from '../../stores/node-store';
 import { canonicalNodeId } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
@@ -362,7 +362,7 @@ export function CommandCenterMap({
         if (geofence.polygon.length < 3) {
           return null;
         }
-        const positions = geofence.polygon.map((vertex) => [
+        const positions = geofence.polygon.map((vertex: GeofenceVertex) => [
           vertex.lat,
           vertex.lon,
         ]) as LatLngTuple[];

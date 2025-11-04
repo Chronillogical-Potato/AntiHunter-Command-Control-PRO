@@ -5,6 +5,7 @@ export interface AuthTokenPayload {
   email: string;
   role: Role;
   legalAccepted: boolean;
+  twoFactorPending?: boolean;
   iat: number;
   exp: number;
   tokenVersion?: number;

@@ -77,6 +77,16 @@ export default () => ({
       : 4,
     appUrl: process.env.APP_URL ?? 'http://localhost:5173',
   },
+  auth: {
+    jwtSecret: process.env.JWT_SECRET,
+    jwtExpiry: process.env.JWT_EXPIRY ?? '12h',
+    twoFactor: {
+      issuer: process.env.TWO_FACTOR_ISSUER ?? 'AntiHunter Command Center',
+      tokenExpiry: process.env.TWO_FACTOR_TOKEN_EXPIRY ?? '10m',
+      window: Number(process.env.TWO_FACTOR_WINDOW ?? 1),
+      secretKeyConfigured: Boolean(process.env.TWO_FACTOR_SECRET_KEY),
+    },
+  },
   tak: {
     enabled: process.env.TAK_ENABLED === 'true',
     protocol: process.env.TAK_PROTOCOL ?? 'UDP',

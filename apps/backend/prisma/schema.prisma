@@ -19,6 +19,11 @@ model User {
   phone        String?
   jobTitle     String?
   isActive     Boolean       @default(true)
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  twoFactorTempSecret String?
+  twoFactorRecoveryCodes String[] @default([])
+  twoFactorEnabledAt DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -36,6 +41,39 @@ enum Role {
   OPERATOR
   ANALYST
   VIEWER
+}
+
+enum AlarmLevel {
+  INFO
+  NOTICE
+  ALERT
+  CRITICAL
+}
+
+enum FirewallPolicy {
+  ALLOW
+  DENY
+}
+
+enum FirewallGeoMode {
+  DISABLED
+  ALLOW_LIST
+  BLOCK_LIST
+}
+
+enum FirewallRuleType {
+  ALLOW
+  BLOCK
+  TEMP_BLOCK
+}
+
+enum FirewallLogOutcome {
+  ALLOWED
+  BLOCKED
+  GEO_BLOCK
+  DEFAULT_DENY
+  AUTH_FAILURE
+  AUTH_SUCCESS
 }
 
 model AppConfig {
@@ -223,6 +261,29 @@ model CommandLog {
   @@index([target])
 }
 
+model Geofence {
+  id                String      @id @default(cuid())
+  siteId            String?
+  originSiteId      String?
+  name              String
+  description       String?
+  color             String      @default("#1d4ed8")
+  polygon           Json
+  alarmEnabled      Boolean     @default(true)
+  alarmLevel        AlarmLevel  @default(ALERT)
+  alarmMessage      String      @default("{entity} entered geofence {geofence}")
+  alarmTriggerOnExit Boolean    @default(false)
+  createdBy         String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  site              Site?       @relation(fields: [siteId], references: [id])
+
+  @@index([siteId])
+  @@index([originSiteId])
+  @@index([updatedAt])
+}
+
 enum CommandStatus {
   PENDING
   SENT
@@ -329,12 +390,14 @@ model Site {
   mqtt      MqttConfig?
   nodes     Node[]
   targets   Target[]
+  geofences Geofence[]
   devices   InventoryDevice[]
   commandLogs CommandLog[]
   originCommandLogs CommandLog[] @relation("CommandOriginSite")
   audits    AuditLog[]
   templates CommandTemplate[]
   userAccess UserSiteAccess[]
+  firewallLogs FirewallLog[]
 }
 
 model SerialConfig {
@@ -427,6 +490,57 @@ model TakConfig {
   streamAlertCritical  Boolean @default(true)
   lastConnected DateTime?
   updatedAt     DateTime     @updatedAt
+}
+
+model FirewallConfig {
+  id                 Int             @id @default(1)
+  enabled            Boolean         @default(true)
+  defaultPolicy      FirewallPolicy  @default(ALLOW)
+  geoMode            FirewallGeoMode @default(DISABLED)
+  allowedCountries   String[]        @default([])
+  blockedCountries   String[]        @default([])
+  failThreshold      Int             @default(5)
+  failWindowSeconds  Int             @default(900)
+  banDurationSeconds Int             @default(3600)
+  updatedAt          DateTime        @updatedAt
+}
+
+model FirewallRule {
+  id        String           @id @default(cuid())
+  ip        String
+  type      FirewallRuleType
+  reason    String?
+  expiresAt DateTime?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ip])
+}
+
+model FirewallLog {
+  id        String            @id @default(cuid())
+  ip        String
+  country   String?
+  path      String            @default("*")
+  method    String            @default("UNKNOWN")
+  outcome   FirewallLogOutcome
+  ruleId    String?
+  attempts  Int               @default(1)
+  firstSeen DateTime          @default(now())
+  lastSeen  DateTime          @default(now())
+  blocked   Boolean           @default(false)
+  reason    String?
+  siteId    String?
+  userAgent String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  site      Site?             @relation(fields: [siteId], references: [id])
+
+  @@index([ip])
+  @@index([outcome])
+  @@unique([ip, outcome, path])
 }
 
 model UserPermission {

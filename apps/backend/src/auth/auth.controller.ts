@@ -13,21 +13,8 @@ export class AuthController {
 
   @Post('login')
   @Public()
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto.email, dto.password);
-  }
-
-  @Post('legal-ack')
-  @AllowLegalPending()
-  async acknowledgeLegal(@Req() req: Request, @Body() dto: LegalAckDto) {
-    if (!dto.accepted) {
-      throw new BadRequestException('LEGAL_ACK_REQUIRED');
-    }
-    const userId = req.auth?.sub;
-    if (!userId) {
-      throw new BadRequestException('Missing authentication context');
-    }
-    return this.authService.acknowledgeLegal(userId);
+  async login(@Body() dto: LoginDto, @Req() req: Request) {
+    return this.authService.login(dto.email, dto.password, req);
   }
 
   @Get('me')
@@ -38,10 +25,25 @@ export class AuthController {
       throw new BadRequestException('Missing authentication context');
     }
     const user = await this.authService.getUserById(userId);
+    const legalAccepted = user.legalAccepted;
+
     return {
       user,
-      legalAccepted: user.legalAccepted,
-      disclaimer: user.legalAccepted ? undefined : LEGAL_DISCLAIMER,
+      legalAccepted,
+      disclaimer: legalAccepted ? undefined : LEGAL_DISCLAIMER,
     };
+  }
+
+  @Post('legal-ack')
+  @AllowLegalPending()
+  async acknowledge(@Req() req: Request, @Body() dto: LegalAckDto) {
+    if (!dto.accepted) {
+      throw new BadRequestException('Acknowledgement is required to continue');
+    }
+    const userId = req.auth?.sub;
+    if (!userId) {
+      throw new BadRequestException('Missing authentication context');
+    }
+    return this.authService.acknowledgeLegal(userId);
   }
 }

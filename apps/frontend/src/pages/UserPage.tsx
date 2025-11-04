@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toDataURL } from 'qrcode';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { apiClient } from '../api/client';
@@ -8,6 +9,9 @@ import type {
   FeatureFlagDefinition,
   SiteAccessLevel,
   SiteSummary,
+  TwoFactorConfirmResponse,
+  TwoFactorRegenerateResponse,
+  TwoFactorSetupResponse,
   UserDetail,
   UserRole,
   UserSiteAccessGrant,
@@ -59,6 +63,12 @@ interface UpdateUserDtoPayload {
   password?: string;
 }
 
+interface TwoFactorSetupState {
+  secret: string;
+  otpauthUrl: string;
+  qrDataUrl: string | null;
+}
+
 const LANGUAGE_OPTIONS = [
   { value: 'en', label: 'English' },
   { value: 'no', label: 'Norwegian' },
@@ -84,6 +94,13 @@ export function UserPage() {
         ? meQuery.error.message
         : 'Unable to load profile. Please try again.'
       : null;
+  const [twoFactorSetup, setTwoFactorSetup] = useState<TwoFactorSetupState | null>(null);
+  const [twoFactorCodeInput, setTwoFactorCodeInput] = useState('');
+  const [twoFactorRecoveryCodes, setTwoFactorRecoveryCodes] = useState<string[] | null>(null);
+  const [twoFactorMessage, setTwoFactorMessage] = useState<string | null>(null);
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+  const [disableTwoFactorForm, setDisableTwoFactorForm] = useState({ code: '', password: '' });
+  const [regenerateCode, setRegenerateCode] = useState('');
 
   useEffect(() => {
     if (meQuery.data && (!authUser || authUser.id !== meQuery.data.id)) {
@@ -118,6 +135,16 @@ export function UserPage() {
     setTheme(prefersDark ? 'dark' : 'light');
   }, [profileForm?.theme, setTheme]);
 
+  useEffect(() => {
+    if (!authUser?.twoFactorEnabled) {
+      setTwoFactorSetup(null);
+      setTwoFactorCodeInput('');
+      setTwoFactorRecoveryCodes(null);
+      setDisableTwoFactorForm({ code: '', password: '' });
+      setRegenerateCode('');
+    }
+  }, [authUser?.twoFactorEnabled]);
+
   const updateProfileMutation = useMutation({
     mutationFn: (payload: Partial<ProfileFormState>) =>
       apiClient.put<AuthUser>('/users/me', payload),
@@ -143,6 +170,124 @@ export function UserPage() {
       setProfileMessage(message);
     },
   });
+
+  const setupTwoFactorMutation = useMutation<TwoFactorSetupResponse, unknown, void>({
+    mutationFn: () => apiClient.post<TwoFactorSetupResponse>('/auth/2fa/setup'),
+    onMutate: () => {
+      setTwoFactorMessage(null);
+      setTwoFactorError(null);
+    },
+    onSuccess: async (data) => {
+      setTwoFactorSetup({ secret: data.secret, otpauthUrl: data.otpauthUrl, qrDataUrl: null });
+      setTwoFactorCodeInput('');
+      setTwoFactorRecoveryCodes(null);
+      setTwoFactorMessage(
+        'Scan the QR code with Google Authenticator (or any TOTP app) and enter the current code to confirm.',
+      );
+      try {
+        const qr = await toDataURL(data.otpauthUrl, { margin: 1, width: 256 });
+        setTwoFactorSetup((prev) => (prev ? { ...prev, qrDataUrl: qr } : prev));
+      } catch (error) {
+        setTwoFactorError(
+          error instanceof Error
+            ? `QR code rendering failed: ${error.message}. Use the manual key instead.`
+            : 'QR code rendering failed. Use the manual key instead.',
+        );
+      }
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to start two-factor setup. Please try again.';
+      setTwoFactorError(message);
+    },
+  });
+
+  const confirmTwoFactorMutation = useMutation<TwoFactorConfirmResponse, unknown, string>({
+    mutationFn: (code) => apiClient.post<TwoFactorConfirmResponse>('/auth/2fa/confirm', { code }),
+    onMutate: () => {
+      setTwoFactorError(null);
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(['users', 'me'], result.user);
+      setAuthUser(result.user);
+      setTwoFactorSetup(null);
+      setTwoFactorRecoveryCodes(result.recoveryCodes);
+      setTwoFactorCodeInput('');
+      setTwoFactorMessage(
+        'Two-factor authentication is enabled. Store the recovery codes securely - they will not be shown again.',
+      );
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : 'Unable to confirm two-factor code. Please retry.';
+      setTwoFactorError(message);
+    },
+  });
+
+  const disableTwoFactorMutation = useMutation<
+    { user: AuthUser },
+    unknown,
+    { code?: string; password?: string }
+  >({
+    mutationFn: (payload) => apiClient.post<{ user: AuthUser }>('/auth/2fa/disable', payload),
+    onMutate: () => {
+      setTwoFactorError(null);
+      setTwoFactorMessage(null);
+    },
+    onSuccess: (result) => {
+      queryClient.setQueryData(['users', 'me'], result.user);
+      setAuthUser(result.user);
+      setDisableTwoFactorForm({ code: '', password: '' });
+      setTwoFactorRecoveryCodes(null);
+      setTwoFactorSetup(null);
+      setTwoFactorCodeInput('');
+      setTwoFactorMessage('Two-factor authentication disabled.');
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : 'Unable to disable two-factor authentication.';
+      setTwoFactorError(message);
+    },
+  });
+
+  const regenerateCodesMutation = useMutation<TwoFactorRegenerateResponse, unknown, string>({
+    mutationFn: (code) =>
+      apiClient.post<TwoFactorRegenerateResponse>('/auth/2fa/recovery/regenerate', { code }),
+    onMutate: () => {
+      setTwoFactorError(null);
+      setTwoFactorMessage(null);
+    },
+    onSuccess: (data) => {
+      setTwoFactorRecoveryCodes(data.recoveryCodes);
+      setRegenerateCode('');
+      setTwoFactorMessage(
+        'Generated a new set of recovery codes. The previous codes are no longer valid.',
+      );
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : 'Unable to regenerate recovery codes right now.';
+      setTwoFactorError(message);
+    },
+  });
+
+  const formatTwoFactorTimestamp = (value?: string | null) => {
+    if (!value) {
+      return null;
+    }
+    try {
+      return new Date(value).toLocaleString();
+    } catch (error) {
+      return value;
+    }
+  };
+
+  const twoFactorEnabledAtLabel = formatTwoFactorTimestamp(authUser?.twoFactorEnabledAt);
+  const twoFactorStatusLabel = authUser?.twoFactorEnabled
+    ? `Enabled${twoFactorEnabledAtLabel ? ` since ${twoFactorEnabledAtLabel}` : ''}`
+    : 'Disabled';
 
   const handleProfileSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -293,6 +438,234 @@ export function UserPage() {
             </div>
           </form>
         ) : null}
+      </section>
+
+      <section className="panel account-security">
+        <header className="panel__header">
+          <div>
+            <h2 className="panel__title">Two-Factor Authentication</h2>
+            <p className="panel__subtitle">
+              Add a second verification step with Google Authenticator or any compatible TOTP app.
+            </p>
+          </div>
+        </header>
+
+        <div className="twofactor-status">
+          <strong>Status:</strong> {twoFactorStatusLabel}
+        </div>
+
+        {twoFactorError ? (
+          <div className="form-feedback form-feedback--error">{twoFactorError}</div>
+        ) : null}
+        {twoFactorMessage ? <div className="form-feedback">{twoFactorMessage}</div> : null}
+
+        {!authUser?.twoFactorEnabled ? (
+          <>
+            <p className="twofactor-copy">
+              Use an authenticator app to generate six digit codes when you sign in. You will also
+              receive a one time set of recovery codes.
+            </p>
+            {twoFactorSetup ? (
+              <div className="twofactor-setup">
+                <div className="twofactor-qr">
+                  {twoFactorSetup.qrDataUrl ? (
+                    <img src={twoFactorSetup.qrDataUrl} alt="Authenticator QR code" />
+                  ) : (
+                    <span>Generating QR code...</span>
+                  )}
+                </div>
+                <div className="twofactor-details">
+                  <p className="twofactor-hint">
+                    If you cannot scan the QR code, enter this key manually in your authenticator:
+                  </p>
+                  <div className="twofactor-secret">{twoFactorSetup.secret}</div>
+                  <form
+                    className="form-grid twofactor-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!twoFactorCodeInput.trim()) {
+                        return;
+                      }
+                      confirmTwoFactorMutation.mutate(twoFactorCodeInput.trim());
+                    }}
+                  >
+                    <label>
+                      <span>Authenticator Code</span>
+                      <input
+                        className="control-input"
+                        type="text"
+                        inputMode="text"
+                        autoComplete="one-time-code"
+                        value={twoFactorCodeInput}
+                        onChange={(event) => setTwoFactorCodeInput(event.target.value)}
+                        placeholder="123456"
+                      />
+                    </label>
+                    <div className="form-row form-row--actions">
+                      <button
+                        type="submit"
+                        className="submit-button"
+                        disabled={
+                          confirmTwoFactorMutation.isPending || twoFactorCodeInput.trim().length < 6
+                        }
+                      >
+                        {confirmTwoFactorMutation.isPending ? 'Confirming...' : 'Confirm Setup'}
+                      </button>
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => {
+                          setTwoFactorSetup(null);
+                          setTwoFactorCodeInput('');
+                          setTwoFactorMessage(null);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                  {twoFactorRecoveryCodes ? (
+                    <div className="twofactor-codes">
+                      {twoFactorRecoveryCodes.map((code) => (
+                        <code key={code}>{code}</code>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="submit-button"
+                onClick={() => setupTwoFactorMutation.mutate()}
+                disabled={setupTwoFactorMutation.isPending}
+              >
+                {setupTwoFactorMutation.isPending ? 'Preparing setup...' : 'Enable Two-Factor'}
+              </button>
+            )}
+            {twoFactorRecoveryCodes && !twoFactorSetup ? (
+              <div className="twofactor-codes">
+                {twoFactorRecoveryCodes.map((code) => (
+                  <code key={code}>{code}</code>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <p className="twofactor-copy">
+              Enter a code from your authenticator whenever you sign in. Keep recovery codes in a
+              safe place for emergencies.
+            </p>
+            {twoFactorRecoveryCodes ? (
+              <div className="twofactor-codes">
+                {twoFactorRecoveryCodes.map((code) => (
+                  <code key={code}>{code}</code>
+                ))}
+              </div>
+            ) : null}
+            <div className="twofactor-section">
+              <h3 className="section-heading">Generate New Recovery Codes</h3>
+              <form
+                className="form-grid twofactor-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!regenerateCode.trim()) {
+                    setTwoFactorError(
+                      'Enter a current authenticator code to regenerate recovery codes.',
+                    );
+                    return;
+                  }
+                  regenerateCodesMutation.mutate(regenerateCode.trim());
+                }}
+              >
+                <label>
+                  <span>Authenticator Code</span>
+                  <input
+                    className="control-input"
+                    type="text"
+                    inputMode="text"
+                    autoComplete="one-time-code"
+                    value={regenerateCode}
+                    onChange={(event) => setRegenerateCode(event.target.value)}
+                    placeholder="123456"
+                  />
+                </label>
+                <div className="form-row form-row--actions">
+                  <button
+                    type="submit"
+                    className="submit-button"
+                    disabled={regenerateCodesMutation.isPending || regenerateCode.trim().length < 6}
+                  >
+                    {regenerateCodesMutation.isPending ? 'Generating...' : 'Generate Codes'}
+                  </button>
+                </div>
+              </form>
+              <p className="twofactor-hint">
+                Generating a new set immediately revokes any previous recovery codes.
+              </p>
+            </div>
+            <div className="twofactor-section">
+              <h3 className="section-heading">Disable Two-Factor</h3>
+              <form
+                className="form-grid twofactor-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const code = disableTwoFactorForm.code.trim();
+                  const password = disableTwoFactorForm.password.trim();
+                  if (!code && !password) {
+                    setTwoFactorError(
+                      'Provide either a current authenticator code or your password to disable two-factor authentication.',
+                    );
+                    return;
+                  }
+                  disableTwoFactorMutation.mutate({
+                    code: code || undefined,
+                    password: password || undefined,
+                  });
+                }}
+              >
+                <label>
+                  <span>Authenticator Code (optional)</span>
+                  <input
+                    className="control-input"
+                    type="text"
+                    inputMode="text"
+                    value={disableTwoFactorForm.code}
+                    onChange={(event) =>
+                      setDisableTwoFactorForm((prev) => ({ ...prev, code: event.target.value }))
+                    }
+                    placeholder="123456"
+                  />
+                </label>
+                <label>
+                  <span>Password (optional)</span>
+                  <input
+                    className="control-input"
+                    type="password"
+                    autoComplete="current-password"
+                    value={disableTwoFactorForm.password}
+                    onChange={(event) =>
+                      setDisableTwoFactorForm((prev) => ({
+                        ...prev,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <div className="form-row form-row--actions">
+                  <button
+                    type="submit"
+                    className="control-chip control-chip--danger"
+                    disabled={disableTwoFactorMutation.isPending}
+                  >
+                    {disableTwoFactorMutation.isPending ? 'Disabling...' : 'Disable Two-Factor'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </>
+        )}
       </section>
 
       {canManageUsers ? <AdminUserManagement /> : null}
@@ -999,11 +1372,11 @@ function AdminUserManagement() {
                   }
                 }}
               >
-                {updatePermissionsMutation.isPending ? 'Saving…' : 'Save Permissions'}
+                {updatePermissionsMutation.isPending ? 'Saving...' : 'Save Permissions'}
               </button>
             </div>
             {featureFlagsQuery.isLoading ? (
-              <div>Loading feature definitions…</div>
+              <div>Loading feature definitions...</div>
             ) : featureFlags.length === 0 ? (
               <div>No feature flags configured.</div>
             ) : (
@@ -1044,7 +1417,7 @@ function AdminUserManagement() {
                   }
                 }}
               >
-                {updateSiteAccessMutation.isPending ? 'Saving…' : 'Save Site Access'}
+                {updateSiteAccessMutation.isPending ? 'Saving...' : 'Save Site Access'}
               </button>
             </div>
             {siteDraft.length === 0 ? (
@@ -1141,7 +1514,7 @@ function AdminUserManagement() {
                 }}
                 disabled={sendResetMutation.isPending}
               >
-                {sendResetMutation.isPending ? 'Sending…' : 'Send Password Reset'}
+                {sendResetMutation.isPending ? 'Sending...' : 'Send Password Reset'}
               </button>
             </div>
             {resetMessage ? <div className="form-feedback">{resetMessage}</div> : null}
@@ -1167,7 +1540,7 @@ function AdminUserManagement() {
           <div className="admin-section">
             <h4>Recent Audit</h4>
             {auditQuery.isLoading ? (
-              <div>Loading audit history…</div>
+              <div>Loading audit history...</div>
             ) : auditEntries.length === 0 ? (
               <div>No recent audit entries.</div>
             ) : (
@@ -1298,7 +1671,7 @@ function AdminUserManagement() {
               className="submit-button"
               disabled={createInvitationMutation.isPending}
             >
-              {createInvitationMutation.isPending ? 'Sending…' : 'Send Invitation'}
+              {createInvitationMutation.isPending ? 'Sending...' : 'Send Invitation'}
             </button>
             {inviteMessage ? <span className="form-feedback">{inviteMessage}</span> : null}
           </div>

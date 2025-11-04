@@ -1,31 +1,15 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 import type { NodeSummary } from './node-store';
-import type { AlarmLevel } from '../api/types';
-
-export interface GeofenceVertex {
-  lat: number;
-  lon: number;
-}
-
-export interface GeofenceAlarmConfig {
-  enabled: boolean;
-  level: AlarmLevel;
-  message: string;
-  triggerOnExit?: boolean;
-}
-
-export interface Geofence {
-  id: string;
-  name: string;
-  description?: string | null;
-  color: string;
-  createdAt: string;
-  updatedAt: string;
-  polygon: GeofenceVertex[];
-  alarm: GeofenceAlarmConfig;
-}
+import { apiClient } from '../api/client';
+import type {
+  AlarmLevel,
+  CreateGeofenceRequest,
+  Geofence,
+  GeofenceAlarmConfig,
+  GeofenceVertex,
+  UpdateGeofenceRequest,
+} from '../api/types';
 
 export interface GeofenceEvent {
   geofenceId: string;
@@ -42,7 +26,7 @@ export interface GeofenceEvent {
 
 type GeofenceStateMap = Record<string, Record<string, boolean>>;
 
-type GeofenceUpdate = Partial<Omit<Geofence, 'id' | 'alarm' | 'polygon'>> & {
+export type GeofenceUpdate = Partial<Omit<Geofence, 'alarm' | 'polygon' | 'site'>> & {
   polygon?: GeofenceVertex[];
   alarm?: Partial<GeofenceAlarmConfig>;
 };
@@ -51,16 +35,13 @@ interface GeofenceStoreState {
   geofences: Geofence[];
   states: GeofenceStateMap;
   highlighted: Record<string, number>;
-  addGeofence: (geofence: {
-    id?: string;
-    name: string;
-    description?: string | null;
-    color?: string;
-    polygon: GeofenceVertex[];
-    alarm: GeofenceAlarmConfig;
-  }) => Geofence;
+  setGeofences: (geofences: Geofence[]) => void;
+  upsertGeofence: (geofence: Geofence) => void;
+  removeGeofence: (id: string) => void;
+  loadGeofences: () => Promise<void>;
+  addGeofence: (input: CreateGeofenceRequest) => Promise<Geofence>;
   updateGeofence: (id: string, update: GeofenceUpdate) => void;
-  deleteGeofence: (id: string) => void;
+  deleteGeofence: (id: string) => Promise<void>;
   setAlarmEnabled: (id: string, enabled: boolean) => void;
   processNodePosition: (node: NodeSummary) => GeofenceEvent[];
   processCoordinateEvent: (input: {
@@ -70,267 +51,372 @@ interface GeofenceStoreState {
     lat: number;
     lon: number;
   }) => GeofenceEvent[];
-  resetStates: (geofenceId: string) => void;
+  resetStates: (geofenceId?: string) => void;
   setHighlighted: (id: string, durationMs: number) => void;
   pruneHighlights: (now?: number) => void;
 }
+
+const PATCH_DEBOUNCE_MS = 400;
+const pendingPatches = new Map<string, UpdateGeofenceRequest>();
+const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const randomColor = () => {
   const palette = ['#1d4ed8', '#9333ea', '#f97316', '#22c55e', '#14b8a6', '#f973a0', '#facc15'];
   return palette[Math.floor(Math.random() * palette.length)];
 };
 
-const generateId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return `gfn-${crypto.randomUUID()}`;
-  }
-  return `gfn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-};
+export const useGeofenceStore = create<GeofenceStoreState>()((set, get) => {
+  const queuePatch = (id: string, update: GeofenceUpdate) => {
+    const patch = mergePatch(pendingPatches.get(id), update);
+    if (!patch || Object.keys(patch).length === 0) {
+      return;
+    }
+    pendingPatches.set(id, patch);
 
-const initialState: Pick<GeofenceStoreState, 'geofences' | 'states' | 'highlighted'> = {
-  geofences: [],
-  states: {},
-  highlighted: {},
-};
+    const existingTimer = pendingTimers.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
 
-export const useGeofenceStore = create<GeofenceStoreState>()(
-  persist(
-    (set, get) => ({
-      ...initialState,
-      addGeofence: (incoming) => {
-        const geofence: Geofence = {
-          id: incoming.id ?? generateId(),
-          name: incoming.name,
-          description: incoming.description ?? null,
-          color: incoming.color ?? randomColor(),
-          polygon: incoming.polygon,
-          alarm: incoming.alarm,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        set((state) => ({
-          geofences: [...state.geofences, geofence],
-        }));
-        return geofence;
-      },
-      updateGeofence: (id, update) =>
-        set((state) => {
-          const geofences = state.geofences.map((geofence) =>
-            geofence.id === id
-              ? {
-                  ...geofence,
-                  ...update,
-                  polygon: update.polygon ?? geofence.polygon,
-                  alarm: update.alarm ? { ...geofence.alarm, ...update.alarm } : geofence.alarm,
-                  updatedAt: new Date().toISOString(),
-                }
-              : geofence,
-          );
-          return { geofences };
-        }),
-      deleteGeofence: (id) =>
-        set((state) => {
-          const geofences = state.geofences.filter((geofence) => geofence.id !== id);
-          const nextStates = { ...state.states };
-          delete nextStates[id];
-          const nextHighlighted = { ...state.highlighted };
-          delete nextHighlighted[id];
-          return { geofences, states: nextStates, highlighted: nextHighlighted };
-        }),
-      setAlarmEnabled: (id, enabled) =>
+    const schedule = typeof window !== 'undefined' ? window.setTimeout : setTimeout;
+    const timer = schedule(async () => {
+      pendingTimers.delete(id);
+      const payload = pendingPatches.get(id);
+      if (!payload || Object.keys(payload).length === 0) {
+        pendingPatches.delete(id);
+        return;
+      }
+      pendingPatches.delete(id);
+      try {
+        const updated = await apiClient.patch<Geofence>(`/geofences/${id}`, payload);
         set((state) => ({
           geofences: state.geofences.map((geofence) =>
-            geofence.id === id
-              ? {
-                  ...geofence,
-                  alarm: {
-                    ...geofence.alarm,
-                    enabled,
-                  },
-                  updatedAt: new Date().toISOString(),
-                }
-              : geofence,
+            geofence.id === updated.id ? updated : geofence,
           ),
-        })),
-      processNodePosition: (node) => {
-        const { geofences, states } = get();
-        if (!node || typeof node.lat !== 'number' || typeof node.lon !== 'number') {
-          return [];
-        }
-        const nodeId = node.id;
-        const lat = node.lat;
-        const lon = node.lon;
-        const nextStates: GeofenceStateMap = { ...states };
-        const events: GeofenceEvent[] = [];
+        }));
+      } catch (error) {
+        console.error('Failed to update geofence', error);
+      }
+    }, PATCH_DEBOUNCE_MS);
 
-        geofences.forEach((geofence) => {
-          if (geofence.polygon.length < 3 || !geofence.alarm.enabled) {
-            return;
-          }
+    pendingTimers.set(id, timer);
+  };
 
-          const inside = pointInPolygon(lat, lon, geofence.polygon);
-          const previous = states[geofence.id]?.[nodeId] ?? false;
+  const clearPending = (id: string) => {
+    pendingPatches.delete(id);
+    const timer = pendingTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      pendingTimers.delete(id);
+    }
+  };
 
-          if (!nextStates[geofence.id]) {
-            nextStates[geofence.id] = {};
-          }
-          nextStates[geofence.id][nodeId] = inside;
-
-          if (inside && !previous) {
-            events.push({
-              geofenceId: geofence.id,
-              geofenceName: geofence.name,
-              entityId: nodeId,
-              entityLabel: node.name ?? nodeId,
-              entityType: 'node',
-              lat,
-              lon,
-              level: geofence.alarm.level,
-              message: geofence.alarm.message?.trim().length
-                ? formatMessage(geofence.alarm.message, {
-                    geofence: geofence.name,
-                    entity: node.name ?? nodeId,
-                    node: node.name ?? nodeId,
-                    type: 'node',
-                    event: 'enter',
-                  })
-                : `${node.name ?? nodeId} entered geofence ${geofence.name}`,
-              transition: 'enter',
-            });
-          } else if (!inside && previous && geofence.alarm.triggerOnExit) {
-            events.push({
-              geofenceId: geofence.id,
-              geofenceName: geofence.name,
-              entityId: nodeId,
-              entityLabel: node.name ?? nodeId,
-              entityType: 'node',
-              lat,
-              lon,
-              level: geofence.alarm.level,
-              message: geofence.alarm.message?.trim().length
-                ? formatMessage(geofence.alarm.message, {
-                    geofence: geofence.name,
-                    entity: node.name ?? nodeId,
-                    node: node.name ?? nodeId,
-                    type: 'node',
-                    event: 'exit',
-                  })
-                : `${node.name ?? nodeId} exited geofence ${geofence.name}`,
-              transition: 'exit',
-            });
+  return {
+    geofences: [],
+    states: {},
+    highlighted: {},
+    setGeofences: (geofences) =>
+      set((state) => {
+        const nextStates = { ...state.states };
+        Object.keys(nextStates).forEach((id) => {
+          if (!geofences.some((geofence) => geofence.id === id)) {
+            delete nextStates[id];
           }
         });
-
-        set({ states: nextStates });
-        return events;
-      },
-      processCoordinateEvent: ({ entityId, entityLabel, entityType, lat, lon }) => {
-        const { geofences, states } = get();
-        const key = entityId;
-        const typeLabel = entityType ?? 'entity';
-        const nextStates: GeofenceStateMap = { ...states };
-        const events: GeofenceEvent[] = [];
-
-        geofences.forEach((geofence) => {
-          if (geofence.polygon.length < 3 || !geofence.alarm.enabled) {
-            return;
-          }
-          const inside = pointInPolygon(lat, lon, geofence.polygon);
-          const previous = states[geofence.id]?.[key] ?? false;
-          if (!nextStates[geofence.id]) {
-            nextStates[geofence.id] = {};
-          }
-          nextStates[geofence.id][key] = inside;
-
-          if (inside && !previous) {
-            events.push({
-              geofenceId: geofence.id,
-              geofenceName: geofence.name,
-              entityId: key,
-              entityLabel,
-              entityType: typeLabel,
-              lat,
-              lon,
-              level: geofence.alarm.level,
-              message: formatMessage(geofence.alarm.message, {
-                geofence: geofence.name,
-                entity: entityLabel,
-                node: entityLabel,
-                type: typeLabel,
-                event: 'enter',
-              }),
-              transition: 'enter',
-            });
-          } else if (!inside && previous && geofence.alarm.triggerOnExit) {
-            events.push({
-              geofenceId: geofence.id,
-              geofenceName: geofence.name,
-              entityId: key,
-              entityLabel,
-              entityType: typeLabel,
-              lat,
-              lon,
-              level: geofence.alarm.level,
-              message: formatMessage(geofence.alarm.message, {
-                geofence: geofence.name,
-                entity: entityLabel,
-                node: entityLabel,
-                type: typeLabel,
-                event: 'exit',
-              }),
-              transition: 'exit',
-            });
-          }
-        });
-
-        set({ states: nextStates });
-        return events;
-      },
-      resetStates: (geofenceId) =>
-        set((state) => {
-          const next = { ...state.states };
-          const highlighted = { ...state.highlighted };
-          if (geofenceId) {
-            delete next[geofenceId];
-            delete highlighted[geofenceId];
-            return { states: next, highlighted };
-          }
-          return { states: {}, highlighted: {} };
-        }),
-      setHighlighted: (id, durationMs) =>
-        set((state) => {
-          if (!id) {
-            return state;
-          }
-          const next = { ...state.highlighted };
-          if (durationMs <= 0) {
-            delete next[id];
-          } else {
-            next[id] = Date.now() + durationMs;
-          }
-          return { highlighted: next };
-        }),
-      pruneHighlights: (now = Date.now()) =>
-        set((state) => {
-          const entries = Object.entries(state.highlighted).filter(([, expires]) => expires > now);
-          if (entries.length === Object.keys(state.highlighted).length) {
-            return state;
-          }
-          const next: Record<string, number> = {};
-          entries.forEach(([key, value]) => {
-            next[key] = value;
-          });
-          return { highlighted: next };
-        }),
-    }),
-    {
-      name: 'command-center.geofences',
-      partialize: (state) => ({
-        geofences: state.geofences,
+        return { geofences, states: nextStates };
       }),
+    upsertGeofence: (geofence) =>
+      set((state) => {
+        const exists = state.geofences.some((item) => item.id === geofence.id);
+        const geofences = exists
+          ? state.geofences.map((item) => (item.id === geofence.id ? geofence : item))
+          : [...state.geofences, geofence];
+        return { geofences };
+      }),
+    removeGeofence: (id) =>
+      set((state) => {
+        clearPending(id);
+        const { [id]: _removed, ...restStates } = state.states;
+        const { [id]: _highlight, ...restHighlights } = state.highlighted;
+        return {
+          geofences: state.geofences.filter((geofence) => geofence.id !== id),
+          states: restStates,
+          highlighted: restHighlights,
+        };
+      }),
+    loadGeofences: async () => {
+      try {
+        const geofences = await apiClient.get<Geofence[]>('/geofences');
+        get().setGeofences(geofences);
+      } catch (error) {
+        console.error('Failed to load geofences', error);
+      }
     },
-  ),
-);
+    addGeofence: async (input) => {
+      const payload: CreateGeofenceRequest = {
+        name: input.name,
+        description: input.description ?? null,
+        color: input.color ?? randomColor(),
+        siteId: input.siteId ?? undefined,
+        polygon: input.polygon.map(normalizeVertex),
+        alarm: {
+          enabled: input.alarm.enabled,
+          level: input.alarm.level,
+          message: input.alarm.message,
+          triggerOnExit: input.alarm.triggerOnExit ?? false,
+        },
+      };
+
+      const geofence = await apiClient.post<Geofence>('/geofences', payload);
+      set((state) => ({
+        geofences: [...state.geofences, geofence],
+      }));
+      return geofence;
+    },
+    updateGeofence: (id, update) => {
+      set((state) => {
+        const nextGeofences = state.geofences.map((geofence) => {
+          if (geofence.id !== id) {
+            return geofence;
+          }
+          const updated: Geofence = {
+            ...geofence,
+            ...('siteId' in update ? { siteId: update.siteId ?? null } : null),
+            ...('name' in update ? { name: update.name ?? geofence.name } : null),
+            ...('description' in update ? { description: update.description ?? null } : null),
+            ...('color' in update ? { color: update.color ?? geofence.color } : null),
+            ...('originSiteId' in update
+              ? { originSiteId: update.originSiteId ?? geofence.originSiteId ?? null }
+              : null),
+            polygon: update.polygon ? update.polygon.map(normalizeVertex) : geofence.polygon,
+            alarm: update.alarm ? { ...geofence.alarm, ...update.alarm } : geofence.alarm,
+            updatedAt: new Date().toISOString(),
+          };
+          return updated;
+        });
+        return { geofences: nextGeofences };
+      });
+
+      queuePatch(id, update);
+    },
+    deleteGeofence: async (id) => {
+      try {
+        await apiClient.delete(`/geofences/${id}`);
+        get().removeGeofence(id);
+      } catch (error) {
+        console.error('Failed to delete geofence', error);
+      }
+    },
+    setAlarmEnabled: (id, enabled) => {
+      get().updateGeofence(id, { alarm: { enabled } });
+    },
+    processNodePosition: (node) => {
+      const events: GeofenceEvent[] = [];
+      const { geofences } = get();
+
+      geofences.forEach((geofence) => {
+        if (geofence.polygon.length < 3 || !geofence.alarm.enabled) {
+          return;
+        }
+
+        const inside = pointInPolygon(node.lat, node.lon, geofence.polygon);
+        const key = canonicalEntityKey(node.id, node.siteId ?? undefined);
+
+        const currentStates = get().states;
+        const prevState = currentStates[geofence.id]?.[key] ?? false;
+
+        const nextStates = { ...currentStates };
+        const geofenceStates = { ...(nextStates[geofence.id] ?? {}) };
+        geofenceStates[key] = inside;
+        nextStates[geofence.id] = geofenceStates;
+        set({ states: nextStates });
+
+        if (inside && !prevState) {
+          events.push({
+            geofenceId: geofence.id,
+            geofenceName: geofence.name,
+            entityId: key,
+            entityLabel: node.name ?? node.id,
+            entityType: 'node',
+            lat: node.lat,
+            lon: node.lon,
+            level: geofence.alarm.level,
+            message: formatMessage(geofence.alarm.message, {
+              geofence: geofence.name,
+              entity: node.name ?? node.id,
+              node: node.name ?? node.id,
+              type: 'node',
+              event: 'enter',
+            }),
+            transition: 'enter',
+          });
+        } else if (!inside && prevState && geofence.alarm.triggerOnExit) {
+          events.push({
+            geofenceId: geofence.id,
+            geofenceName: geofence.name,
+            entityId: key,
+            entityLabel: node.name ?? node.id,
+            entityType: 'node',
+            lat: node.lat,
+            lon: node.lon,
+            level: geofence.alarm.level,
+            message: formatMessage(geofence.alarm.message, {
+              geofence: geofence.name,
+              entity: node.name ?? node.id,
+              node: node.name ?? node.id,
+              type: 'node',
+              event: 'exit',
+            }),
+            transition: 'exit',
+          });
+        }
+      });
+
+      return events;
+    },
+    processCoordinateEvent: ({ entityId, entityLabel, entityType, lat, lon }) => {
+      const events: GeofenceEvent[] = [];
+      const { geofences } = get();
+
+      geofences.forEach((geofence) => {
+        if (geofence.polygon.length < 3 || !geofence.alarm.enabled) {
+          return;
+        }
+
+        const inside = pointInPolygon(lat, lon, geofence.polygon);
+        const key = canonicalEntityKey(entityId, geofence.siteId ?? undefined);
+
+        const currentStates = get().states;
+        const prevState = currentStates[geofence.id]?.[key] ?? false;
+
+        const nextStates = { ...currentStates };
+        const geofenceStates = { ...(nextStates[geofence.id] ?? {}) };
+        geofenceStates[key] = inside;
+        nextStates[geofence.id] = geofenceStates;
+        set({ states: nextStates });
+
+        if (inside && !prevState) {
+          events.push({
+            geofenceId: geofence.id,
+            geofenceName: geofence.name,
+            entityId: key,
+            entityLabel,
+            entityType: entityType ?? 'entity',
+            lat,
+            lon,
+            level: geofence.alarm.level,
+            message: formatMessage(geofence.alarm.message, {
+              geofence: geofence.name,
+              entity: entityLabel,
+              node: entityLabel,
+              type: entityType ?? 'entity',
+              event: 'enter',
+            }),
+            transition: 'enter',
+          });
+        } else if (!inside && prevState && geofence.alarm.triggerOnExit) {
+          events.push({
+            geofenceId: geofence.id,
+            geofenceName: geofence.name,
+            entityId: key,
+            entityLabel,
+            entityType: entityType ?? 'entity',
+            lat,
+            lon,
+            level: geofence.alarm.level,
+            message: formatMessage(geofence.alarm.message, {
+              geofence: geofence.name,
+              entity: entityLabel,
+              node: entityLabel,
+              type: entityType ?? 'entity',
+              event: 'exit',
+            }),
+            transition: 'exit',
+          });
+        }
+      });
+
+      return events;
+    },
+    resetStates: (geofenceId) =>
+      set((state) => {
+        if (geofenceId) {
+          const nextStates = { ...state.states };
+          delete nextStates[geofenceId];
+          const nextHighlights = { ...state.highlighted };
+          delete nextHighlights[geofenceId];
+          return { states: nextStates, highlighted: nextHighlights };
+        }
+        return { states: {}, highlighted: {} };
+      }),
+    setHighlighted: (id, durationMs) =>
+      set((state) => {
+        if (!id) {
+          return state;
+        }
+        const next = { ...state.highlighted };
+        if (durationMs <= 0) {
+          delete next[id];
+        } else {
+          next[id] = Date.now() + durationMs;
+        }
+        return { highlighted: next };
+      }),
+    pruneHighlights: (now = Date.now()) =>
+      set((state) => {
+        const remaining = Object.entries(state.highlighted).filter(([, expires]) => expires > now);
+        if (remaining.length === Object.keys(state.highlighted).length) {
+          return state;
+        }
+        const next: Record<string, number> = {};
+        remaining.forEach(([id, expires]) => {
+          next[id] = expires;
+        });
+        return { highlighted: next };
+      }),
+  };
+});
+
+function mergePatch(
+  existing: UpdateGeofenceRequest | undefined,
+  update: GeofenceUpdate,
+): UpdateGeofenceRequest | undefined {
+  const patch: UpdateGeofenceRequest = existing ? { ...existing } : {};
+
+  if (update.name !== undefined) {
+    patch.name = update.name;
+  }
+  if (update.description !== undefined) {
+    patch.description = update.description ?? null;
+  }
+  if (update.color !== undefined) {
+    patch.color = update.color ?? undefined;
+  }
+  if (update.siteId !== undefined) {
+    patch.siteId = update.siteId ?? null;
+  }
+  if (update.polygon) {
+    patch.polygon = update.polygon.map(normalizeVertex);
+  }
+  if (update.alarm) {
+    patch.alarm = { ...(patch.alarm ?? {}), ...update.alarm };
+  }
+
+  return patch;
+}
+
+function normalizeVertex(vertex: GeofenceVertex): GeofenceVertex {
+  const lat = Number(vertex.lat);
+  const lon = Number(vertex.lon);
+  return {
+    lat: Number.isFinite(lat) ? lat : 0,
+    lon: Number.isFinite(lon) ? lon : 0,
+  };
+}
+
+function canonicalEntityKey(entityId: string, siteId?: string): string {
+  return `${siteId ?? 'default'}::${entityId}`;
+}
 
 function pointInPolygon(lat: number, lon: number, polygon: GeofenceVertex[]): boolean {
   let inside = false;

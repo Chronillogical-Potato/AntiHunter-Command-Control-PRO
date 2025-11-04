@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { apiClient } from '../api/client';
-import type { AuthUser, LoginResponse, MeResponse } from '../api/types';
+import type { AuthUser, LoginResponse, MeResponse, TwoFactorVerifyResponse } from '../api/types';
 import { getAuthToken, registerLogoutListener, storeAuthToken } from '../auth/session';
 
 const DEFAULT_DISCLAIMER = `
@@ -16,21 +16,26 @@ By accessing and using the AntiHunter Command & Control Platform (the "Software"
 By checking the acknowledgement box you certify that you have read, understood, and agree to abide by the terms above. If you do not agree, you must discontinue use immediately.
 `.trim();
 
-type AuthStatus = 'checking' | 'login' | 'legal' | 'authenticated';
+type AuthStatus = 'checking' | 'login' | 'legal' | 'twoFactor' | 'authenticated';
 
 interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
   token: string | null;
   pendingToken: string | null;
+  twoFactorToken: string | null;
+  twoFactorRecoveryUsed: boolean;
   disclaimer: string;
   isSubmitting: boolean;
   error?: string;
+  postLoginNotice?: string | null;
   initialize: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   acceptLegal: () => Promise<void>;
+  verifyTwoFactor: (code: string) => Promise<void>;
   logout: () => void;
   clearError: () => void;
+  clearPostLoginNotice: () => void;
   setUser: (user: AuthUser) => void;
 }
 
@@ -39,12 +44,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   pendingToken: null,
+  twoFactorToken: null,
+  twoFactorRecoveryUsed: false,
   disclaimer: DEFAULT_DISCLAIMER,
   isSubmitting: false,
+  postLoginNotice: null,
   async initialize() {
     const storedToken = getAuthToken();
     if (!storedToken) {
-      set({ status: 'login', token: null, user: null, pendingToken: null });
+      set({
+        status: 'login',
+        token: null,
+        user: null,
+        pendingToken: null,
+        twoFactorToken: null,
+        twoFactorRecoveryUsed: false,
+        postLoginNotice: null,
+      });
       return;
     }
     set({ status: 'checking', token: storedToken, isSubmitting: true });
@@ -68,6 +84,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: response.user,
         token: storedToken,
         pendingToken: null,
+        twoFactorToken: null,
+        twoFactorRecoveryUsed: false,
+        postLoginNotice: null,
         disclaimer: DEFAULT_DISCLAIMER,
         isSubmitting: false,
       });
@@ -78,6 +97,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: null,
         token: null,
         pendingToken: null,
+        twoFactorToken: null,
+        twoFactorRecoveryUsed: false,
+        postLoginNotice: null,
         isSubmitting: false,
       });
     }
@@ -91,6 +113,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         { skipAuth: true },
       );
 
+      if (response.twoFactorRequired) {
+        set({
+          status: 'twoFactor',
+          token: null,
+          user: response.user,
+          pendingToken: null,
+          twoFactorToken: response.token,
+          twoFactorRecoveryUsed: false,
+          disclaimer: DEFAULT_DISCLAIMER,
+          isSubmitting: false,
+          error: undefined,
+        });
+        storeAuthToken(null);
+        return;
+      }
+
       if (response.legalAccepted) {
         storeAuthToken(response.token);
         set({
@@ -98,6 +136,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           token: response.token,
           user: response.user,
           pendingToken: null,
+          twoFactorToken: null,
+          twoFactorRecoveryUsed: false,
+          postLoginNotice: null,
           disclaimer: DEFAULT_DISCLAIMER,
           isSubmitting: false,
         });
@@ -106,6 +147,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           status: 'legal',
           user: response.user,
           pendingToken: response.token,
+          twoFactorToken: null,
+          twoFactorRecoveryUsed: false,
           token: null,
           disclaimer: response.disclaimer ?? DEFAULT_DISCLAIMER,
           isSubmitting: false,
@@ -129,17 +172,68 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         { accepted: true },
         { skipAuth: true, tokenOverride: pendingToken },
       );
+      if (response.twoFactorRequired) {
+        set({
+          status: 'twoFactor',
+          user: response.user,
+          token: null,
+          pendingToken: null,
+          twoFactorToken: response.token,
+          twoFactorRecoveryUsed: false,
+          disclaimer: DEFAULT_DISCLAIMER,
+          isSubmitting: false,
+        });
+        storeAuthToken(null);
+        return;
+      }
       storeAuthToken(response.token);
       set({
         status: 'authenticated',
         user: response.user,
         token: response.token,
         pendingToken: null,
+        twoFactorToken: null,
+        twoFactorRecoveryUsed: false,
+        postLoginNotice: null,
         disclaimer: DEFAULT_DISCLAIMER,
         isSubmitting: false,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to confirm acknowledgement';
+      set({ error: message, isSubmitting: false });
+    }
+  },
+  async verifyTwoFactor(code) {
+    const { twoFactorToken } = get();
+    if (!twoFactorToken) {
+      set({ error: 'Two-factor challenge expired. Please sign in again.' });
+      storeAuthToken(null);
+      return;
+    }
+    set({ isSubmitting: true, error: undefined });
+    try {
+      const response = await apiClient.post<TwoFactorVerifyResponse>(
+        '/auth/2fa/verify',
+        { code },
+        { skipAuth: true, tokenOverride: twoFactorToken },
+      );
+      storeAuthToken(response.token);
+      set({
+        status: 'authenticated',
+        user: response.user,
+        token: response.token,
+        pendingToken: null,
+        twoFactorToken: null,
+        twoFactorRecoveryUsed: !!response.recoveryUsed,
+        disclaimer: DEFAULT_DISCLAIMER,
+        isSubmitting: false,
+        postLoginNotice: response.recoveryUsed
+          ? 'Signed in with a recovery code. Generate new codes from your profile to avoid lockout.'
+          : null,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to verify the two-factor code';
       set({ error: message, isSubmitting: false });
     }
   },
@@ -150,12 +244,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       user: null,
       token: null,
       pendingToken: null,
+      twoFactorToken: null,
+      twoFactorRecoveryUsed: false,
+      postLoginNotice: null,
       error: undefined,
       isSubmitting: false,
     });
   },
   clearError() {
     set({ error: undefined });
+  },
+  clearPostLoginNotice() {
+    set({ postLoginNotice: null });
   },
   setUser(user) {
     set({ user });

@@ -16,13 +16,13 @@ import {
 } from 'react-icons/md';
 
 import { apiClient } from '../api/client';
-import type { AlarmLevel, AppSettings, Target } from '../api/types';
+import type { AlarmLevel, AppSettings, GeofenceVertex, SiteSummary, Target } from '../api/types';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
 import { extractAlertColors } from '../constants/alert-colors';
 import type { AlertColorConfig } from '../constants/alert-colors';
 import { useAlertStore } from '../stores/alert-store';
 import { useAuthStore } from '../stores/auth-store';
-import { GeofenceVertex, useGeofenceStore } from '../stores/geofence-store';
+import { useGeofenceStore } from '../stores/geofence-store';
 import { useMapCommandStore } from '../stores/map-command-store';
 import { useMapPreferences } from '../stores/map-store';
 import { type SavedMapView, useMapViewsStore } from '../stores/map-views-store';
@@ -60,6 +60,7 @@ export function MapPage() {
   const removeView = useMapViewsStore((state) => state.removeView);
 
   const [newViewName, setNewViewName] = useState('');
+  const [selectedSiteId, setSelectedSiteId] = useState<string>('');
 
   const authStatus = useAuthStore((state) => state.status);
   const isAuthenticated = authStatus === 'authenticated';
@@ -71,11 +72,26 @@ export function MapPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const sitesQuery = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => apiClient.get<SiteSummary[]>('/sites'),
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const geofences = useGeofenceStore((state) => state.geofences);
   const addGeofence = useGeofenceStore((state) => state.addGeofence);
+  const loadGeofences = useGeofenceStore((state) => state.loadGeofences);
   const geofenceHighlights = useGeofenceStore((state) => state.highlighted);
   const pruneGeofenceHighlights = useGeofenceStore((state) => state.pruneHighlights);
   const setGeofenceHighlighted = useGeofenceStore((state) => state.setHighlighted);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    void loadGeofences();
+  }, [isAuthenticated, loadGeofences]);
 
   const targetMarkers = useMemo<TargetMarker[]>(() => {
     if (!targetsQuery.data) {
@@ -319,7 +335,7 @@ export function MapPage() {
     setHoverVertex(vertex);
   };
 
-  const handleSaveGeofence = () => {
+  const handleSaveGeofence = async () => {
     if (draftVertices.length < 3) {
       alert('Draw at least three points to create a geofence.');
       return;
@@ -337,26 +353,37 @@ export function MapPage() {
     const alarmLevel = window.prompt('Alarm level (INFO, NOTICE, ALERT, CRITICAL)', 'ALERT');
     const level = normalizeAlarmLevel(alarmLevel);
 
-    const geofence = addGeofence({
-      name,
-      description: null,
-      polygon: draftVertices,
-      alarm: {
-        enabled: true,
-        level,
-        message,
-        triggerOnExit: false,
-      },
-    });
+    try {
+      const geofence = await addGeofence({
+        name,
+        description: null,
+        siteId: selectedSiteId || undefined,
+        polygon: draftVertices,
+        alarm: {
+          enabled: true,
+          level,
+          message,
+          triggerOnExit: false,
+        },
+      });
 
-    const center = calculatePolygonCentroid(draftVertices);
-    goto({ lat: center.lat, lon: center.lon, zoom: Math.max(mapRef.current?.getZoom() ?? 13, 15) });
+      const center = calculatePolygonCentroid(draftVertices);
+      goto({
+        lat: center.lat,
+        lon: center.lon,
+        zoom: Math.max(mapRef.current?.getZoom() ?? 13, 15),
+      });
 
-    cancelGeofenceDrawing();
+      cancelGeofenceDrawing();
+      setGeofenceHighlighted(geofence.id, GEOFENCE_HIGHLIGHT_MS);
 
-    window.setTimeout(() => {
-      alert(`Geofence "${geofence.name}" created.`);
-    }, 10);
+      window.setTimeout(() => {
+        alert(`Geofence "${geofence.name}" created.`);
+      }, 10);
+    } catch (error) {
+      console.error('Failed to create geofence', error);
+      alert('Failed to create geofence. Please try again.');
+    }
   };
 
   return (
@@ -486,6 +513,23 @@ export function MapPage() {
           )}
         </section>
         <div className="map-footer__actions">
+          <div className="geofence-site-select">
+            <label>
+              Site
+              <select
+                className="control-input"
+                value={selectedSiteId}
+                onChange={(event) => setSelectedSiteId(event.target.value)}
+              >
+                <option value="">Local site</option>
+                {sitesQuery.data?.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name ?? site.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button
             type="button"
             className="submit-button"

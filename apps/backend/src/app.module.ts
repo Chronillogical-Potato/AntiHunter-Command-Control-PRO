@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 
@@ -24,6 +24,9 @@ import { TakModule } from './tak/tak.module';
 import { TargetsModule } from './targets/targets.module';
 import { UsersModule } from './users/users.module';
 import { WsModule } from './ws/ws.module';
+import { GeofencesModule } from './geofences/geofences.module';
+import { FirewallModule } from './firewall/firewall.module';
+import { FirewallMiddleware } from './firewall/firewall.middleware';
 
 @Module({
   imports: [
@@ -75,6 +78,8 @@ import { WsModule } from './ws/ws.module';
     SitesModule,
     TakModule,
     TargetsModule,
+    GeofencesModule,
+    FirewallModule,
     OuiModule,
     MqttModule,
     MailModule,
@@ -82,4 +87,8 @@ import { WsModule } from './ws/ws.module';
     ExportsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(FirewallMiddleware).forRoutes('*');
+  }
+}

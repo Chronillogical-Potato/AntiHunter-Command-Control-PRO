@@ -1,20 +1,25 @@
-﻿import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAuthStore } from '../stores/auth-store';
 
 export function AuthOverlay() {
-  const { status, isSubmitting, error, disclaimer } = useAuthStore((state) => ({
+  const { status, isSubmitting, error, disclaimer, postLoginNotice } = useAuthStore((state) => ({
     status: state.status,
     isSubmitting: state.isSubmitting,
     error: state.error,
     disclaimer: state.disclaimer,
+    postLoginNotice: state.postLoginNotice,
   }));
   const login = useAuthStore((state) => state.login);
   const acceptLegal = useAuthStore((state) => state.acceptLegal);
+  const verifyTwoFactor = useAuthStore((state) => state.verifyTwoFactor);
   const clearError = useAuthStore((state) => state.clearError);
+  const logout = useAuthStore((state) => state.logout);
+  const clearPostLoginNotice = useAuthStore((state) => state.clearPostLoginNotice);
 
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('admin');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [ackChecked, setAckChecked] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
 
@@ -22,6 +27,8 @@ export function AuthOverlay() {
 
   const overlayVisible = status !== 'authenticated';
   const showLegalStep = status === 'legal';
+  const showTwoFactorStep = status === 'twoFactor';
+
   useEffect(() => {
     if (showLegalStep) {
       setHasScrolled(false);
@@ -31,6 +38,19 @@ export function AuthOverlay() {
       }
     }
   }, [showLegalStep]);
+
+  useEffect(() => {
+    if (!showTwoFactorStep) {
+      setTwoFactorCode('');
+    }
+  }, [showTwoFactorStep]);
+
+  useEffect(() => {
+    if (status === 'authenticated' && postLoginNotice) {
+      window.alert(postLoginNotice);
+      clearPostLoginNotice();
+    }
+  }, [status, postLoginNotice, clearPostLoginNotice]);
 
   const handleLogin = (event: FormEvent) => {
     event.preventDefault();
@@ -42,6 +62,15 @@ export function AuthOverlay() {
     event.preventDefault();
     clearError();
     void acceptLegal();
+  };
+
+  const handleVerifyTwoFactor = (event: FormEvent) => {
+    event.preventDefault();
+    if (!twoFactorCode.trim()) {
+      return;
+    }
+    clearError();
+    void verifyTwoFactor(twoFactorCode.trim());
   };
 
   const legalReady = useMemo(() => hasScrolled && ackChecked, [hasScrolled, ackChecked]);
@@ -64,7 +93,7 @@ export function AuthOverlay() {
         {error ? <div className="auth-overlay__error">{error}</div> : null}
 
         {status === 'checking' ? (
-          <div className="auth-overlay__loading">Validating session…</div>
+          <div className="auth-overlay__loading">Validating session.</div>
         ) : showLegalStep ? (
           <form onSubmit={handleAccept} className="auth-overlay__form">
             <div
@@ -88,8 +117,45 @@ export function AuthOverlay() {
               <span>I have read and accept the legal agreement above.</span>
             </label>
             <button type="submit" className="submit-button" disabled={!legalReady || isSubmitting}>
-              {isSubmitting ? 'Saving…' : 'Accept and Continue'}
+              {isSubmitting ? 'Saving.' : 'Accept and Continue'}
             </button>
+          </form>
+        ) : showTwoFactorStep ? (
+          <form onSubmit={handleVerifyTwoFactor} className="auth-overlay__form">
+            <p className="auth-overlay__hint">
+              Enter the 6-digit code from your authenticator app or one of your recovery codes.
+              Codes are not case-sensitive.
+            </p>
+            <label>
+              <span>Authenticator or Recovery Code</span>
+              <input
+                type="text"
+                inputMode="text"
+                autoComplete="one-time-code"
+                value={twoFactorCode}
+                onChange={(event) => setTwoFactorCode(event.target.value)}
+                placeholder="123456 or ABCD-EFGH-IJKL-MNOP"
+              />
+            </label>
+            <div className="auth-overlay__actions">
+              <button
+                type="submit"
+                className="submit-button"
+                disabled={isSubmitting || twoFactorCode.trim().length < 6}
+              >
+                {isSubmitting ? 'Verifying.' : 'Verify Code'}
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  clearError();
+                  logout();
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           </form>
         ) : (
           <form onSubmit={handleLogin} className="auth-overlay__form">
@@ -112,7 +178,7 @@ export function AuthOverlay() {
               />
             </label>
             <button type="submit" className="submit-button" disabled={isSubmitting}>
-              {isSubmitting ? 'Signing in…' : 'Sign In'}
+              {isSubmitting ? 'Signing in.' : 'Sign In'}
             </button>
           </form>
         )}

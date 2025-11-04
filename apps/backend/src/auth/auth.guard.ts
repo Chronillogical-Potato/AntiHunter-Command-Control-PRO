@@ -8,7 +8,13 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 
-import { ALLOW_PENDING_KEY, FEATURES_KEY, IS_PUBLIC_KEY, ROLES_KEY } from './auth.decorators';
+import {
+  ALLOW_PENDING_KEY,
+  ALLOW_TWO_FACTOR_PENDING_KEY,
+  FEATURES_KEY,
+  IS_PUBLIC_KEY,
+  ROLES_KEY,
+} from './auth.decorators';
 import { AuthService } from './auth.service';
 
 @Injectable()
@@ -42,6 +48,10 @@ export class AuthGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]);
+      const allowTwoFactorPending = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_TWO_FACTOR_PENDING_KEY,
+        [context.getHandler(), context.getClass()],
+      );
 
       const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
         context.getHandler(),
@@ -64,6 +74,10 @@ export class AuthGuard implements CanActivate {
           throw new ForbiddenException('INSUFFICIENT_FEATURE');
         }
         request.auth.features = featureSet;
+      }
+
+      if (payload.twoFactorPending && !allowTwoFactorPending) {
+        throw new ForbiddenException('TWO_FACTOR_REQUIRED');
       }
 
       if (!payload.legalAccepted && !allowPending) {

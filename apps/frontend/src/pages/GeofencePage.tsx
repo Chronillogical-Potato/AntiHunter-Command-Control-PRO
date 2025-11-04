@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo } from 'react';
+import { ChangeEvent, useEffect, useMemo } from 'react';
 import { MdDelete, MdMyLocation, MdWarningAmber } from 'react-icons/md';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,10 +14,15 @@ export function GeofencePage() {
   const geofences = useGeofenceStore((state) => state.geofences);
   const updateGeofence = useGeofenceStore((state) => state.updateGeofence);
   const deleteGeofence = useGeofenceStore((state) => state.deleteGeofence);
+  const loadGeofences = useGeofenceStore((state) => state.loadGeofences);
   const setAlarmEnabled = useGeofenceStore((state) => state.setAlarmEnabled);
   const resetStates = useGeofenceStore((state) => state.resetStates);
   const setHighlighted = useGeofenceStore((state) => state.setHighlighted);
   const goto = useMapCommandStore((state) => state.goto);
+
+  useEffect(() => {
+    void loadGeofences();
+  }, [loadGeofences]);
 
   const totalArea = useMemo(() => geofences.length, [geofences]);
 
@@ -39,11 +44,11 @@ export function GeofencePage() {
     navigate('/map');
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this geofence? This cannot be undone.')) {
       return;
     }
-    deleteGeofence(id);
+    await deleteGeofence(id);
     resetStates(id);
   };
 
@@ -115,6 +120,7 @@ export function GeofencePage() {
                   />
                   <div className="geofence-meta">
                     <span>{geofence.polygon.length} vertices</span>
+                    <span>Site: {geofence.site?.name ?? geofence.siteId ?? 'Local'}</span>
                     <span>
                       Created{' '}
                       {new Date(geofence.createdAt).toLocaleString(undefined, {

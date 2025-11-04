@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-import type { AlarmLevel, Target } from '../api/types';
+import type { AlarmLevel, Geofence, Target } from '../api/types';
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
@@ -31,6 +31,9 @@ export function SocketBridge() {
     const handleInit = (payload: unknown) => {
       if (isInitPayload(payload)) {
         setInitialNodes(payload.nodes);
+        if (Array.isArray(payload.geofences)) {
+          useGeofenceStore.getState().setGeofences(payload.geofences);
+        }
       }
     };
 
@@ -203,16 +206,37 @@ export function SocketBridge() {
       }
     };
 
+    const handleGeofenceUpsert = (payload: unknown) => {
+      if (payload && typeof payload === 'object' && 'id' in payload) {
+        useGeofenceStore.getState().upsertGeofence(payload as Geofence);
+      }
+    };
+
+    const handleGeofenceDelete = (payload: unknown) => {
+      if (payload && typeof payload === 'object' && 'id' in payload) {
+        const geofence = payload as { id?: string };
+        if (typeof geofence.id === 'string') {
+          const store = useGeofenceStore.getState();
+          store.removeGeofence(geofence.id);
+          store.resetStates(geofence.id);
+        }
+      }
+    };
+
     socket.on('init', handleInit);
     socket.on('nodes', handleNodeDiff);
     socket.on('event', handleEvent);
     socket.on('command.update', handleCommandUpdate);
+    socket.on('geofences.upsert', handleGeofenceUpsert);
+    socket.on('geofences.delete', handleGeofenceDelete);
 
     return () => {
       socket.off('init', handleInit);
       socket.off('nodes', handleNodeDiff);
       socket.off('event', handleEvent);
       socket.off('command.update', handleCommandUpdate);
+      socket.off('geofences.upsert', handleGeofenceUpsert);
+      socket.off('geofences.delete', handleGeofenceDelete);
     };
   }, [socket, setInitialNodes, applyDiff, addEntry, play, triggerAlert, queryClient]);
 
@@ -231,6 +255,7 @@ export function SocketBridge() {
 
 interface InitPayload {
   nodes: NodeSummary[];
+  geofences?: Geofence[];
 }
 
 function isInitPayload(payload: unknown): payload is InitPayload {

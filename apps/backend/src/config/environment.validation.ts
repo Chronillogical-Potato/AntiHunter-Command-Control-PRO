@@ -90,6 +90,16 @@ const envSchema = z.object({
     .optional()
     .transform((val) => (val ? Number(val) : undefined))
     .pipe(z.number().int().positive().optional()),
+  JWT_SECRET: z.string().optional(),
+  JWT_EXPIRY: z.string().optional(),
+  TWO_FACTOR_ISSUER: z.string().optional(),
+  TWO_FACTOR_WINDOW: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(0).max(4).optional()),
+  TWO_FACTOR_TOKEN_EXPIRY: z.string().optional(),
+  TWO_FACTOR_SECRET_KEY: z.string().optional(),
   APP_URL: z.string().optional(),
   TAK_ENABLED: z.string().optional(),
   TAK_PROTOCOL: z.enum(['UDP', 'TCP', 'HTTPS']).optional(),
