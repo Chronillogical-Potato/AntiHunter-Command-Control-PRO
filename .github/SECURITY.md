@@ -12,9 +12,9 @@ AntiHunter Command & Control PRO is currently in a **beta** state and has not co
 
 ## Reporting a Vulnerability
 
-1. **Email** `security@antihunter.dev` with the subject line `AHCC SECURITY REPORT`.
+1. **Open a private advisory draft** from the repository’s [GitHub Security Advisories](https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO/security/advisories) page or send a direct message via the repository owner’s GitHub profile (`@TheRealSirHaXalot`) with the subject line `AHCC SECURITY REPORT`.
 2. Include the details listed in the section below so we can reproduce the issue quickly.
-3. If you prefer encrypted communication, request our PGP key in your initial email or open a private GitHub security advisory draft and reference this policy.
+3. If you prefer encrypted communication, request our PGP key through the GitHub profile message and we will establish an encrypted channel.
 4. We aim to acknowledge new reports within **3 business days** and provide a triage status or mitigation plan within **7 business days**. Complex issues may take longer; we will keep you updated.
 5. Please do **not** publicly disclose, blog, or share proof‑of‑concept code until we confirm a fix is available or we mutually agree on a disclosure date.
 
@@ -59,7 +59,7 @@ We are happy to acknowledge researchers who responsibly disclose issues, subject
 
 ## Need Help?
 
-- For general questions or clarifications about this policy, contact `security@antihunter.dev`.
+- For general questions or clarifications about this policy, use the repository owner’s GitHub profile to send us a message or open a draft advisory.
 - To report an incident involving hosted AntiHunter deployments, also notify your internal security contacts—this project is distributed software and you remain responsible for your own perimeter controls.
 
 Thank you for helping keep AntiHunter Command & Control PRO safe for operators.
