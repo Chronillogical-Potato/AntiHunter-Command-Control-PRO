@@ -671,6 +671,21 @@ On first boot the seed script provisions:
 
 Log in at `http://localhost:8080` with those credentials and change the password immediately.
 
+> **Upgrades / existing databases:** When pulling a new release against an existing Postgres volume, apply migrations before restarting services:
+> ```bash
+> docker compose run --rm --no-deps backend \
+>   pnpm --filter @command-center/backend exec prisma migrate deploy
+> ```
+> If you ever hit a stuck migration (e.g., Prisma `P3009/P3018`), see the [Troubleshooting](#troubleshooting) section for recovery steps.
+
+> **Seeding inside Docker:** The production image omits dev dependencies. If you need to re-run the seed (e.g., to recreate the default admin), first install the backend dev deps inside a temporary container:
+> ```bash
+> docker compose run --rm --no-deps backend sh -lc "
+>   pnpm install --filter @command-center/backend --prod=false --ignore-scripts &&
+>   pnpm --filter @command-center/backend prisma:seed
+> "
+> ```
+
 ### 5. Monitor logs
 
 ```bash
