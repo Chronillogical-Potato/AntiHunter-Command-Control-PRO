@@ -819,6 +819,7 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 - **Configuration cards:** Each card has expanded width (min 360px) so action buttons remain inside the panel even in dark mode.
 
 - **TAK bridge:** The Config -> TAK Bridge card surfaces enablement, per-stream toggles (nodes, targets, command ack/results, alert severities), credentials, and the **Restart Bridge** action. Watch backend logs for lines prefixed with `TAK_BRIDGE` to confirm successful subscriptions or authentication failures.
+| **Prisma P1000 (invalid DB credentials)**         | The backend cannot authenticate to Postgres. Verify `DATABASE_URL` matches the actual user/password. With the default compose file use `postgresql://command_center:command_center@postgres:5432/command_center`. Restart the backend after correcting the credentials.|
 
 ## Troubleshooting
 
