@@ -25,6 +25,7 @@ export interface InventoryUpsertPayload {
   vendor?: string | null;
   type?: string | null;
   ssid?: string | null;
+  channel?: number | null;
   hits: number;
   lastSeen?: string | null;
   maxRSSI?: number | null;
@@ -76,6 +77,10 @@ export class InventoryService {
     const hits = (existing?.hits ?? 0) + 1;
     const rssi = typeof event.rssi === 'number' ? event.rssi : undefined;
     const ssid = event.name?.trim() ? event.name.trim() : undefined;
+    const eventChannel =
+      typeof event.channel === 'number' && Number.isFinite(event.channel)
+        ? event.channel
+        : undefined;
     const eventLat = this.toFinite(event.lat);
     const eventLon = this.toFinite(event.lon);
     const fallbackLatValue = this.toFinite(fallbackLat);
@@ -125,6 +130,7 @@ export class InventoryService {
         lastLat: latCandidate ?? undefined,
         lastLon: lonCandidate ?? undefined,
         siteId: siteId ?? undefined,
+        channel: eventChannel ?? existing?.channel ?? undefined,
       } as Prisma.InventoryDeviceUncheckedCreateInput,
       update: {
         vendor: vendor ?? existing?.vendor,
@@ -141,6 +147,7 @@ export class InventoryService {
         lastLat: latCandidate ?? existing?.lastLat ?? undefined,
         lastLon: lonCandidate ?? existing?.lastLon ?? undefined,
         siteId: siteId ?? existing?.siteId ?? undefined,
+        channel: eventChannel ?? existing?.channel ?? undefined,
       } as Prisma.InventoryDeviceUncheckedUpdateInput,
     })) as InventoryDevice;
 
@@ -176,6 +183,7 @@ export class InventoryService {
         lastLat,
         lastLon,
         createdAt,
+        channel: payload.channel ?? null,
       } as Prisma.InventoryDeviceUncheckedCreateInput,
       update: {
         siteId: payload.siteId ?? null,
@@ -192,6 +200,7 @@ export class InventoryService {
         lastNodeId: payload.lastNodeId ?? null,
         lastLat,
         lastLon,
+        channel: payload.channel ?? null,
       } as Prisma.InventoryDeviceUncheckedUpdateInput,
     })) as InventoryDevice;
 

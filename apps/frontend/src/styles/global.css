@@ -563,11 +563,61 @@ body.theme-dark .control-chip[disabled] {
 .map-footer {
   display: flex;
 
-  align-items: center;
+  flex-direction: column;
+
+  align-items: stretch;
 
   gap: 1rem;
 
   margin-top: 1rem;
+}
+
+.map-footer__views {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 0.75rem;
+}
+
+.map-footer__views-controls {
+  display: flex;
+
+  gap: 0.5rem;
+
+  align-items: center;
+
+  flex-wrap: wrap;
+}
+
+.map-footer__views-controls input {
+  min-width: 160px;
+
+  padding: 0.4rem 0.6rem;
+}
+
+.map-footer__views-list {
+  display: flex;
+
+  flex-wrap: wrap;
+
+  gap: 0.5rem;
+}
+
+.map-footer__view-item {
+  display: flex;
+
+  gap: 0.35rem;
+
+  align-items: center;
+}
+
+.map-footer__actions {
+  display: flex;
+
+  align-items: center;
+
+  gap: 1rem;
 
   flex-wrap: wrap;
 }
@@ -2634,6 +2684,18 @@ body.theme-dark .control-chip[disabled] {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.scheduler-logs__header {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  gap: 0.5rem;
+
+  flex-wrap: wrap;
 }
 
 .scheduler-logs ul {

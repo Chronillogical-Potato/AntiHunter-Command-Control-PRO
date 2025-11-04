@@ -1,6 +1,6 @@
 ﻿import { useQuery } from '@tanstack/react-query';
 import { Map as LeafletMap, latLngBounds } from 'leaflet';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MdCenterFocusStrong,
   MdTimeline,
@@ -11,6 +11,8 @@ import {
   MdUndo,
   MdCancel,
   MdCheckCircle,
+  MdBookmarkAdd,
+  MdClose,
 } from 'react-icons/md';
 
 import { apiClient } from '../api/client';
@@ -23,6 +25,7 @@ import { useAuthStore } from '../stores/auth-store';
 import { GeofenceVertex, useGeofenceStore } from '../stores/geofence-store';
 import { useMapCommandStore } from '../stores/map-command-store';
 import { useMapPreferences } from '../stores/map-store';
+import { type SavedMapView, useMapViewsStore } from '../stores/map-views-store';
 import { canonicalNodeId, useNodeStore } from '../stores/node-store';
 import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
@@ -37,6 +40,7 @@ export function MapPage() {
   }));
 
   const mapRef = useRef<LeafletMap | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   const { commentMap, trackingMap } = useTargetStore((state) => ({
     commentMap: state.commentMap,
@@ -50,6 +54,12 @@ export function MapPage() {
   const pendingTarget = useMapCommandStore((state) => state.target);
   const consumeTarget = useMapCommandStore((state) => state.consume);
   const goto = useMapCommandStore((state) => state.goto);
+
+  const savedViews = useMapViewsStore((state) => state.views);
+  const addView = useMapViewsStore((state) => state.addView);
+  const removeView = useMapViewsStore((state) => state.removeView);
+
+  const [newViewName, setNewViewName] = useState('');
 
   const authStatus = useAuthStore((state) => state.status);
   const isAuthenticated = authStatus === 'authenticated';
@@ -113,7 +123,9 @@ export function MapPage() {
     toggleFollow,
     toggleTargets,
   } = useMapPreferences();
+  const fitEnabled = useMapPreferences((state) => state.fitEnabled);
   const setMapStyle = useMapPreferences((state) => state.setMapStyle);
+  const setFitEnabled = useMapPreferences((state) => state.setFitEnabled);
 
   const nodeList = useMemo(() => order.map((id) => nodes[id]).filter(Boolean), [nodes, order]);
 
@@ -126,7 +138,7 @@ export function MapPage() {
     () => extractAlertColors(appSettingsQuery.data),
     [appSettingsQuery.data],
   );
-  const mapDefaultRadius = appSettingsQuery.data?.defaultRadiusM ?? 200;
+  const mapDefaultRadius = appSettingsQuery.data?.defaultRadiusM ?? 100;
 
   const alertIndicatorMap = useMemo(() => {
     const severityRank: Record<IndicatorSeverity, number> = {
@@ -136,9 +148,23 @@ export function MapPage() {
       alert: 3,
       critical: 4,
     };
+    const applyIndicator = (
+      map: Map<string, IndicatorSeverity>,
+      key: string,
+      indicator: IndicatorSeverity,
+    ) => {
+      if (indicator === 'idle') {
+        return;
+      }
+      const previous = map.get(key);
+      const previousRank = previous ? severityRank[previous] : 0;
+      if (severityRank[indicator] >= previousRank) {
+        map.set(key, indicator);
+      }
+    };
+
     const map = new Map<string, IndicatorSeverity>();
     Object.values(alerts).forEach((alert) => {
-      const key = composeNodeKey(alert.nodeId, alert.siteId);
       const level = (alert.level ?? 'INFO').toUpperCase();
       let indicator: IndicatorSeverity;
       switch (level) {
@@ -149,7 +175,7 @@ export function MapPage() {
           indicator = 'notice';
           break;
         case 'ALERT':
-          indicator = 'critical';
+          indicator = 'alert';
           break;
         case 'CRITICAL':
           indicator = 'critical';
@@ -158,14 +184,11 @@ export function MapPage() {
           indicator = 'idle';
           break;
       }
-      if (indicator === 'idle') {
-        return;
-      }
-      const previous = map.get(key);
-      const previousRank = previous ? severityRank[previous] : 0;
-      if (severityRank[indicator] >= previousRank) {
-        map.set(key, indicator);
-      }
+      const scopedKey = composeNodeKey(alert.nodeId, alert.siteId);
+      applyIndicator(map, scopedKey, indicator);
+      // Record a site-agnostic fallback so alerts without a site still pulse nodes.
+      const globalKey = composeNodeKey(alert.nodeId, undefined);
+      applyIndicator(map, globalKey, indicator);
     });
     return map;
   }, [alerts]);
@@ -174,16 +197,68 @@ export function MapPage() {
   const [draftVertices, setDraftVertices] = useState<GeofenceVertex[]>([]);
   const [hoverVertex, setHoverVertex] = useState<GeofenceVertex | null>(null);
 
-  const handleFit = () => {
-    if (!mapRef.current || nodeList.length === 0) {
+  const performFit = useCallback(() => {
+    if (!mapReady || !mapRef.current) {
+      return false;
+    }
+    const positions = nodeList
+      .map((node) =>
+        typeof node.lat === 'number' && typeof node.lon === 'number'
+          ? ([node.lat, node.lon] as [number, number])
+          : null,
+      )
+      .filter((value): value is [number, number] => value !== null);
+    if (positions.length === 0) {
+      return false;
+    }
+    const bounds = latLngBounds(positions);
+    mapRef.current.fitBounds(bounds.pad(0.25));
+    return true;
+  }, [mapReady, nodeList]);
+
+  const handleFitClick = () => {
+    if (fitEnabled) {
+      setFitEnabled(false);
       return;
     }
-    const bounds = latLngBounds(nodeList.map((node) => [node.lat, node.lon]));
-    mapRef.current.fitBounds(bounds.pad(0.25));
+    const fitted = performFit();
+    if (fitted) {
+      setFitEnabled(true);
+    }
   };
 
+  const handleSaveView = () => {
+    if (!mapReady || !mapRef.current) {
+      return;
+    }
+    const center = mapRef.current.getCenter();
+    const zoom = mapRef.current.getZoom();
+    const trimmed = newViewName.trim();
+    addView({
+      name: trimmed.length > 0 ? trimmed : undefined,
+      lat: center.lat,
+      lon: center.lng,
+      zoom,
+    });
+    setNewViewName('');
+  };
+
+  const handleApplyView = useCallback((view: SavedMapView) => {
+    if (!mapRef.current) {
+      return;
+    }
+    mapRef.current.flyTo([view.lat, view.lon], view.zoom, { duration: 1.1 });
+  }, []);
+
   useEffect(() => {
-    if (!pendingTarget || !mapRef.current) {
+    if (!fitEnabled || !mapReady) {
+      return;
+    }
+    performFit();
+  }, [fitEnabled, performFit, nodeList.length, mapReady]);
+
+  useEffect(() => {
+    if (!pendingTarget || !mapReady || !mapRef.current) {
       return;
     }
     if (pendingTarget.bounds) {
@@ -199,7 +274,7 @@ export function MapPage() {
       setGeofenceHighlighted(pendingTarget.geofenceId, GEOFENCE_HIGHLIGHT_MS);
     }
     consumeTarget();
-  }, [pendingTarget, consumeTarget, setGeofenceHighlighted]);
+  }, [pendingTarget, consumeTarget, setGeofenceHighlighted, mapReady]);
 
   const geofenceHighlightCount = useMemo(
     () => Object.keys(geofenceHighlights).length,
@@ -294,7 +369,11 @@ export function MapPage() {
           </p>
         </div>
         <div className="controls-row">
-          <button type="button" className="control-chip" onClick={handleFit}>
+          <button
+            type="button"
+            className={`control-chip ${fitEnabled ? 'is-active' : ''}`}
+            onClick={handleFitClick}
+          >
             <MdCenterFocusStrong /> Fit
           </button>
           <button
@@ -357,43 +436,90 @@ export function MapPage() {
           }
           onReady={(map) => {
             mapRef.current = map;
+            setMapReady(true);
           }}
         />
       </div>
       <footer className="map-footer">
-        <button
-          type="button"
-          className="submit-button"
-          onClick={startGeofenceDrawing}
-          disabled={drawingGeofence}
-        >
-          <MdCropFree /> Create Geofence
-        </button>
-        {drawingGeofence ? (
-          <div className="geofence-drawing-controls">
-            <span>{draftVertices.length} point(s) selected. Click map to add more.</span>
-            <div className="geofence-drawing-buttons">
-              <button
-                type="button"
-                onClick={undoGeofencePoint}
-                disabled={draftVertices.length === 0}
-              >
-                <MdUndo /> Undo
-              </button>
-              <button type="button" onClick={cancelGeofenceDrawing}>
-                <MdCancel /> Cancel
-              </button>
-              <button
-                type="button"
-                className="submit-button"
-                onClick={handleSaveGeofence}
-                disabled={draftVertices.length < 3}
-              >
-                <MdCheckCircle /> Save Geofence
-              </button>
-            </div>
+        <section className="map-footer__views">
+          <div className="map-footer__views-controls">
+            <input
+              type="text"
+              placeholder="View name"
+              value={newViewName}
+              className="control-input"
+              onChange={(event) => setNewViewName(event.target.value)}
+            />
+            <button
+              type="button"
+              className="control-chip"
+              onClick={handleSaveView}
+              disabled={!mapReady || !mapRef.current}
+            >
+              <MdBookmarkAdd /> Save View
+            </button>
           </div>
-        ) : null}
+          {savedViews.length > 0 ? (
+            <div className="map-footer__views-list">
+              {savedViews.map((view) => (
+                <div key={view.id} className="map-footer__view-item">
+                  <button
+                    type="button"
+                    className="control-chip"
+                    onClick={() => handleApplyView(view)}
+                  >
+                    {view.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="control-chip control-chip--danger"
+                    onClick={() => removeView(view.id)}
+                    aria-label={`Remove ${view.name}`}
+                  >
+                    <MdClose />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">Save map views for quick navigation.</p>
+          )}
+        </section>
+        <div className="map-footer__actions">
+          <button
+            type="button"
+            className="submit-button"
+            onClick={startGeofenceDrawing}
+            disabled={drawingGeofence}
+          >
+            <MdCropFree /> Create Geofence
+          </button>
+          {drawingGeofence ? (
+            <div className="geofence-drawing-controls">
+              <span>{draftVertices.length} point(s) selected. Click map to add more.</span>
+              <div className="geofence-drawing-buttons">
+                <button
+                  type="button"
+                  onClick={undoGeofencePoint}
+                  disabled={draftVertices.length === 0}
+                >
+                  <MdUndo /> Undo
+                </button>
+                <button type="button" onClick={cancelGeofenceDrawing}>
+                  <MdCancel /> Cancel
+                </button>
+                <button
+                  type="button"
+                  className="submit-button"
+                  onClick={handleSaveGeofence}
+                  disabled={draftVertices.length < 3}
+                >
+                  <MdCheckCircle /> Save Geofence
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </footer>
     </section>
   );

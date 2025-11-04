@@ -3,6 +3,7 @@ export interface InventoryDevice {
   vendor?: string | null;
   type?: string | null;
   ssid?: string | null;
+  channel?: number | null;
   hits: number;
   lastSeen?: string | null;
   maxRSSI?: number | null;

@@ -392,6 +392,7 @@ interface TargetEventDetails {
   nodeId?: string;
   rssi?: number;
   deviceType?: string;
+  channel?: number;
   lat?: number;
   lon?: number;
   detectedAt?: string;
@@ -415,6 +416,7 @@ function extractTargetDetails(payload: unknown): TargetEventDetails | null {
     ts?: string;
     confidence?: number;
     tracking?: { confidence?: number };
+    channel?: number | string | null;
   };
 
   if (base.type !== 'event.target') {
@@ -433,6 +435,7 @@ function extractTargetDetails(payload: unknown): TargetEventDetails | null {
     nodeId: base.nodeId,
     rssi: toNumber(base.rssi),
     deviceType: base.deviceType,
+    channel: toNumber(base.channel),
     lat: toNumber(base.lat),
     lon: toNumber(base.lon),
     detectedAt:

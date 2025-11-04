@@ -16,7 +16,6 @@ import { useTheme } from '../providers/theme-provider';
 import { useAuthStore } from '../stores/auth-store';
 
 type ThemePreference = 'light' | 'dark' | 'auto';
-type DensityPreference = 'compact' | 'comfortable';
 type TimeFormatPreference = '12h' | '24h';
 
 interface ProfileFormState {
@@ -26,7 +25,6 @@ interface ProfileFormState {
   phone: string;
   jobTitle: string;
   theme: ThemePreference;
-  density: DensityPreference;
   language: string;
   timeFormat: TimeFormatPreference;
 }
@@ -79,6 +77,19 @@ export function UserPage() {
 
   const [profileForm, setProfileForm] = useState<ProfileFormState | null>(null);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const profileLoading = meQuery.isLoading && !profileForm;
+  const profileErrorMessage =
+    meQuery.isError && !profileForm
+      ? meQuery.error instanceof Error
+        ? meQuery.error.message
+        : 'Unable to load profile. Please try again.'
+      : null;
+
+  useEffect(() => {
+    if (meQuery.data && (!authUser || authUser.id !== meQuery.data.id)) {
+      setAuthUser(meQuery.data);
+    }
+  }, [meQuery.data, authUser, setAuthUser]);
 
   useEffect(() => {
     if (!meQuery.data) {
@@ -92,7 +103,6 @@ export function UserPage() {
       phone: meQuery.data.phone ?? '',
       jobTitle: meQuery.data.jobTitle ?? '',
       theme: (prefs.theme as ThemePreference) ?? 'auto',
-      density: (prefs.density as DensityPreference) ?? 'compact',
       language: prefs.language ?? 'en',
       timeFormat: (prefs.timeFormat as TimeFormatPreference) ?? '24h',
     });
@@ -122,7 +132,6 @@ export function UserPage() {
         phone: data.phone ?? '',
         jobTitle: data.jobTitle ?? '',
         theme: (prefs.theme as ThemePreference) ?? 'auto',
-        density: (prefs.density as DensityPreference) ?? 'compact',
         language: prefs.language ?? 'en',
         timeFormat: (prefs.timeFormat as TimeFormatPreference) ?? '24h',
       });
@@ -160,11 +169,15 @@ export function UserPage() {
           </div>
         </header>
 
-        {!profileForm ? (
+        {profileLoading ? (
           <div className="empty-state">
             <div>Loading profile...</div>
           </div>
-        ) : (
+        ) : !profileForm && profileErrorMessage ? (
+          <div className="empty-state">
+            <div>{profileErrorMessage}</div>
+          </div>
+        ) : profileForm ? (
           <form className="form-grid" onSubmit={handleProfileSubmit}>
             <label>
               <span>Email</span>
@@ -234,21 +247,6 @@ export function UserPage() {
               </select>
             </label>
             <label>
-              <span>Interface Density</span>
-              <select
-                className="control-input"
-                value={profileForm.density}
-                onChange={(event) =>
-                  setProfileForm(
-                    (prev) => prev && { ...prev, density: event.target.value as DensityPreference },
-                  )
-                }
-              >
-                <option value="compact">Compact</option>
-                <option value="comfortable">Comfortable</option>
-              </select>
-            </label>
-            <label>
               <span>Language</span>
               <select
                 className="control-input"
@@ -294,7 +292,7 @@ export function UserPage() {
               {profileMessage ? <span className="form-feedback">{profileMessage}</span> : null}
             </div>
           </form>
-        )}
+        ) : null}
       </section>
 
       {canManageUsers ? <AdminUserManagement /> : null}
@@ -579,6 +577,13 @@ function AdminUserManagement() {
     }
   }, [featureFlagsQuery.data, inviteForm.features.length, inviteForm.role]);
 
+  const usersErrorMessage =
+    usersQuery.isError && usersQuery.error
+      ? usersQuery.error instanceof Error
+        ? usersQuery.error.message
+        : 'Unable to load users.'
+      : null;
+
   const rows = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
   const featureFlags = featureFlagsQuery.data ?? [];
   const sites = sitesQuery.data ?? [];
@@ -758,6 +763,10 @@ function AdminUserManagement() {
         <div className="empty-state">
           <div>Loading users...</div>
         </div>
+      ) : usersQuery.isError ? (
+        <div className="empty-state">
+          <div>{usersErrorMessage ?? 'Unable to load users.'}</div>
+        </div>
       ) : rows.length === 0 ? (
         <div className="empty-state">
           <div>No users found.</div>
@@ -776,69 +785,73 @@ function AdminUserManagement() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((user) => (
-                <tr key={user.id} className={!user.isActive ? 'is-inactive' : undefined}>
-                  <td>{user.email}</td>
-                  <td>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '--'}</td>
-                  <td>
-                    <select
-                      className="table-select"
-                      value={user.role}
-                      onChange={(event) =>
-                        handleRoleChange(user.id, event.target.value as UserRole)
-                      }
-                      disabled={updateMutation.isPending || user.id === authUser?.id}
-                    >
-                      <option value="ADMIN">Admin</option>
-                      <option value="OPERATOR">Operator</option>
-                      <option value="ANALYST">Analyst</option>
-                      <option value="VIEWER">Viewer</option>
-                    </select>
-                  </td>
-                  <td>{user.isActive ? 'Active' : 'Inactive'}</td>
-                  <td>
-                    <select
-                      className="table-select"
-                      value={user.preferences.timeFormat}
-                      onChange={(event) =>
-                        updateMutation.mutate({
-                          id: user.id,
-                          body: { timeFormat: event.target.value as TimeFormatPreference },
-                        })
-                      }
-                      disabled={updateMutation.isPending}
-                    >
-                      <option value="24h">24-hour</option>
-                      <option value="12h">12-hour</option>
-                    </select>
-                  </td>
-                  <td>
-                    <div className="button-group">
-                      <button
-                        type="button"
-                        className="control-chip"
-                        onClick={() => {
-                          setManagedUser(user);
-                          setManageMessage(null);
-                          setPermissionsMessage(null);
-                          setSiteMessage(null);
-                          setResetMessage(null);
-                        }}
+              {rows.map((user) => {
+                const userTimeFormat =
+                  (user.preferences?.timeFormat as TimeFormatPreference | undefined) ?? '24h';
+                return (
+                  <tr key={user.id} className={!user.isActive ? 'is-inactive' : undefined}>
+                    <td>{user.email}</td>
+                    <td>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '--'}</td>
+                    <td>
+                      <select
+                        className="table-select"
+                        value={user.role}
+                        onChange={(event) =>
+                          handleRoleChange(user.id, event.target.value as UserRole)
+                        }
+                        disabled={updateMutation.isPending || user.id === authUser?.id}
                       >
-                        Manage
-                      </button>
-                      <button
-                        type="button"
-                        className="control-chip"
-                        onClick={() => handleToggleActive(user)}
-                        disabled={disableMutation.isPending}
+                        <option value="ADMIN">Admin</option>
+                        <option value="OPERATOR">Operator</option>
+                        <option value="ANALYST">Analyst</option>
+                        <option value="VIEWER">Viewer</option>
+                      </select>
+                    </td>
+                    <td>{user.isActive ? 'Active' : 'Inactive'}</td>
+                    <td>
+                      <select
+                        className="table-select"
+                        value={userTimeFormat}
+                        onChange={(event) =>
+                          updateMutation.mutate({
+                            id: user.id,
+                            body: { timeFormat: event.target.value as TimeFormatPreference },
+                          })
+                        }
+                        disabled={updateMutation.isPending}
                       >
-                        {user.isActive ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <option value="24h">24-hour</option>
+                        <option value="12h">12-hour</option>
+                      </select>
+                    </td>
+                    <td>
+                      <div className="button-group">
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => {
+                            setManagedUser(user);
+                            setManageMessage(null);
+                            setPermissionsMessage(null);
+                            setSiteMessage(null);
+                            setResetMessage(null);
+                          }}
+                        >
+                          Manage
+                        </button>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => handleToggleActive(user)}
+                          disabled={disableMutation.isPending}
+                        >
+                          {user.isActive ? 'Deactivate' : 'Activate'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

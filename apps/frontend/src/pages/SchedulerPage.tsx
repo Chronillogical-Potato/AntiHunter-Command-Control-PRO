@@ -16,7 +16,10 @@ function beginningOfWeek(date: Date): Date {
 }
 
 function formatDateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function formatTimeDisplay(time: string): string {
@@ -51,6 +54,7 @@ export function SchedulerPage() {
     setActive,
     appendLog,
     markExecuted,
+    clearLogs,
   } = useSchedulerStore();
 
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => beginningOfWeek(new Date()));
@@ -421,8 +425,16 @@ export function SchedulerPage() {
       ) : null}
 
       <section className="scheduler-logs">
-        <header>
+        <header className="scheduler-logs__header">
           <h3>Activity Log</h3>
+          <button
+            type="button"
+            className="control-chip"
+            onClick={() => clearLogs()}
+            disabled={logs.length === 0}
+          >
+            Clear
+          </button>
         </header>
         <ul>
           {logs.length === 0 ? (

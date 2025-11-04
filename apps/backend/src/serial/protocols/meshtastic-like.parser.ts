@@ -250,6 +250,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         rssi,
         type: targetMatch.groups.type,
         name: targetMatch.groups.name?.trim(),
+        channel: extractChannelFromText(line),
         lat,
         lon,
         raw: line,
@@ -269,6 +270,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         mac,
         rssi,
         type: targetDataMatch.groups.type ?? undefined,
+        channel: extractChannelFromText(line),
         lat,
         lon,
         raw: line,
@@ -324,6 +326,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         rssi,
         type: band,
         name,
+        channel: extractChannelFromText(extras),
         raw: line,
       });
       return this.deliverOrRaw(results, line);
@@ -527,7 +530,11 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
     const startupMatch = STARTUP_REGEX.exec(line);
     if (startupMatch?.groups) {
       const nodeId = this.normalizeNodeId(startupMatch.groups.node);
-      const message = `${nodeId} startup: ${startupMatch.groups.details.replace(/\s+#?$/, '')}`;
+      const detailText = restoreHumanReadableUnits(startupMatch.groups.details).replace(
+        /\s+#?$/,
+        '',
+      );
+      const message = `${nodeId} startup: ${detailText}`;
       if (!this.shouldDeduplicateStatus(nodeId, message)) {
         results.push({
           kind: 'alert',
@@ -580,7 +587,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         handled = true;
         return [];
       }
-      const body = genericMatch.groups.body.trim();
+      const body = restoreHumanReadableUnits(genericMatch.groups.body.trim());
       if (/^GPS[:=\s]/i.test(body) && /^GPS[:=\s]*-?\d+(?:\.\d+)?\s*,\s*$/i.test(body)) {
         handled = true;
         return [];
@@ -841,6 +848,29 @@ function stripAnsi(value: string): string {
 }
 function isLogLine(value: string): boolean {
   return /^(INFO|WARN|ERROR|DEBUG|TRACE)\s*\|/i.test(value);
+}
+function restoreHumanReadableUnits(value: string): string {
+  if (!value) {
+    return value;
+  }
+  return value.replace(/#{1,2}\s*([CF])/gi, (_, unit: string) => `°${unit.toUpperCase()}`);
+}
+function extractChannelFromText(value: string | null | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const match = /(?:^|[\s,;])(?:CH(?:ANNEL)?|C)[\s:=#-]*?(\d{1,3})\b/i.exec(value);
+  if (!match) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  if (parsed <= 0 || parsed > 196) {
+    return undefined;
+  }
+  return parsed;
 }
 function normalizeMac(mac: string): string {
   return mac.replace(/-/g, ':').toUpperCase();

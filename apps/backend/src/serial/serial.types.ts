@@ -23,6 +23,7 @@ export interface SerialTargetDetected {
   rssi?: number;
   type?: string;
   name?: string;
+  channel?: number;
   lat?: number;
   lon?: number;
   raw: string;

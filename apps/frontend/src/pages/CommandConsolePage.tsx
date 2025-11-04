@@ -276,8 +276,13 @@ export function CommandConsolePage() {
   });
 
   const nodeCommandTargets = useMemo<NodeCommandOption[]>(() => {
+    const activeSiteId = form.siteId ?? undefined;
     const dedup = new Map<string, NodeCommandOption>();
     availableNodes.forEach((node) => {
+      const nodeSiteId = node.siteId ?? undefined;
+      if (activeSiteId && nodeSiteId !== activeSiteId) {
+        return;
+      }
       const target = deriveNodeTarget(node);
       const locationTokens = [target.siteCountry, target.siteCity].filter(Boolean) as string[];
       const siteLabel =
@@ -295,7 +300,7 @@ export function CommandConsolePage() {
       }
     });
     return Array.from(dedup.values());
-  }, [availableNodes]);
+  }, [availableNodes, form.siteId]);
 
   const targetOptions = useMemo<NodeCommandOption[]>(() => {
     const options: NodeCommandOption[] = [
@@ -303,17 +308,34 @@ export function CommandConsolePage() {
       ...nodeCommandTargets,
     ];
 
-    if (form.target && !options.some((option) => option.value === normalizeTarget(form.target))) {
+    if (
+      form.target &&
+      !options.some((option) => option.value === normalizeTarget(form.target)) &&
+      (!form.siteId || normalizeTarget(form.target) === '@ALL')
+    ) {
       const normalized = normalizeTarget(form.target);
       options.push({ value: normalized, label: normalized.replace(/^@/, '') });
     }
 
     return options;
-  }, [nodeCommandTargets, form.target]);
+  }, [nodeCommandTargets, form.target, form.siteId]);
   const selectedTargetOption = useMemo(
     () => targetOptions.find((option) => option.value === form.target),
     [targetOptions, form.target],
   );
+
+  useEffect(() => {
+    if (!selectedTargetOption) {
+      setForm((prev) =>
+        prev.target === '@ALL'
+          ? prev
+          : {
+              ...prev,
+              target: '@ALL',
+            },
+      );
+    }
+  }, [selectedTargetOption]);
 
   useEffect(() => {
     if (

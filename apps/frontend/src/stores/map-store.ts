@@ -2,12 +2,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 interface MapPreferencesState {
+  fitEnabled: boolean;
   trailsEnabled: boolean;
   radiusEnabled: boolean;
   followEnabled: boolean;
   targetsEnabled: boolean;
   coverageEnabled: boolean;
   mapStyle: string;
+  setFitEnabled: (value: boolean) => void;
   toggleTrails: () => void;
   toggleRadius: () => void;
   toggleFollow: () => void;
@@ -24,7 +26,9 @@ const DEFAULT_STATE: Pick<
   | 'targetsEnabled'
   | 'coverageEnabled'
   | 'mapStyle'
+  | 'fitEnabled'
 > = {
+  fitEnabled: false,
   trailsEnabled: true,
   radiusEnabled: true,
   followEnabled: false,
@@ -37,6 +41,7 @@ export const useMapPreferences = create<MapPreferencesState>()(
   persist(
     (set) => ({
       ...DEFAULT_STATE,
+      setFitEnabled: (value) => set({ fitEnabled: value }),
       toggleTrails: () => set((state) => ({ trailsEnabled: !state.trailsEnabled })),
       toggleRadius: () => set((state) => ({ radiusEnabled: !state.radiusEnabled })),
       toggleFollow: () => set((state) => ({ followEnabled: !state.followEnabled })),
@@ -48,6 +53,7 @@ export const useMapPreferences = create<MapPreferencesState>()(
       name: 'map-preferences',
       version: 1,
       partialize: (state) => ({
+        fitEnabled: state.fitEnabled,
         trailsEnabled: state.trailsEnabled,
         radiusEnabled: state.radiusEnabled,
         followEnabled: state.followEnabled,

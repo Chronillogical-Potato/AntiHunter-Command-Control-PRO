@@ -172,6 +172,7 @@ export class MqttInventoryService implements OnModuleInit, OnModuleDestroy {
       lastNodeId: record.lastNodeId ?? null,
       lastLat: record.lastLat ?? null,
       lastLon: record.lastLon ?? null,
+      channel: record.channel ?? null,
       createdAt: record.createdAt ? record.createdAt.toISOString() : null,
       updatedAt: record.updatedAt ? record.updatedAt.toISOString() : null,
     };

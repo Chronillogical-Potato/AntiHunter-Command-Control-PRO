@@ -423,12 +423,19 @@ export function CommandCenterMap({
         })}
 
       {nodes.map((node) => {
-        const key = nodeKey(node.id, node.siteId);
-        const indicator = alertIndicators.get(key) ?? 'idle';
+        const siteScopedKey = nodeKey(node.id, node.siteId);
+        const indicator =
+          alertIndicators.get(siteScopedKey) ??
+          alertIndicators.get(nodeKey(node.id, undefined)) ??
+          'idle';
         const position: LatLngExpression = [node.lat, node.lon];
         const radiusStyle = resolveRadiusStyle(indicator, alertColors);
         return (
-          <Marker key={key} position={position} icon={createNodeIcon(node, indicator, alertColors)}>
+          <Marker
+            key={siteScopedKey}
+            position={position}
+            icon={createNodeIcon(node, indicator, alertColors)}
+          >
             <Tooltip direction="top" offset={[0, -12]} opacity={0.9}>
               <div className="node-tooltip">
                 <strong>{formatNodeLabel(node)}</strong>

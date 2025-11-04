@@ -159,6 +159,7 @@ model InventoryDevice {
   vendor              String?
   type                String?
   ssid                String?
+  channel             Int?
   hits                Int      @default(0)
   lastSeen            DateTime?
   maxRSSI             Int?

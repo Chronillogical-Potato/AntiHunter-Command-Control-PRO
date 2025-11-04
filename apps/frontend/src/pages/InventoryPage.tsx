@@ -128,6 +128,7 @@ export function InventoryPage() {
                 <th>MAC</th>
                 <th>Vendor</th>
                 <th>Type</th>
+                <th>Channel</th>
                 <th>SSID</th>
                 <th>Hits</th>
                 <th>Last Seen</th>
@@ -146,6 +147,7 @@ export function InventoryPage() {
                     <td>{device.mac}</td>
                     <td>{device.vendor ?? 'Unknown'}</td>
                     <td>{device.type ?? 'N/A'}</td>
+                    <td>{device.channel != null ? device.channel : 'N/A'}</td>
                     <td>{device.ssid ?? 'N/A'}</td>
                     <td>{device.hits}</td>
                     <td>{device.lastSeen ? new Date(device.lastSeen).toLocaleString() : 'N/A'}</td>

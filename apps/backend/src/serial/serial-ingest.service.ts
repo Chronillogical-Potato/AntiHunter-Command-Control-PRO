@@ -98,6 +98,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             ...event,
             lat: latForRecord,
             lon: lonForRecord,
+            channel: event.channel,
           };
 
           await this.inventoryService.recordDetection(
@@ -130,6 +131,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             deviceType: event.type,
             lat: latForRecord ?? nodeSnapshot?.lat ?? null,
             lon: lonForRecord ?? nodeSnapshot?.lon ?? null,
+            channel: event.channel ?? null,
             confidence: trackingPayload?.confidence,
             tracking: trackingPayload,
             message: `Device ${event.mac} discovered (RSSI ${event.rssi ?? 'n/a'})`,

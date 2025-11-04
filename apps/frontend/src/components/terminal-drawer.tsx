@@ -21,7 +21,7 @@ export function TerminalDrawer() {
     return entries.filter((entry) => entry.source !== 'raw');
   }, [entries, showRaw]);
 
-  const isScrollable = filteredEntries.length > 50;
+  const isScrollable = filteredEntries.length > 100;
   const displayEntries = filteredEntries;
 
   return (
