@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img src="TopREADMElogo.png" alt="AntiHunter Command Center Logo" width="320" />
 </p>
 
@@ -150,7 +150,7 @@ Each deployment runs its site-local C2 server and still functions if federation 
 
 | Surface              | Protocols & safeguards                                                                                                                |
 |----------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| **Device ingest**    | Serial (USB/UART) ➜ Meshtastic JSON/CBOR frames; optional signed frame validation; port selection locked behind RBAC.                 |
+| **Device ingest**    | Serial (USB/UART) ? Meshtastic JSON/CBOR frames; optional signed frame validation; port selection locked behind RBAC.                 |
 | **C2 API**           | HTTPS (configurable TLS certificates) + JWT auth; REST/WS share the same bearer token; role-aware guards on every controller.         |
 | **Federation**       | MQTT (mqtt://... mqtts://, ws://... wss://) with per-site client IDs, QoS 1, optional mutual TLS (CA/cert/key). Topics namespaced `ahcc/`.|
 | **Operator UI**      | HTTPS SPA; per-user preferences (theme, time format) stored server-side; alarm sounds served via signed URLs.                         |
@@ -203,14 +203,14 @@ Multi-site deployments share state through a single broker. All topics live unde
 | `ahcc/<siteId>/targets/upsert`   | publish + subscribe | Target lifecycle payloads (status, notes, tags, location, device metadata).                                                             |
 | `ahcc/<siteId>/targets/delete`   | publish + subscribe | `{ targetId }` payload notifying a target deletion.                                                                                     |
 | `ahcc/<siteId>/commands/events`  | publish + subscribe | Command lifecycle messages (`command.event`) so consoles stay aligned.                                                                  |
-| `ahcc/<siteId>/commands/request` | publish + subscribe | Remote command execution request for another site’s serial worker.                                                                      |
+| `ahcc/<siteId>/commands/request` | publish + subscribe | Remote command execution request for another site�s serial worker.                                                                      |
 | `ahcc/<siteId>/events/<type>`    | publish + subscribe | High-value broadcasts (`event.alert`, `event.target`, `command.ack`, `command.result`). `<type>` is sanitized (slashes/dots -> dashes). |
 
 All topics use QoS 1 by default (configurable per site). Publishers short-circuit when the `originSiteId` matches their own so messages are not looped. If additional replication streams are added, follow the `ahcc/<site>/<resource>/<action>` convention.
 
 #### MQTT Configuration Cheat Sheet
 
-Configure federation per site in **Config → MQTT** (or directly via the `MqttConfig` table). Key fields:
+Configure federation per site in **Config ? MQTT** (or directly via the `MqttConfig` table). Key fields:
 
 | Field                                      | Purpose                                                       | Notes                                                                                                 |
 | ------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -328,13 +328,13 @@ brew services start postgresql
    pnpm --filter @command-center/frontend dev
    ```
 
-6. **Configure serial** – list ports, then set Config → Serial
+6. **Configure serial** � list ports, then set Config ? Serial
 
    ```bash
    pnpm --filter @command-center/backend exec node -e "const { SerialPortStream } = require('@serialport/stream'); SerialPortStream.list().then(list => console.log(list));"
    ```
 
-7. **Enable MQTT federation** in Config → MQTT (set broker URL/credentials and enable replication).
+7. **Enable MQTT federation** in Config ? MQTT (set broker URL/credentials and enable replication).
 
 8. **Verify runtime site**
    ```bash
@@ -439,7 +439,7 @@ Frontend currently consumes backend settings via API, so no extra `.env` is need
    TWO_FACTOR_ISSUER="AntiHunter Command Center"
    ```
    Restart the backend after updating the file.
-2. Users can now browse to **Account → Two-Factor Authentication**, click **Enable Two-Factor**, scan the QR code with Google Authenticator (or any TOTP app), submit the current code, and download/store the generated recovery codes.
+2. Users can now browse to **Account ? Two-Factor Authentication**, click **Enable Two-Factor**, scan the QR code with Google Authenticator (or any TOTP app), submit the current code, and download/store the generated recovery codes.
 3. Administrators can regenerate recovery codes or disable 2FA from the same panel. Temporary login tokens for 2FA challenges expire after `TWO_FACTOR_TOKEN_EXPIRY` (default 10 minutes).
 
 ### Enabling HTTPS (optional)
@@ -474,7 +474,7 @@ Frontend currently consumes backend settings via API, so no extra `.env` is need
 3. Restart the backend (`pnpm --filter @command-center/backend dev` or your process manager). The server logs `"[https] HTTPS enabled using provided certificates."` when TLS is active.
 4. Update `APP_URL` and any reverse proxies to reference the `https://` scheme.
 5. When serving the frontend from a separate origin (e.g., static CDN or Vite dev server), set `VITE_BACKEND_URL=https://your-backend-host:port` before building so API calls and the Socket.IO client use HTTPS/WSS automatically.
-6. Verify the WebSocket upgrade in browser devtools under **Network → WS**; the scheme should be `wss://`.
+6. Verify the WebSocket upgrade in browser devtools under **Network ? WS**; the scheme should be `wss://`.
 
 ### TAK / Cursor-on-Target Bridge
 
@@ -795,6 +795,66 @@ Serve `apps/frontend/dist` with your preferred static host (Nginx, S3, etc.) and
    - Serve `apps/frontend/dist` with your preferred static host or CDN.
    - Run `node dist/main.js` (or a Docker/Kubernetes equivalent) for the backend under a supervisor (systemd, PM2, etc.) and expose port 3000 or proxy it behind TLS.
 
+   <details>
+   <summary><strong>Nginx reverse proxy (HTTPS) quick reference</strong></summary>
+
+   ```nginx
+   server {
+       listen 443 ssl http2;
+       server_name ahcc.example.com;
+
+       ssl_certificate     /etc/letsencrypt/live/ahcc.example.com/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/ahcc.example.com/privkey.pem;
+       include             /etc/letsencrypt/options-ssl-nginx.conf;
+       ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+       root  /var/www/ahcc-frontend;
+       index index.html;
+
+       location /api/ {
+           proxy_pass http://127.0.0.1:3000/;
+           proxy_http_version 1.1;
+           proxy_set_header Host              $host;
+           proxy_set_header X-Real-IP         $remote_addr;
+           proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_set_header Upgrade           $http_upgrade;
+           proxy_set_header Connection        "upgrade";
+       }
+
+       location /socket.io/ {
+           proxy_pass http://127.0.0.1:3000/socket.io/;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade           $http_upgrade;
+           proxy_set_header Connection        "upgrade";
+           proxy_set_header Host              $host;
+           proxy_set_header X-Real-IP         $remote_addr;
+           proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_read_timeout 60s;
+           proxy_buffering off;
+       }
+
+       location / {
+           try_files $uri /index.html;
+       }
+   }
+
+   server {
+       listen 80;
+       server_name ahcc.example.com;
+       return 301 https://$host$request_uri;
+   }
+   ```
+
+   **Helpful commands**
+
+   - Tail Nginx logs: `tail -f /var/log/nginx/error.log /var/log/nginx/access.log`
+   - Test upstream: `curl -Ivk https://ahcc.example.com/api/healthz`
+   - Reload config: `nginx -t && systemctl reload nginx`
+
+   </details>
+
 7. **Harden and monitor**
    - Enforce HTTPS, rate limiting, firewall rules, and logging/metrics.
    - Configure the in-app Firewall module (default policy, geo blocking, brute-force thresholds) and enable 2FA for privileged accounts.
@@ -884,15 +944,16 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 | **No alerts despite telemetry**                     | Confirm devices flashed with the companion firmware send events, sockets are connected (check `/healthz`), and that the terminal/alert filters are not hiding the severity you expect. |
 | **Custom alarm audio silent or too loud**           | After uploading a WAV file, adjust per-level volume sliders and click "Test". If volume does not change, refresh the page to reload cached audio. Supported format: 16-bit PCM WAV. |
 | **Docker push fails due to upstream changes**       | Run `git pull --rebase origin main`, resolve conflicts, then `git push`. This keeps your fork in sync before you build and publish images. |
-| **Client notification: _Invalid Serial config�_**   | Meshtastic emits this when "Override console serial port" is enabled while running an interactive profile. Disable the override in firmware or switch the node to an output-only profile (NMEA/CalTopo) before reconnecting. |
+| **Client notification: _Invalid Serial config?_**   | Meshtastic emits this when "Override console serial port" is enabled while running an interactive profile. Disable the override in firmware or switch the node to an output-only profile (NMEA/CalTopo) before reconnecting. |
 | **MQTT connect timeout**                            | Ensure the backend is running (check `/healthz`) and that you are using a reachable endpoint. Some brokers require WebSockets (`ws://...`) instead of raw TCP (`mqtt://...`). Leave username/password blank for anonymous brokers and enable site replication before expecting events. |
+| **HTTPS reverse proxy (502 / TLS errors)**          | Verify Nginx proxies `/api` and `/socket.io` to the backend on the correct host/port. Include websocket headers (`Upgrade`/`Connection`), tail `/var/log/nginx/error.log`, and test with `curl -Ivk https://your-domain/api/healthz`. See the [Nginx quick reference](#production-deployment) for a working example. |
 | **Prisma P1000 (invalid DB credentials)**           | The backend cannot authenticate to Postgres. Verify `DATABASE_URL` matches the real database user/password. With the default compose file use `postgresql://command_center:command_center@postgres:5432/command_center`. After fixing it, restart the backend. |
 | **Prisma P3009/P3018 (failed migration loop)**      | Inspect `_prisma_migrations` for rows with `finished_at` NULL. Mark them rolled back (`prisma migrate resolve --rolled-back <migration_name>`), recreate any missing objects (e.g., enums or tables), run `docker compose run --rm --no-deps backend pnpm --filter @command-center/backend exec prisma migrate deploy`, then restart services. |
 ---
 
 ## Legal Disclaimer
 
-AntiHunter Command & Control PRO (“Software”) is distributed for **lawful, authorized defensive use only**. You may operate this project solely on infrastructure, networks, devices, radio spectrum, and datasets that you own or for which you hold explicit, written permission to assess. By downloading, compiling, or executing the Software you agree to the following conditions:
+AntiHunter Command & Control PRO (�Software�) is distributed for **lawful, authorized defensive use only**. You may operate this project solely on infrastructure, networks, devices, radio spectrum, and datasets that you own or for which you hold explicit, written permission to assess. By downloading, compiling, or executing the Software you agree to the following conditions:
 
 - **Authorization & intent.** Use is limited to security research, blue-team training, regulatory-compliant monitoring, or other defensive activities. Offensive operations, targeted surveillance, harassment, or tracking of individuals without their informed consent are strictly prohibited.
 - **Telecommunications compliance.** You are responsible for abiding by every jurisdictional regulation governing radio frequency use (e.g., FCC/CE/Ofcom rules, LoRa/ISM duty-cycle limits, licensing conditions) and any import/export controls that apply to cryptography, telemetry, or spectrum-monitoring tools.
@@ -904,11 +965,13 @@ AntiHunter Command & Control PRO (“Software”) is distributed for **lawful, a
 
 ### No Warranty / Limitation of Liability
 
-THE SOFTWARE IS PROVIDED “AS IS” AND “AS AVAILABLE,” WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, OR ACCURACY. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE AUTHORS, DEVELOPERS, MAINTAINERS, AND CONTRIBUTORS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR CONSEQUENTIAL DAMAGES (INCLUDING, WITHOUT LIMITATION, LOSS OF DATA, PROFITS, GOODWILL, OR BUSINESS INTERRUPTION) ARISING FROM OR RELATED TO YOUR USE OF THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. WHERE LIABILITY CANNOT BE FULLY DISCLAIMED, THE TOTAL AGGREGATE LIABILITY SHALL NOT EXCEED THE GREATER OF (A) THE AMOUNT PAID, IF ANY, FOR THE COPY OF THE SOFTWARE THAT GAVE RISE TO THE CLAIM OR (B) USD $0.
+THE SOFTWARE IS PROVIDED �AS IS� AND �AS AVAILABLE,� WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, OR ACCURACY. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE AUTHORS, DEVELOPERS, MAINTAINERS, AND CONTRIBUTORS SHALL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR CONSEQUENTIAL DAMAGES (INCLUDING, WITHOUT LIMITATION, LOSS OF DATA, PROFITS, GOODWILL, OR BUSINESS INTERRUPTION) ARISING FROM OR RELATED TO YOUR USE OF THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. WHERE LIABILITY CANNOT BE FULLY DISCLAIMED, THE TOTAL AGGREGATE LIABILITY SHALL NOT EXCEED THE GREATER OF (A) THE AMOUNT PAID, IF ANY, FOR THE COPY OF THE SOFTWARE THAT GAVE RISE TO THE CLAIM OR (B) USD $0.
 
 ### Responsibility for Compliance
 
 You alone are responsible for ensuring your deployment complies with all applicable laws, regulations, licenses, permits, organizational policies, and third-party rights. No advice or information, whether oral or written, obtained from the project or through the Software, creates any warranty or obligation not expressly stated in this disclaimer. Continued use signifies your agreement to indemnify and hold harmless the authors, developers, maintainers, and contributors from claims arising out of or related to your activities with the Software.
 
 If you do not agree to these terms, **do not build, deploy, or run** AntiHunter Command & Control PRO.
+
+
 
