@@ -1,4 +1,11 @@
--- CreateTable
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AlarmLevel') THEN
+        CREATE TYPE "AlarmLevel" AS ENUM ('INFO', 'NOTICE', 'ALERT', 'CRITICAL');
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE "Geofence" (
     "id" TEXT NOT NULL,
     "siteId" TEXT,
@@ -18,14 +25,10 @@ CREATE TABLE "Geofence" (
     CONSTRAINT "Geofence_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
 CREATE INDEX "Geofence_siteId_idx" ON "Geofence"("siteId");
-
--- CreateIndex
 CREATE INDEX "Geofence_originSiteId_idx" ON "Geofence"("originSiteId");
-
--- CreateIndex
 CREATE INDEX "Geofence_updatedAt_idx" ON "Geofence"("updatedAt");
 
--- AddForeignKey
-ALTER TABLE "Geofence" ADD CONSTRAINT "Geofence_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Geofence"
+    ADD CONSTRAINT "Geofence_siteId_fkey"
+    FOREIGN KEY ("siteId") REFERENCES "Site"("id") ON DELETE SET NULL ON UPDATE CASCADE;

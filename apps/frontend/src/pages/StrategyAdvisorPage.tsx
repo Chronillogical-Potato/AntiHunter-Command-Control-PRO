@@ -59,7 +59,7 @@ const NODE_PROFILES: NodeProfile[] = [
   },
   {
     id: 'radar-sector',
-    label: 'RADAR 90° sector',
+    label: 'RADAR 90-degree sector',
     type: 'radar',
     defaultRadius: 180,
     defaultOverlap: 15,
@@ -69,7 +69,7 @@ const NODE_PROFILES: NodeProfile[] = [
   },
   {
     id: 'radar-wide',
-    label: 'RADAR 120° sector',
+    label: 'RADAR 120-degree sector',
     type: 'radar',
     defaultRadius: 210,
     defaultOverlap: 25,
@@ -79,7 +79,7 @@ const NODE_PROFILES: NodeProfile[] = [
   },
   {
     id: 'rf-longhaul',
-    label: 'RF relay (360°)',
+    label: 'RF relay (360-degree)',
     type: 'rf',
     defaultRadius: 400,
     defaultOverlap: 80,
@@ -223,6 +223,7 @@ export function StrategyAdvisorPage() {
   const [avoidancePolygons, setAvoidancePolygons] = useState<AvoidancePolygon[]>([]);
   const [obstacleError, setObstacleError] = useState<string | null>(null);
   const [nodeOverrides, setNodeOverrides] = useState<Record<string, NodeOverride>>({});
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const idBase = useId();
   const presetSelectId = `${idBase}-preset`;
@@ -236,6 +237,10 @@ export function StrategyAdvisorPage() {
   const anchorNameId = `${idBase}-anchor-name`;
   const anchorLatId = `${idBase}-anchor-lat`;
   const anchorLonId = `${idBase}-anchor-lon`;
+  const inspectorTitleId = `${idBase}-inspector-title`;
+  const inspectorRadiusInputId = `${idBase}-inspector-radius`;
+  const inspectorOrientationInputId = `${idBase}-inspector-orientation`;
+  const inspectorArcInputId = `${idBase}-inspector-arc`;
 
   useEffect(() => {
     void loadGeofences();
@@ -350,6 +355,27 @@ export function StrategyAdvisorPage() {
     return { ...baseStrategy, nodes };
   }, [baseStrategy, nodeOverrides]);
 
+  useEffect(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    if (!strategy.nodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+  }, [strategy.nodes, selectedNodeId]);
+
+  const selectedNode = useMemo(
+    () => strategy.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [strategy.nodes, selectedNodeId],
+  );
+  const selectedNodeOverride = selectedNode ? (nodeOverrides[selectedNode.id] ?? null) : null;
+  const baseSelectedNode = selectedNode ? (baseNodeLookup.get(selectedNode.id) ?? null) : null;
+  const inspectorHasOverride =
+    selectedNodeOverride != null && Object.keys(selectedNodeOverride).length > 0;
+  const inspectorRadiusValue = selectedNode?.radius ?? 0;
+  const inspectorOrientationValue = selectedNode?.orientation ?? baseSelectedNode?.orientation ?? 0;
+  const inspectorArcValue = selectedNode?.arcWidth ?? baseSelectedNode?.arcWidth ?? 360;
+  const inspectorSupportsDirection = selectedNode ? selectedNode.arcWidth < 360 : false;
   const mapBounds = useMemo(() => {
     const points: Array<[number, number]> = [];
     selectedGeofences.forEach((geofence) => {
@@ -588,6 +614,47 @@ export function StrategyAdvisorPage() {
   const handleMaxAnchorChange = (value: number | undefined) => {
     setMaxAnchorDistance(value);
     setActivePresetId(CUSTOM_PRESET_ID);
+  };
+
+  const handleSelectNode = (nodeId: string) => {
+    setSelectedNodeId(nodeId);
+  };
+
+  const handleCloseInspector = () => {
+    setSelectedNodeId(null);
+  };
+
+  const handleInspectorRadiusChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const value = Number(event.target.value);
+    if (Number.isNaN(value)) {
+      return;
+    }
+    updateNodeOverride(selectedNodeId, { radius: value });
+  };
+
+  const handleInspectorOrientationChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const value = Number(event.target.value);
+    if (Number.isNaN(value)) {
+      return;
+    }
+    updateNodeOverride(selectedNodeId, { orientation: value });
+  };
+
+  const handleInspectorArcChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const value = Number(event.target.value);
+    if (Number.isNaN(value)) {
+      return;
+    }
+    updateNodeOverride(selectedNodeId, { arcWidth: value });
   };
 
   const handleExportCsv = () => {
@@ -942,7 +1009,7 @@ ${nodesKml}
                 {anchors.map((anchor) => (
                   <li key={anchor.id}>
                     <span>
-                      {anchor.name} — {anchor.lat.toFixed(5)}, {anchor.lon.toFixed(5)}
+                      {anchor.name} - {anchor.lat.toFixed(5)}, {anchor.lon.toFixed(5)}
                     </span>
                     <button
                       type="button"
@@ -1012,6 +1079,7 @@ ${nodesKml}
           >
             <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
             <MapBoundsUpdater bounds={mapBounds} enabled={selectedGeofences.length > 0} />
+            <SelectedNodeFocus node={selectedNode} />
             {selectedGeofences.map((geofence) =>
               geofence.polygon && geofence.polygon.length > 0 ? (
                 <Polygon
@@ -1043,7 +1111,14 @@ ${nodesKml}
               </Marker>
             ))}
             {strategy.nodes.map((node) => (
-              <Marker key={node.id} position={[node.lat, node.lon]} icon={buildStrategyIcon(node)}>
+              <Marker
+                key={node.id}
+                position={[node.lat, node.lon]}
+                icon={buildStrategyIcon(node)}
+                eventHandlers={{
+                  click: () => handleSelectNode(node.id),
+                }}
+              >
                 <Tooltip direction="top" offset={[0, -18]} opacity={1} sticky>
                   <div>
                     <strong>{node.id}</strong>
@@ -1071,6 +1146,19 @@ ${nodesKml}
                 pathOptions={{ color: '#2563eb', weight: 1, dashArray: '4 4' }}
               />
             ))}
+            {selectedNode ? (
+              <Circle
+                key={`${selectedNode.id}-focus`}
+                center={[selectedNode.lat, selectedNode.lon]}
+                radius={selectedNode.radius}
+                pathOptions={{
+                  color: '#facc15',
+                  weight: 3,
+                  dashArray: '2 6',
+                  opacity: 0.9,
+                }}
+              />
+            ) : null}
             {strategy.nodes
               .filter((node) => node.arcWidth < 360 && node.orientation != null)
               .map((node) => {
@@ -1108,6 +1196,115 @@ ${nodesKml}
           </MapContainer>
         </div>
       </div>
+
+      {selectedNode ? (
+        <aside
+          className="strategy-node-inspector"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby={inspectorTitleId}
+        >
+          <div className="strategy-node-inspector__header">
+            <div>
+              <h2 id={inspectorTitleId}>{selectedNode.id}</h2>
+              <p>
+                {selectedNode.type.toUpperCase()} - {selectedNode.profileId}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="control-chip control-chip--ghost"
+              onClick={handleCloseInspector}
+            >
+              Close
+            </button>
+          </div>
+          <div className="strategy-node-inspector__body">
+            <div>
+              <span className="muted">Coordinates</span>
+              <div>
+                {selectedNode.lat.toFixed(5)}, {selectedNode.lon.toFixed(5)}
+              </div>
+            </div>
+            {selectedNode.anchorDistance != null ? (
+              <div>
+                <span className="muted">Anchor distance</span>
+                <div>{selectedNode.anchorDistance.toFixed(1)} m</div>
+              </div>
+            ) : null}
+            <label className="form-label" htmlFor={inspectorRadiusInputId}>
+              Detection distance (m)
+            </label>
+            <input
+              id={inspectorRadiusInputId}
+              type="number"
+              className="control-input"
+              min={10}
+              max={5000}
+              step={1}
+              value={inspectorRadiusValue}
+              onChange={handleInspectorRadiusChange}
+            />
+            <p className="form-hint">
+              Base distance:{' '}
+              {baseSelectedNode ? `${baseSelectedNode.radius.toFixed(0)} m` : 'not available'}
+              {inspectorHasOverride ? ' | Override active' : ''}
+            </p>
+            {inspectorSupportsDirection ? (
+              <>
+                <label className="form-label" htmlFor={inspectorOrientationInputId}>
+                  Orientation (degrees)
+                </label>
+                <input
+                  id={inspectorOrientationInputId}
+                  type="number"
+                  className="control-input"
+                  min={0}
+                  max={359}
+                  step={1}
+                  value={inspectorOrientationValue}
+                  onChange={handleInspectorOrientationChange}
+                />
+                <label className="form-label" htmlFor={inspectorArcInputId}>
+                  Beam angle (degrees)
+                </label>
+                <input
+                  id={inspectorArcInputId}
+                  type="number"
+                  className="control-input"
+                  min={10}
+                  max={360}
+                  step={1}
+                  value={inspectorArcValue}
+                  onChange={handleInspectorArcChange}
+                />
+              </>
+            ) : (
+              <p className="form-hint">
+                Omni-directional node. Orientation and beam angle are not applicable.
+              </p>
+            )}
+          </div>
+          <div className="strategy-node-inspector__footer">
+            {inspectorHasOverride ? (
+              <button
+                type="button"
+                className="control-chip control-chip--ghost"
+                onClick={() => resetNodeOverride(selectedNode.id)}
+              >
+                Reset overrides
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="control-chip control-chip--ghost"
+              onClick={handleCloseInspector}
+            >
+              Done
+            </button>
+          </div>
+        </aside>
+      ) : null}
 
       {planWarnings.length > 0 ? (
         <section className="strategy-warnings">
@@ -1173,106 +1370,47 @@ ${nodesKml}
             </thead>
             <tbody>
               {strategy.nodes.map((node, index) => {
-                const override = nodeOverrides[node.id];
-                const isDirectional = node.type === 'radar';
-                const orientationValue = node.orientation ?? 0;
+                const hasOverride = Boolean(nodeOverrides[node.id]);
+                const isSelected = node.id === selectedNodeId;
+                const rowClassName =
+                  [
+                    hasOverride ? 'strategy-table__row--override' : null,
+                    isSelected ? 'strategy-table__row--selected' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined;
                 return (
-                  <tr key={node.id}>
+                  <tr key={node.id} className={rowClassName}>
                     <td>{index + 1}</td>
                     <td>{node.lat.toFixed(6)}</td>
                     <td>{node.lon.toFixed(6)}</td>
                     <td>{node.profileId}</td>
                     <td>{node.type.toUpperCase()}</td>
-                    <td>
-                      {isDirectional ? (
-                        <div className="strategy-control">
-                          <input
-                            className="strategy-control__input"
-                            type="number"
-                            min={10}
-                            max={2000}
-                            step={5}
-                            value={Math.round(node.radius)}
-                            onChange={(event) =>
-                              updateNodeOverride(node.id, { radius: Number(event.target.value) })
-                            }
-                          />
-                          <span className="strategy-control__suffix">m</span>
-                        </div>
-                      ) : (
-                        node.radius.toFixed(0)
-                      )}
-                    </td>
+                    <td>{node.radius.toFixed(0)}</td>
                     <td>{node.spacing.toFixed(1)}</td>
-                    <td>
-                      {isDirectional ? (
-                        <div className="strategy-control strategy-control--stacked">
-                          <input
-                            className="strategy-control__range"
-                            type="range"
-                            min={0}
-                            max={359}
-                            value={orientationValue}
-                            onChange={(event) =>
-                              updateNodeOverride(node.id, {
-                                orientation: Number(event.target.value),
-                              })
-                            }
-                          />
-                          <input
-                            className="strategy-control__input"
-                            type="number"
-                            min={0}
-                            max={359}
-                            value={Math.round(orientationValue)}
-                            onChange={(event) =>
-                              updateNodeOverride(node.id, {
-                                orientation: Number(event.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                      ) : node.orientation != null ? (
-                        node.orientation.toFixed(1)
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>
-                      {isDirectional ? (
-                        <div className="strategy-control">
-                          <input
-                            className="strategy-control__input"
-                            type="number"
-                            min={10}
-                            max={360}
-                            value={Math.round(node.arcWidth)}
-                            onChange={(event) =>
-                              updateNodeOverride(node.id, {
-                                arcWidth: Number(event.target.value),
-                              })
-                            }
-                          />
-                          <span className="strategy-control__suffix">°</span>
-                        </div>
-                      ) : (
-                        node.arcWidth.toFixed(0)
-                      )}
-                    </td>
+                    <td>{node.orientation != null ? node.orientation.toFixed(1) : '--'}</td>
+                    <td>{node.arcWidth.toFixed(0)}</td>
                     <td>{node.anchorDistance != null ? node.anchorDistance.toFixed(1) : 'N/A'}</td>
-                    <td>{node.flags.length > 0 ? node.flags.join(', ') : '—'}</td>
+                    <td>{node.flags.length > 0 ? node.flags.join(', ') : '--'}</td>
                     <td>
-                      {override ? (
+                      <div className="strategy-row-actions">
                         <button
                           type="button"
                           className="control-chip"
-                          onClick={() => resetNodeOverride(node.id)}
+                          onClick={() => handleSelectNode(node.id)}
                         >
-                          Reset
+                          Adjust
                         </button>
-                      ) : (
-                        '—'
-                      )}
+                        {hasOverride ? (
+                          <button
+                            type="button"
+                            className="control-chip control-chip--ghost"
+                            onClick={() => resetNodeOverride(node.id)}
+                          >
+                            Reset
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1703,6 +1841,19 @@ function MapBoundsUpdater({ bounds, enabled }: { bounds: L.LatLngBounds; enabled
     }
     map.fitBounds(bounds, { padding: [32, 32] });
   }, [map, bounds, enabled]);
+
+  return null;
+}
+
+function SelectedNodeFocus({ node }: { node: StrategyNode | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!node) {
+      return;
+    }
+    map.panTo([node.lat, node.lon], { animate: true });
+  }, [map, node]);
 
   return null;
 }
