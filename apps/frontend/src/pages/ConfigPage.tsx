@@ -1446,7 +1446,7 @@ export function ConfigPage() {
               </header>
               <div className="config-card__body">
                 {firewallOverviewQuery.isLoading && !firewallForm ? (
-                  <p className="form-hint">Loading firewall configuration…</p>
+                  <p className="form-hint">Loading firewall configurationÃ¢â‚¬Â¦</p>
                 ) : firewallForm ? (
                   <>
                     <form className="config-form" onSubmit={handleFirewallSubmit}>
@@ -1659,7 +1659,7 @@ export function ConfigPage() {
                         Recent firewall activity
                         <span className="firewall-log-viewer__summary-meta">
                           {firewallLogsQuery.isFetching
-                            ? 'Refreshing�'
+                            ? 'Refreshingâ€¦'
                             : `${firewallLogs.length} entries`}
                         </span>
                       </summary>
@@ -1671,11 +1671,11 @@ export function ConfigPage() {
                             onClick={() => firewallLogsQuery.refetch()}
                             disabled={firewallLogsQuery.isFetching}
                           >
-                            {firewallLogsQuery.isFetching ? 'Loading�' : 'Refresh'}
+                            {firewallLogsQuery.isFetching ? 'Loadingâ€¦' : 'Refresh'}
                           </button>
                         </div>
                         {firewallLogsQuery.isLoading ? (
-                          <p className="form-hint">Loading firewall logs�</p>
+                          <p className="form-hint">Loading firewall logsâ€¦</p>
                         ) : firewallLogsQuery.isError ? (
                           <p className="form-error">{firewallLogsError}</p>
                         ) : firewallLogs.length === 0 ? (
@@ -1695,7 +1695,7 @@ export function ConfigPage() {
                                 <div className="firewall-log-entry__meta">
                                   <span>{formatDateTime(log.lastSeen)}</span>
                                   <span>
-                                    {log.method.toUpperCase()} � {log.path}
+                                    {log.method.toUpperCase()} - {log.path}
                                   </span>
                                   {log.reason ? <span>{log.reason}</span> : null}
                                 </div>
@@ -2463,7 +2463,7 @@ export function ConfigPage() {
                               takSendPayload.trim().length === 0 || takSendMutation.isPending
                             }
                           >
-                            {takSendMutation.isPending ? 'Sending…' : 'Send Payload'}
+                            {takSendMutation.isPending ? 'SendingÃ¢â‚¬Â¦' : 'Send Payload'}
                           </button>
                           <button
                             type="button"
@@ -2491,7 +2491,7 @@ export function ConfigPage() {
                             onClick={() => reloadTakMutation.mutate()}
                             disabled={reloadTakMutation.isPending}
                           >
-                            {reloadTakMutation.isPending ? 'Restarting…' : 'Restart Bridge'}
+                            {reloadTakMutation.isPending ? 'RestartingÃ¢â‚¬Â¦' : 'Restart Bridge'}
                           </button>
                         </div>
                       </div>
@@ -2590,7 +2590,7 @@ export function ConfigPage() {
                             onClick={() => handleMqttReconnect(cfg.siteId)}
                             disabled={isConnecting}
                           >
-                            {isConnecting ? 'Connecting…' : 'Reconnect'}
+                            {isConnecting ? 'ConnectingÃ¢â‚¬Â¦' : 'Reconnect'}
                           </button>
                           <button
                             type="button"
@@ -2598,7 +2598,7 @@ export function ConfigPage() {
                             onClick={() => handleMqttTest(cfg.siteId)}
                             disabled={isTesting}
                           >
-                            {isTesting ? 'Testing…' : 'Test connection'}
+                            {isTesting ? 'TestingÃ¢â‚¬Â¦' : 'Test connection'}
                           </button>
                         </div>
                         <label className="checkbox-label">
