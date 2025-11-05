@@ -437,8 +437,9 @@ a {
   position: relative;
   display: inline-flex;
   align-items: center;
+  padding: 0.4rem 0.9rem;
+  margin: 0 0.25rem;
   gap: 0.35rem;
-  padding: 0.4rem 0.85rem;
   border-radius: 0.75rem;
   background: var(--color-chip-bg);
   color: var(--color-chip-text);
@@ -3882,6 +3883,13 @@ body.theme-dark .strategy-table__row--selected {
   box-shadow: 0 12px 24px var(--color-panel-shadow);
 }
 
+.firewall-log-viewer__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .firewall-log-viewer summary {
   cursor: pointer;
   list-style: none;
@@ -3917,6 +3925,8 @@ body.theme-dark .strategy-table__row--selected {
 .firewall-log-viewer__toolbar {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .firewall-log-list {

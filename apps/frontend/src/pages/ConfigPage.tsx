@@ -1446,7 +1446,7 @@ export function ConfigPage() {
               </header>
               <div className="config-card__body">
                 {firewallOverviewQuery.isLoading && !firewallForm ? (
-                  <p className="form-hint">Loading firewall configurationÃ¢â‚¬Â¦</p>
+                  <p className="form-hint">Loading firewall configurationÃ¢â-�¬Â¦</p>
                 ) : firewallForm ? (
                   <>
                     <form className="config-form" onSubmit={handleFirewallSubmit}>
@@ -1672,6 +1672,14 @@ export function ConfigPage() {
                             disabled={firewallLogsQuery.isFetching}
                           >
                             {firewallLogsQuery.isFetching ? 'Loadingâ€¦' : 'Refresh'}
+                          </button>
+                          <button
+                            type="button"
+                            className="control-chip"
+                            onClick={handleFirewallLogsExport}
+                            disabled={firewallLogs.length === 0}
+                          >
+                            Export CSV
                           </button>
                         </div>
                         {firewallLogsQuery.isLoading ? (
@@ -2463,7 +2471,7 @@ export function ConfigPage() {
                               takSendPayload.trim().length === 0 || takSendMutation.isPending
                             }
                           >
-                            {takSendMutation.isPending ? 'SendingÃ¢â‚¬Â¦' : 'Send Payload'}
+                            {takSendMutation.isPending ? 'SendingÃ¢â-�¬Â¦' : 'Send Payload'}
                           </button>
                           <button
                             type="button"
@@ -2491,7 +2499,7 @@ export function ConfigPage() {
                             onClick={() => reloadTakMutation.mutate()}
                             disabled={reloadTakMutation.isPending}
                           >
-                            {reloadTakMutation.isPending ? 'RestartingÃ¢â‚¬Â¦' : 'Restart Bridge'}
+                            {reloadTakMutation.isPending ? 'RestartingÃ¢â-�¬Â¦' : 'Restart Bridge'}
                           </button>
                         </div>
                       </div>
@@ -2590,7 +2598,7 @@ export function ConfigPage() {
                             onClick={() => handleMqttReconnect(cfg.siteId)}
                             disabled={isConnecting}
                           >
-                            {isConnecting ? 'ConnectingÃ¢â‚¬Â¦' : 'Reconnect'}
+                            {isConnecting ? 'ConnectingÃ¢â-�¬Â¦' : 'Reconnect'}
                           </button>
                           <button
                             type="button"
@@ -2598,7 +2606,7 @@ export function ConfigPage() {
                             onClick={() => handleMqttTest(cfg.siteId)}
                             disabled={isTesting}
                           >
-                            {isTesting ? 'TestingÃ¢â‚¬Â¦' : 'Test connection'}
+                            {isTesting ? 'TestingÃ¢â-�¬Â¦' : 'Test connection'}
                           </button>
                         </div>
                         <label className="checkbox-label">
