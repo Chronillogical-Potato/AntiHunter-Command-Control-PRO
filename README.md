@@ -301,7 +301,6 @@ brew services start postgresql
    ```
 
 2. **Install the USB serial driver for your adapter**
-   - WCH CH34x: https://www.wch.cn/download/CH34XSER_MAC_ZIP.html
    - Silicon Labs CP210x: `brew install --cask silicon-labs-vcp-driver`
    - Reboot so `/dev/tty.wchusbserial*` (or `/dev/tty.SLAB_USBtoUART*`) appears.
 
