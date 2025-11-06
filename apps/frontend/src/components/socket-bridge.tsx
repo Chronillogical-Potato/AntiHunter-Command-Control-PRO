@@ -394,7 +394,7 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
       return {
         message: parts.join(' '),
         level: 'info',
-        source: 'node',
+        source: 'raw',
         timestamp: typeof telemetry.timestamp === 'string' ? telemetry.timestamp : undefined,
         siteId: telemetry.siteId ?? base.siteId,
       };
@@ -429,7 +429,7 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
       return {
         message: parts.join(' '),
         level: 'info',
-        source: 'node',
+        source: 'raw',
         timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
         siteId: upsert.payload?.siteId ?? upsert.originSiteId ?? base.siteId,
       };
