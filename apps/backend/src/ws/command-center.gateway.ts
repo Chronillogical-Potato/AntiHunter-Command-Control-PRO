@@ -35,6 +35,10 @@ import { NodesService } from '../nodes/nodes.service';
 export class CommandCenterGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
+  private static readonly EVENT_DEDUPE_WINDOW_MS = 750;
+  private static readonly EVENT_DEDUPE_MAX = 512;
+  private static readonly EVENT_KEY_IGNORED_FIELDS = new Set(['timestamp', 'ts']);
+
   private readonly logger = new Logger(CommandCenterGateway.name);
   @WebSocketServer()
   server!: Server;
@@ -42,6 +46,7 @@ export class CommandCenterGateway
   private readonly clientDiffSubscriptions = new Map<string, Subscription>();
   private commandSubscription?: Subscription;
   private geofenceSubscription?: Subscription;
+  private readonly recentEventHashes = new Map<string, number>();
 
   constructor(
     private readonly nodesService: NodesService,
@@ -120,6 +125,9 @@ export class CommandCenterGateway
     if (!this.server) {
       return;
     }
+    if (!this.shouldEmitEvent(payload)) {
+      return;
+    }
     if (!options?.skipBus) {
       this.eventBus.publish(payload);
     }
@@ -153,5 +161,66 @@ export class CommandCenterGateway
     } catch (error) {
       throw new WsException(error instanceof Error ? error.message : 'Unknown error');
     }
+  }
+
+  private shouldEmitEvent(payload: CommandCenterEvent): boolean {
+    const key = this.buildEventDedupKey(payload);
+    if (!key) {
+      return true;
+    }
+    const now = Date.now();
+    const lastSeen = this.recentEventHashes.get(key);
+    if (lastSeen && now - lastSeen < CommandCenterGateway.EVENT_DEDUPE_WINDOW_MS) {
+      return false;
+    }
+    this.recentEventHashes.set(key, now);
+    if (this.recentEventHashes.size > CommandCenterGateway.EVENT_DEDUPE_MAX) {
+      const cutoff = now - CommandCenterGateway.EVENT_DEDUPE_WINDOW_MS;
+      for (const [candidate, ts] of this.recentEventHashes.entries()) {
+        if (ts < cutoff || this.recentEventHashes.size > CommandCenterGateway.EVENT_DEDUPE_MAX) {
+          this.recentEventHashes.delete(candidate);
+        }
+        if (this.recentEventHashes.size <= CommandCenterGateway.EVENT_DEDUPE_MAX) {
+          break;
+        }
+      }
+    }
+    return true;
+  }
+
+  private buildEventDedupKey(payload: CommandCenterEvent): string | null {
+    try {
+      const sanitized = this.sanitizeEventForKey(payload);
+      return JSON.stringify(sanitized);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to build event dedupe key: ${error instanceof Error ? error.message : error}`,
+      );
+      return null;
+    }
+  }
+
+  private sanitizeEventForKey(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sanitizeEventForKey(item));
+    }
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const keys = Object.keys(record).filter(
+        (key) => !CommandCenterGateway.EVENT_KEY_IGNORED_FIELDS.has(key),
+      );
+      keys.sort();
+      return keys.reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = this.sanitizeEventForKey(record[key]);
+        return acc;
+      }, {});
+    }
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      return String(value);
+    }
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+    return value;
   }
 }

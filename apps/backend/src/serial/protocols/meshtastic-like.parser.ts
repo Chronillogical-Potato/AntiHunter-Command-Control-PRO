@@ -879,7 +879,9 @@ function restoreHumanReadableUnits(value: string): string {
   if (!value) {
     return value;
   }
-  return value.replace(/#{1,2}\s*([CF])/gi, (_, unit: string) => `°${unit.toUpperCase()}`);
+  return value
+    .replace(/#{1,2}\s*([CF])/gi, (_, unit: string) => ` ${unit.toUpperCase()}`)
+    .replace(/\u00b0\s*([CF])/gi, (_, unit: string) => ` ${unit.toUpperCase()}`);
 }
 function extractChannelFromText(value: string | null | undefined): number | undefined {
   if (!value) {

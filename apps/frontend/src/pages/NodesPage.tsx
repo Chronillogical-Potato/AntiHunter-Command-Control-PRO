@@ -1,4 +1,4 @@
-﻿import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { apiClient } from '../api/client';
@@ -249,7 +249,7 @@ function extractTemperature(message?: string | null): string | undefined {
   if (!message) {
     return undefined;
   }
-  const match = /temp(?:erature)?[=:]?\s*(-?\d+(?:\.\d+)?)\s*(?:┬░?\s*([CFcf]))?/i.exec(message);
+  const match = /temp(?:erature)?[=:]?\s*(-?\d+(?:\.\d+)?)\s*(?:[�\s-]*([CFcf]))?/i.exec(message);
   if (!match) {
     return undefined;
   }
@@ -258,9 +258,8 @@ function extractTemperature(message?: string | null): string | undefined {
     return undefined;
   }
   const unit = match[2] ? match[2].toUpperCase() : 'C';
-  return `${value.toFixed(1)}┬░${unit}`;
+  return `${value.toFixed(1)} ${unit}`;
 }
-
 function extractSdStatus(message?: string | null): string | undefined {
   if (!message) {
     return undefined;

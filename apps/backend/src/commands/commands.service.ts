@@ -456,13 +456,22 @@ export class CommandsService {
     name: string,
     nodeId?: string,
   ): Promise<CommandLog | null> {
-    const directTarget = nodeId ? `@${nodeId}` : undefined;
+    const targets: string[] = [];
+    if (nodeId) {
+      targets.push(`@${nodeId}`);
+      if (nodeId.startsWith('NODE_')) {
+        targets.push(`@${nodeId.replace(/^NODE_/, '')}`);
+      }
+    }
 
     return this.prisma.commandLog.findFirst({
       where: {
         name,
         status: { in: ['PENDING', 'SENT'] },
-        OR: nodeId ? [{ target: directTarget }, { target: '@ALL' }] : undefined,
+        OR:
+          nodeId && targets.length > 0
+            ? [...targets.map((target) => ({ target })), { target: '@ALL' }]
+            : undefined,
       },
       orderBy: {
         createdAt: 'desc',

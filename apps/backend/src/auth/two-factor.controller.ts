@@ -1,10 +1,12 @@
-﻿import { BadRequestException, Body, Controller, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 
 import { AllowLegalPending, AllowTwoFactorPending } from './auth.decorators';
 import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { FirewallService } from '../firewall/firewall.service';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { DisableTwoFactorDto, TwoFactorVerifyDto } from './dto/two-factor.dto';
 
 @Controller('auth/2fa')
@@ -66,6 +68,8 @@ export class TwoFactorController {
   @Post('verify')
   @AllowTwoFactorPending()
   @AllowLegalPending()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'auth-2fa', trackAuthFailure: true })
   async verify(@Req() req: Request, @Body() dto: TwoFactorVerifyDto) {
     const userId = req.auth?.sub;
     const email = req.auth?.email;

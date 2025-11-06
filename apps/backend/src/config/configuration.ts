@@ -1,3 +1,6 @@
+const parseNumberEnv = (value: string | undefined, fallback: number): number =>
+  value !== undefined && value !== '' ? Number(value) : fallback;
+
 export default () => ({
   env: process.env.NODE_ENV ?? 'development',
   site: {
@@ -51,6 +54,31 @@ export default () => ({
   logging: {
     level: process.env.LOG_LEVEL ?? 'info',
     structured: process.env.STRUCTURED_LOGS !== 'false',
+  },
+  rateLimit: {
+    defaultLimit: parseNumberEnv(process.env.RATE_LIMIT_DEFAULT_LIMIT, 300),
+    defaultTtlSeconds: parseNumberEnv(process.env.RATE_LIMIT_DEFAULT_TTL, 60),
+    form: {
+      loginMinSubmitMs: parseNumberEnv(process.env.AUTH_MIN_SUBMIT_MS, 600),
+    },
+    rules: {
+      'auth-login-burst': {
+        limit: parseNumberEnv(process.env.RATE_LIMIT_LOGIN_BURST_LIMIT, 10),
+        ttlSeconds: parseNumberEnv(process.env.RATE_LIMIT_LOGIN_BURST_TTL, 10),
+      },
+      'auth-login': {
+        limit: parseNumberEnv(process.env.RATE_LIMIT_LOGIN_LIMIT, 30),
+        ttlSeconds: parseNumberEnv(process.env.RATE_LIMIT_LOGIN_TTL, 60),
+      },
+      'auth-legal': {
+        limit: parseNumberEnv(process.env.RATE_LIMIT_LEGAL_LIMIT, 20),
+        ttlSeconds: parseNumberEnv(process.env.RATE_LIMIT_LEGAL_TTL, 300),
+      },
+      'auth-2fa': {
+        limit: parseNumberEnv(process.env.RATE_LIMIT_2FA_LIMIT, 10),
+        ttlSeconds: parseNumberEnv(process.env.RATE_LIMIT_2FA_TTL, 300),
+      },
+    },
   },
   mail: {
     enabled: process.env.MAIL_ENABLED !== 'false' && !!process.env.MAIL_HOST,

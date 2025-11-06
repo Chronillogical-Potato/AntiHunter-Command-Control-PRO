@@ -80,6 +80,61 @@ const envSchema = z.object({
   MAIL_SECURE: z.string().optional(),
   MAIL_FROM: z.string().optional(),
   MAIL_PREVIEW: z.string().optional(),
+  RATE_LIMIT_DEFAULT_LIMIT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_DEFAULT_TTL: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_LOGIN_BURST_LIMIT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_LOGIN_BURST_TTL: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_LOGIN_LIMIT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_LOGIN_TTL: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_LEGAL_LIMIT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_LEGAL_TTL: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_2FA_LIMIT: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  RATE_LIMIT_2FA_TTL: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1).optional()),
+  AUTH_MIN_SUBMIT_MS: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(0).optional()),
   INVITE_EXPIRY_HOURS: z
     .string()
     .optional()

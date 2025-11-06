@@ -93,7 +93,7 @@ async function bootstrap(): Promise<void> {
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", 'data:', 'https:'],
-          connectSrc: ["'self'", 'ws:', 'wss:'],
+          connectSrc: ["'self'", 'ws:', 'wss:', 'https://tile.openstreetmap.org'],
           fontSrc: ["'self'", 'data:'],
           objectSrc: ["'none'"],
         },

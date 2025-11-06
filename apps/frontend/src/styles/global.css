@@ -2963,6 +2963,16 @@ body.theme-dark .control-chip[disabled] {
   font-family: inherit;
 }
 
+.auth-overlay__honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .auth-overlay__checkbox {
   display: flex;
   gap: 0.65rem;

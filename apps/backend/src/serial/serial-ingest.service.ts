@@ -14,6 +14,9 @@ import { CommandCenterGateway } from '../ws/command-center.gateway';
 export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SerialIngestService.name);
   private subscription?: Subscription;
+  private static readonly DUPLICATE_WINDOW_MS = 750;
+  private static readonly DUPLICATE_CACHE_MAX = 512;
+  private readonly duplicateKeys = new Map<string, number>();
 
   constructor(
     private readonly serialService: SerialService,
@@ -42,6 +45,9 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
 
   private async handleEvent(event: SerialParseResult): Promise<void> {
     const siteId = this.serialService.getSiteId();
+    if (this.shouldFilterDuplicate(event, siteId)) {
+      return;
+    }
 
     switch (event.kind) {
       case 'node-telemetry':
@@ -224,6 +230,68 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
       default:
         this.gateway.emitEvent({ type: 'raw', raw: event.raw });
         break;
+    }
+  }
+
+  private shouldFilterDuplicate(event: SerialParseResult, siteId: string | null): boolean {
+    if (event.kind === 'node-telemetry') {
+      return false;
+    }
+    const key = this.buildDuplicateKey(event, siteId);
+    if (!key) {
+      return false;
+    }
+    const now = Date.now();
+    const lastSeen = this.duplicateKeys.get(key);
+    if (lastSeen && now - lastSeen < SerialIngestService.DUPLICATE_WINDOW_MS) {
+      return true;
+    }
+    this.duplicateKeys.set(key, now);
+    if (this.duplicateKeys.size > SerialIngestService.DUPLICATE_CACHE_MAX) {
+      const cutoff = now - SerialIngestService.DUPLICATE_WINDOW_MS;
+      for (const [candidate, ts] of this.duplicateKeys.entries()) {
+        if (ts < cutoff || this.duplicateKeys.size > SerialIngestService.DUPLICATE_CACHE_MAX) {
+          this.duplicateKeys.delete(candidate);
+        }
+        if (this.duplicateKeys.size <= SerialIngestService.DUPLICATE_CACHE_MAX) {
+          break;
+        }
+      }
+    }
+    return false;
+  }
+
+  private buildDuplicateKey(event: SerialParseResult, siteId: string | null): string | null {
+    switch (event.kind) {
+      case 'alert': {
+        const dataTime =
+          typeof event.data?.time === 'string' ? event.data.time : (event.data as never)?.ts;
+        return [
+          'alert',
+          siteId ?? 'local',
+          event.nodeId ?? 'unknown',
+          event.category ?? 'generic',
+          event.message ?? '',
+          dataTime ?? '',
+        ].join(':');
+      }
+      case 'target-detected':
+        return [
+          'target',
+          siteId ?? 'local',
+          event.nodeId ?? 'unknown',
+          event.mac,
+          event.channel ?? 'na',
+          event.type ?? '',
+        ].join(':');
+      case 'command-ack':
+        return ['ack', event.nodeId ?? 'unknown', event.ackType, event.status].join(':');
+      case 'command-result':
+        return ['result', event.nodeId ?? 'unknown', event.command, event.payload].join(':');
+      case 'raw':
+        return ['raw', event.raw].join(':');
+      default:
+        return null;
     }
   }
 }

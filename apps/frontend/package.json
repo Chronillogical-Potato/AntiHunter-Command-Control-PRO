@@ -28,8 +28,8 @@
   "devDependencies": {
     "@types/leaflet": "^1.9.11",
     "@types/leaflet.heat": "^0.2.5",
-    "@types/qrcode": "^1.5.4",
     "@types/node": "^20.14.10",
+    "@types/qrcode": "^1.5.4",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",

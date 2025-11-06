@@ -5,6 +5,12 @@ type RequestOptions = RequestInit & {
   tokenOverride?: string | null;
 };
 
+type ApiError = Error & {
+  status?: number;
+  code?: string;
+  rawBody?: string;
+};
+
 const API_BASE = '/api';
 
 async function request<T>(input: RequestInfo | URL, options: RequestOptions = {}): Promise<T> {
@@ -40,12 +46,34 @@ async function request<T>(input: RequestInfo | URL, options: RequestOptions = {}
     if (hasAuthToken) {
       forceLogout();
     }
-    throw new Error('Unauthorized');
+    const error: ApiError = new Error('Unauthorized');
+    error.status = 401;
+    throw error;
   }
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || response.statusText);
+    const apiError: ApiError = new Error(text || response.statusText);
+    apiError.status = response.status;
+    apiError.rawBody = text;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        if (typeof parsed.message === 'string') {
+          apiError.message = parsed.message;
+        } else if (typeof parsed.error === 'string') {
+          apiError.message = parsed.error;
+        }
+        if (typeof parsed.code === 'string') {
+          apiError.code = parsed.code;
+        } else if (typeof parsed.errorCode === 'string') {
+          apiError.code = parsed.errorCode;
+        }
+      } catch {
+        // not JSON, keep defaults
+      }
+    }
+    throw apiError;
   }
 
   if (response.status === 204) {

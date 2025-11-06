@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 
 import { AllowLegalPending, Public } from './auth.decorators';
@@ -6,6 +6,8 @@ import { AuthService } from './auth.service';
 import { LegalAckDto } from './dto/legal-ack.dto';
 import { LoginDto } from './dto/login.dto';
 import { LEGAL_DISCLAIMER } from './legal-disclaimer';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
+import { RateLimitGuard } from '../rate-limit/rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -13,8 +15,13 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimit(
+    { key: 'auth-login-burst', trackAuthFailure: true },
+    { key: 'auth-login', trackAuthFailure: true },
+  )
   async login(@Body() dto: LoginDto, @Req() req: Request) {
-    return this.authService.login(dto.email, dto.password, req);
+    return this.authService.login(dto, req);
   }
 
   @Get('me')
@@ -36,6 +43,8 @@ export class AuthController {
 
   @Post('legal-ack')
   @AllowLegalPending()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'auth-legal' })
   async acknowledge(@Req() req: Request, @Body() dto: LegalAckDto) {
     if (!dto.accepted) {
       throw new BadRequestException('Acknowledgement is required to continue');

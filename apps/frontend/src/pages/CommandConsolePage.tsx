@@ -58,9 +58,14 @@ function normalizeTarget(value: string | undefined): string {
     return '@ALL';
   }
   const trimmed = value.trim().toUpperCase();
-  const withoutAt = trimmed.replace(/^@/, '');
-  const sanitized = withoutAt.startsWith('NODE_AH') ? withoutAt.replace(/^NODE_/, '') : withoutAt;
-  return `@${sanitized}`;
+  const withoutAt = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+  if (withoutAt === 'ALL') {
+    return '@ALL';
+  }
+  if (withoutAt.startsWith('NODE_AH')) {
+    return `@${withoutAt.replace(/^NODE_/, '')}`;
+  }
+  return `@${withoutAt}`;
 }
 
 function createFormState(

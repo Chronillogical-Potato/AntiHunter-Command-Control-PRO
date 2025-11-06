@@ -22,12 +22,21 @@ export function AuthOverlay() {
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [ackChecked, setAckChecked] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [honeypotValue, setHoneypotValue] = useState('');
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const formStartRef = useRef<number>(Date.now());
 
   const overlayVisible = status !== 'authenticated';
   const showLegalStep = status === 'legal';
   const showTwoFactorStep = status === 'twoFactor';
+
+  useEffect(() => {
+    if (status === 'login') {
+      formStartRef.current = Date.now();
+      setHoneypotValue('');
+    }
+  }, [status]);
 
   useEffect(() => {
     if (showLegalStep) {
@@ -55,7 +64,11 @@ export function AuthOverlay() {
   const handleLogin = (event: FormEvent) => {
     event.preventDefault();
     clearError();
-    void login(email, password);
+    void login(email, password, {
+      submittedAt: formStartRef.current,
+      honeypot: honeypotValue,
+    });
+    formStartRef.current = Date.now();
   };
 
   const handleAccept = (event: FormEvent) => {
@@ -159,6 +172,19 @@ export function AuthOverlay() {
           </form>
         ) : (
           <form onSubmit={handleLogin} className="auth-overlay__form">
+            <div className="auth-overlay__honeypot" aria-hidden="true">
+              <label htmlFor="auth-overlay-website">Website</label>
+              <input
+                id="auth-overlay-website"
+                type="text"
+                name="website"
+                tabIndex={-1}
+                autoComplete="off"
+                value={honeypotValue}
+                onChange={(event) => setHoneypotValue(event.target.value)}
+              />
+            </div>
+            <input type="hidden" name="submittedAt" value={String(formStartRef.current)} />
             <label>
               <span>Email</span>
               <input

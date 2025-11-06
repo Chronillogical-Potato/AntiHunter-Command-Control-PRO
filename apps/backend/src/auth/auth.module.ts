@@ -8,9 +8,10 @@ import { TwoFactorController } from './two-factor.controller';
 import { TwoFactorService } from './two-factor.service';
 import { FirewallModule } from '../firewall/firewall.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { RateLimitModule } from '../rate-limit/rate-limit.module';
 
 @Module({
-  imports: [PrismaModule, FirewallModule],
+  imports: [PrismaModule, FirewallModule, RateLimitModule],
   controllers: [AuthController, TwoFactorController],
   providers: [
     AuthService,

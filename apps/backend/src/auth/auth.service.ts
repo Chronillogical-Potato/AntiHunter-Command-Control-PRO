@@ -1,10 +1,12 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, Role, SiteAccessLevel } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 
 import { AuthTokenPayload } from './auth.types';
+import { LoginDto } from './dto/login.dto';
 import { LEGAL_DISCLAIMER } from './legal-disclaimer';
 import { FirewallService } from '../firewall/firewall.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -57,16 +59,50 @@ export class AuthService {
   private readonly jwtSecret: jwt.Secret = process.env.JWT_SECRET ?? 'command-center-dev-secret';
   private readonly tokenTtl = process.env.JWT_EXPIRY ?? '12h';
   private readonly twoFactorTokenTtl = process.env.TWO_FACTOR_TOKEN_EXPIRY ?? '10m';
+  private readonly loginMinSubmitMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly firewallService: FirewallService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    const configValue = configService.get<number>('rateLimit.form.loginMinSubmitMs', 600);
+    this.loginMinSubmitMs = Number.isFinite(configValue) ? Math.max(0, configValue) : 600;
+  }
 
-  async login(email: string, password: string, req?: Request): Promise<LoginResult> {
+  async login(dto: LoginDto, req?: Request): Promise<LoginResult> {
     const ip = this.firewallService.getClientIp(req);
     const userAgent = req?.headers['user-agent'] as string | undefined;
     const path = req?.path ?? '/auth/login';
+    const email = dto.email;
+    const password = dto.password;
+
+    const normalizedHoneypot = dto.honeypot?.trim();
+    if (normalizedHoneypot) {
+      if (ip) {
+        await this.firewallService.registerAuthFailure(ip, {
+          reason: 'HONEYPOT_FIELD',
+          path,
+          userAgent,
+        });
+      }
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (typeof dto.submittedAt === 'number' && Number.isFinite(dto.submittedAt)) {
+      const delta = Date.now() - dto.submittedAt;
+      if (delta < this.loginMinSubmitMs) {
+        if (ip) {
+          await this.firewallService.registerAuthFailure(ip, {
+            reason: 'FORM_SUBMITTED_TOO_FAST',
+            path,
+            userAgent,
+          });
+        }
+        throw new UnauthorizedException('Invalid credentials');
+      }
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
       include: {

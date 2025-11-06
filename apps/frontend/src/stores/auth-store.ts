@@ -18,6 +18,11 @@ By checking the acknowledgement box you certify that you have read, understood, 
 
 type AuthStatus = 'checking' | 'login' | 'legal' | 'twoFactor' | 'authenticated';
 
+type LoginMeta = {
+  submittedAt?: number;
+  honeypot?: string;
+};
+
 interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
@@ -30,7 +35,7 @@ interface AuthState {
   error?: string;
   postLoginNotice?: string | null;
   initialize: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, meta?: LoginMeta) => Promise<void>;
   acceptLegal: () => Promise<void>;
   verifyTwoFactor: (code: string) => Promise<void>;
   logout: () => void;
@@ -104,14 +109,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     }
   },
-  async login(email, password) {
+  async login(email, password, meta) {
     set({ isSubmitting: true, error: undefined });
     try {
-      const response = await apiClient.post<LoginResponse>(
-        '/auth/login',
-        { email, password },
-        { skipAuth: true },
-      );
+      const payload: Record<string, unknown> = {
+        email,
+        password,
+      };
+      if (meta?.honeypot) {
+        payload.honeypot = meta.honeypot;
+      }
+      if (typeof meta?.submittedAt === 'number') {
+        payload.submittedAt = meta.submittedAt;
+      }
+
+      const response = await apiClient.post<LoginResponse>('/auth/login', payload, {
+        skipAuth: true,
+      });
 
       if (response.twoFactorRequired) {
         set({
@@ -155,7 +169,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to authenticate';
+      const message = toSafeMessage(error, 'Unable to authenticate. Please try again.');
       set({ error: message, isSubmitting: false, status: 'login' });
     }
   },
@@ -199,7 +213,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isSubmitting: false,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to confirm acknowledgement';
+      const message = toSafeMessage(error, 'Unable to confirm acknowledgement.');
       set({ error: message, isSubmitting: false });
     }
   },
@@ -232,8 +246,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           : null,
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to verify the two-factor code';
+      const message = toSafeMessage(
+        error,
+        'Unable to verify the two-factor code. Please try again.',
+      );
       set({ error: message, isSubmitting: false });
     }
   },
@@ -265,3 +281,58 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 registerLogoutListener(() => {
   useAuthStore.getState().logout();
 });
+type ApiError = Error & {
+  code?: string;
+  status?: number;
+  rawBody?: string;
+};
+
+function parseErrorPayload(raw?: string | null): Record<string, unknown> | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function toSafeMessage(error: unknown, fallback: string): string {
+  const apiError = (error as ApiError) ?? {};
+  const parsed =
+    parseErrorPayload(apiError.rawBody) ??
+    (typeof apiError.message === 'string' ? parseErrorPayload(apiError.message) : null);
+
+  const code =
+    (typeof apiError.code === 'string' && apiError.code) ||
+    (parsed && typeof parsed.code === 'string' ? parsed.code : undefined);
+
+  if (code && code.toUpperCase() === 'FIREWALL_BLOCKED') {
+    return 'Sign-in request blocked by network policy. Contact your administrator.';
+  }
+
+  const rawMessage =
+    (parsed && typeof parsed.message === 'string' && parsed.message) ||
+    (apiError && typeof apiError.message === 'string' && apiError.message) ||
+    (typeof error === 'string' ? error : undefined);
+
+  if (!rawMessage) {
+    return fallback;
+  }
+
+  const trimmed = rawMessage.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return fallback;
+  }
+
+  if (trimmed.toUpperCase().includes('FIREWALL')) {
+    return 'Sign-in request blocked by network policy. Contact your administrator.';
+  }
+
+  return trimmed;
+}
