@@ -6,6 +6,10 @@ import {
   SerialAlertEvent,
 } from '../serial.types';
 
+const dynamicImport = new Function('specifier', 'return import(specifier);') as <TModule>(
+  specifier: string,
+) => Promise<TModule>;
+
 type MeshProtoModule = typeof import('@meshtastic/protobufs');
 
 let meshModulePromise: Promise<MeshProtoModule> | null = null;
@@ -13,7 +17,7 @@ let cachedMeshModule: MeshProtoModule | null = null;
 
 export function ensureMeshtasticProtobufs(): Promise<MeshProtoModule> {
   if (!meshModulePromise) {
-    meshModulePromise = import('@meshtastic/protobufs').then((mod) => {
+    meshModulePromise = dynamicImport<MeshProtoModule>('@meshtastic/protobufs').then((mod) => {
       cachedMeshModule = mod;
       return mod;
     });
@@ -62,7 +66,7 @@ const GPS_STATUS_REGEX =
 const GPS_SIMPLE_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*GPS(?:[:=]\s*|\s+)(?<lat>-?\d+(?:\.\d+)?)\s*,\s*(?<lon>-?\d+(?:\.\d+)?)/i;
 const NODE_HEARTBEAT_REGEX =
-  /^\[NODE_HB\]\s*(?<node>[A-Za-z0-9_-]+)\s*GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+)/i;
+  /^\[NODE_HB\]\s*(?<node>[A-Za-z0-9_-]+).*?GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+)/i;
 const STATUS_REGEX =
   /^(?<node>[A-Za-z0-9_-]+)\s*:?\s*STATUS:\s*Mode:(?<mode>[A-Za-z0-9+]+)\s+Scan:(?<scan>[A-Za-z]+)\s+Hits:(?<hits>\d+)\s+Unique:(?<unique>\d+)\s+Temp:\s*(?<tempC>[0-9.]+).?C\s*\/\s*(?<tempF>[0-9.]+).?F\s+Up:(?<uptime>[0-9:]+)(?:\s+Targets:(?<targets>\d+))?/i;
 const CONFIG_ACK_REGEX = /^(?<node>[A-Za-z0-9_-]+):\s*CONFIG_ACK:(?<type>[A-Z_]+):(?<value>.+)$/i;

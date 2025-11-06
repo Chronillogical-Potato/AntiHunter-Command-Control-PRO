@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toDataURL } from 'qrcode';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { apiClient } from '../api/client';
 import type {
@@ -74,11 +74,20 @@ const LANGUAGE_OPTIONS = [
   { value: 'no', label: 'Norwegian' },
 ];
 
+type AccountSectionId = 'profile' | 'security' | 'admin';
+
+interface AccountSection {
+  id: AccountSectionId;
+  label: string;
+  description: string;
+}
+
 export function UserPage() {
   const queryClient = useQueryClient();
   const authUser = useAuthStore((state) => state.user);
   const setAuthUser = useAuthStore((state) => state.setUser);
   const { setTheme } = useTheme();
+  const canManageUsers = authUser?.role === 'ADMIN';
 
   const meQuery = useQuery({
     queryKey: ['users', 'me'],
@@ -101,6 +110,7 @@ export function UserPage() {
   const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
   const [disableTwoFactorForm, setDisableTwoFactorForm] = useState({ code: '', password: '' });
   const [regenerateCode, setRegenerateCode] = useState('');
+  const [activeSection, setActiveSection] = useState<AccountSectionId>('profile');
 
   useEffect(() => {
     if (meQuery.data && (!authUser || authUser.id !== meQuery.data.id)) {
@@ -298,377 +308,451 @@ export function UserPage() {
     updateProfileMutation.mutate(profileForm);
   };
 
-  const canManageUsers = authUser?.role === 'ADMIN';
+  const menuSections = useMemo<AccountSection[]>(() => {
+    const base: AccountSection[] = [
+      {
+        id: 'profile',
+        label: 'Profile',
+        description: 'Contact details, preferences, and localization settings.',
+      },
+      {
+        id: 'security',
+        label: 'Security',
+        description: 'Two-factor authentication, recovery codes, and device access.',
+      },
+    ];
+    if (canManageUsers) {
+      base.push({
+        id: 'admin',
+        label: 'User Management',
+        description: 'Invite teammates, adjust roles, and manage site permissions.',
+      });
+    }
+    return base;
+  }, [canManageUsers]);
+
+  useEffect(() => {
+    if (!canManageUsers && activeSection === 'admin') {
+      setActiveSection('profile');
+    }
+  }, [canManageUsers, activeSection]);
+
+  const handleSectionClick = useCallback(
+    (sectionId: AccountSectionId) => {
+      if (sectionId === 'admin' && !canManageUsers) {
+        setActiveSection('profile');
+        return;
+      }
+      setActiveSection(sectionId);
+    },
+    [canManageUsers],
+  );
 
   const layoutClass = canManageUsers ? 'account-layout account-layout--admin' : 'account-layout';
 
   return (
     <div className={layoutClass}>
-      <section className="panel account-profile">
-        <header className="panel__header">
-          <div>
-            <h1 className="panel__title">My Profile</h1>
+      <aside className="account-menu-rail">
+        <div className="account-menu-rail__title">
+          <h1 className="account-menu-rail__heading">Account</h1>
+          <p className="account-menu-rail__copy">
+            Manage your personal details, security posture, and team access.
+          </p>
+        </div>
+        <nav className="config-menu account-menu-rail__menu" aria-label="Account sections">
+          {menuSections.map((section) => {
+            const isActive = section.id === activeSection;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                className={`config-menu__item${isActive ? ' config-menu__item--active' : ''}`}
+                onClick={() => handleSectionClick(section.id)}
+                aria-pressed={isActive}
+              >
+                <span className="config-menu__label">{section.label}</span>
+                {section.description ? (
+                  <span className="config-menu__description">{section.description}</span>
+                ) : null}
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+      <div className="account-content">
+        <section
+          id="account-profile"
+          className={`panel account-profile${activeSection === 'profile' ? '' : ' account-section--hidden'}`}
+        >
+          <header className="panel__header panel__header--stacked">
+            <h2 className="panel__title">My Profile</h2>
             <p className="panel__subtitle">
               Update your account details and interface preferences.
             </p>
-          </div>
-        </header>
+          </header>
 
-        {profileLoading ? (
-          <div className="empty-state">
-            <div>Loading profile...</div>
-          </div>
-        ) : !profileForm && profileErrorMessage ? (
-          <div className="empty-state">
-            <div>{profileErrorMessage}</div>
-          </div>
-        ) : profileForm ? (
-          <form className="form-grid" onSubmit={handleProfileSubmit}>
-            <label>
-              <span>Email</span>
-              <input
-                className="control-input"
-                type="email"
-                value={profileForm.email}
-                onChange={(event) =>
-                  setProfileForm((prev) => prev && { ...prev, email: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>First Name</span>
-              <input
-                className="control-input"
-                value={profileForm.firstName}
-                onChange={(event) =>
-                  setProfileForm((prev) => prev && { ...prev, firstName: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>Last Name</span>
-              <input
-                className="control-input"
-                value={profileForm.lastName}
-                onChange={(event) =>
-                  setProfileForm((prev) => prev && { ...prev, lastName: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>Phone</span>
-              <input
-                className="control-input"
-                value={profileForm.phone}
-                onChange={(event) =>
-                  setProfileForm((prev) => prev && { ...prev, phone: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>Job Title</span>
-              <input
-                className="control-input"
-                value={profileForm.jobTitle}
-                onChange={(event) =>
-                  setProfileForm((prev) => prev && { ...prev, jobTitle: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>Theme</span>
-              <select
-                className="control-input"
-                value={profileForm.theme}
-                onChange={(event) =>
-                  setProfileForm(
-                    (prev) => prev && { ...prev, theme: event.target.value as ThemePreference },
-                  )
-                }
-              >
-                <option value="auto">Auto</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
-            <label>
-              <span>Language</span>
-              <select
-                className="control-input"
-                value={profileForm.language}
-                onChange={(event) =>
-                  setProfileForm((prev) => prev && { ...prev, language: event.target.value })
-                }
-              >
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Time Format</span>
-              <select
-                className="control-input"
-                value={profileForm.timeFormat}
-                onChange={(event) =>
-                  setProfileForm(
-                    (prev) =>
-                      prev && {
-                        ...prev,
-                        timeFormat: event.target.value as TimeFormatPreference,
-                      },
-                  )
-                }
-              >
-                <option value="24h">24-hour</option>
-                <option value="12h">12-hour</option>
-              </select>
-            </label>
-            <div className="form-row form-row--actions">
-              <button
-                type="submit"
-                className="submit-button"
-                disabled={updateProfileMutation.isPending}
-              >
-                {updateProfileMutation.isPending ? 'Saving...' : 'Save Profile'}
-              </button>
-              {profileMessage ? <span className="form-feedback">{profileMessage}</span> : null}
+          {profileLoading ? (
+            <div className="empty-state">
+              <div>Loading profile...</div>
             </div>
-          </form>
-        ) : null}
-      </section>
-
-      <section className="panel account-security">
-        <header className="panel__header">
-          <div>
-            <h2 className="panel__title">Two-Factor Authentication</h2>
-            <p className="panel__subtitle">
-              Add a second verification step with Google Authenticator or any compatible TOTP app.
-            </p>
-          </div>
-        </header>
-
-        <div className="twofactor-status">
-          <strong>Status:</strong> {twoFactorStatusLabel}
-        </div>
-
-        {twoFactorError ? (
-          <div className="form-feedback form-feedback--error">{twoFactorError}</div>
-        ) : null}
-        {twoFactorMessage ? <div className="form-feedback">{twoFactorMessage}</div> : null}
-
-        {!authUser?.twoFactorEnabled ? (
-          <>
-            <p className="twofactor-copy">
-              Use an authenticator app to generate six digit codes when you sign in. You will also
-              receive a one time set of recovery codes.
-            </p>
-            {twoFactorSetup ? (
-              <div className="twofactor-setup">
-                <div className="twofactor-qr">
-                  {twoFactorSetup.qrDataUrl ? (
-                    <img src={twoFactorSetup.qrDataUrl} alt="Authenticator QR code" />
-                  ) : (
-                    <span>Generating QR code...</span>
-                  )}
-                </div>
-                <div className="twofactor-details">
-                  <p className="twofactor-hint">
-                    If you cannot scan the QR code, enter this key manually in your authenticator:
-                  </p>
-                  <div className="twofactor-secret">{twoFactorSetup.secret}</div>
-                  <form
-                    className="form-grid twofactor-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (!twoFactorCodeInput.trim()) {
-                        return;
-                      }
-                      confirmTwoFactorMutation.mutate(twoFactorCodeInput.trim());
-                    }}
-                  >
-                    <label>
-                      <span>Authenticator Code</span>
-                      <input
-                        className="control-input"
-                        type="text"
-                        inputMode="text"
-                        autoComplete="one-time-code"
-                        value={twoFactorCodeInput}
-                        onChange={(event) => setTwoFactorCodeInput(event.target.value)}
-                        placeholder="123456"
-                      />
-                    </label>
-                    <div className="form-row form-row--actions">
-                      <button
-                        type="submit"
-                        className="submit-button"
-                        disabled={
-                          confirmTwoFactorMutation.isPending || twoFactorCodeInput.trim().length < 6
-                        }
-                      >
-                        {confirmTwoFactorMutation.isPending ? 'Confirming...' : 'Confirm Setup'}
-                      </button>
-                      <button
-                        type="button"
-                        className="control-chip"
-                        onClick={() => {
-                          setTwoFactorSetup(null);
-                          setTwoFactorCodeInput('');
-                          setTwoFactorMessage(null);
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                  {twoFactorRecoveryCodes ? (
-                    <div className="twofactor-codes">
-                      {twoFactorRecoveryCodes.map((code) => (
-                        <code key={code}>{code}</code>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="submit-button"
-                onClick={() => setupTwoFactorMutation.mutate()}
-                disabled={setupTwoFactorMutation.isPending}
-              >
-                {setupTwoFactorMutation.isPending ? 'Preparing setup...' : 'Enable Two-Factor'}
-              </button>
-            )}
-            {twoFactorRecoveryCodes && !twoFactorSetup ? (
-              <div className="twofactor-codes">
-                {twoFactorRecoveryCodes.map((code) => (
-                  <code key={code}>{code}</code>
-                ))}
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <p className="twofactor-copy">
-              Enter a code from your authenticator whenever you sign in. Keep recovery codes in a
-              safe place for emergencies.
-            </p>
-            {twoFactorRecoveryCodes ? (
-              <div className="twofactor-codes">
-                {twoFactorRecoveryCodes.map((code) => (
-                  <code key={code}>{code}</code>
-                ))}
-              </div>
-            ) : null}
-            <div className="twofactor-section">
-              <h3 className="section-heading">Generate New Recovery Codes</h3>
-              <form
-                className="form-grid twofactor-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!regenerateCode.trim()) {
-                    setTwoFactorError(
-                      'Enter a current authenticator code to regenerate recovery codes.',
-                    );
-                    return;
+          ) : !profileForm && profileErrorMessage ? (
+            <div className="empty-state">
+              <div>{profileErrorMessage}</div>
+            </div>
+          ) : profileForm ? (
+            <form className="form-grid" onSubmit={handleProfileSubmit}>
+              <label>
+                <span>Email</span>
+                <input
+                  className="control-input"
+                  type="email"
+                  value={profileForm.email}
+                  onChange={(event) =>
+                    setProfileForm((prev) => prev && { ...prev, email: event.target.value })
                   }
-                  regenerateCodesMutation.mutate(regenerateCode.trim());
-                }}
-              >
-                <label>
-                  <span>Authenticator Code</span>
-                  <input
-                    className="control-input"
-                    type="text"
-                    inputMode="text"
-                    autoComplete="one-time-code"
-                    value={regenerateCode}
-                    onChange={(event) => setRegenerateCode(event.target.value)}
-                    placeholder="123456"
-                  />
-                </label>
-                <div className="form-row form-row--actions">
-                  <button
-                    type="submit"
-                    className="submit-button"
-                    disabled={regenerateCodesMutation.isPending || regenerateCode.trim().length < 6}
-                  >
-                    {regenerateCodesMutation.isPending ? 'Generating...' : 'Generate Codes'}
-                  </button>
-                </div>
-              </form>
-              <p className="twofactor-hint">
-                Generating a new set immediately revokes any previous recovery codes.
+                />
+              </label>
+              <label>
+                <span>First Name</span>
+                <input
+                  className="control-input"
+                  value={profileForm.firstName}
+                  onChange={(event) =>
+                    setProfileForm((prev) => prev && { ...prev, firstName: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>Last Name</span>
+                <input
+                  className="control-input"
+                  value={profileForm.lastName}
+                  onChange={(event) =>
+                    setProfileForm((prev) => prev && { ...prev, lastName: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>Phone</span>
+                <input
+                  className="control-input"
+                  value={profileForm.phone}
+                  onChange={(event) =>
+                    setProfileForm((prev) => prev && { ...prev, phone: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>Job Title</span>
+                <input
+                  className="control-input"
+                  value={profileForm.jobTitle}
+                  onChange={(event) =>
+                    setProfileForm((prev) => prev && { ...prev, jobTitle: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>Theme</span>
+                <select
+                  className="control-input"
+                  value={profileForm.theme}
+                  onChange={(event) =>
+                    setProfileForm(
+                      (prev) => prev && { ...prev, theme: event.target.value as ThemePreference },
+                    )
+                  }
+                >
+                  <option value="auto">Auto</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <label>
+                <span>Language</span>
+                <select
+                  className="control-input"
+                  value={profileForm.language}
+                  onChange={(event) =>
+                    setProfileForm((prev) => prev && { ...prev, language: event.target.value })
+                  }
+                >
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Time Format</span>
+                <select
+                  className="control-input"
+                  value={profileForm.timeFormat}
+                  onChange={(event) =>
+                    setProfileForm(
+                      (prev) =>
+                        prev && {
+                          ...prev,
+                          timeFormat: event.target.value as TimeFormatPreference,
+                        },
+                    )
+                  }
+                >
+                  <option value="24h">24-hour</option>
+                  <option value="12h">12-hour</option>
+                </select>
+              </label>
+              <div className="form-row form-row--actions">
+                <button
+                  type="submit"
+                  className="submit-button"
+                  disabled={updateProfileMutation.isPending}
+                >
+                  {updateProfileMutation.isPending ? 'Saving...' : 'Save Profile'}
+                </button>
+                {profileMessage ? <span className="form-feedback">{profileMessage}</span> : null}
+              </div>
+            </form>
+          ) : null}
+        </section>
+
+        <section
+          id="account-security"
+          className={`panel account-security${activeSection === 'security' ? '' : ' account-section--hidden'}`}
+        >
+          <header className="panel__header">
+            <div>
+              <h2 className="panel__title">Two-Factor Authentication</h2>
+              <p className="panel__subtitle">
+                Add a second verification step with Google Authenticator or any compatible TOTP app.
               </p>
             </div>
-            <div className="twofactor-section">
-              <h3 className="section-heading">Disable Two-Factor</h3>
-              <form
-                className="form-grid twofactor-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const code = disableTwoFactorForm.code.trim();
-                  const password = disableTwoFactorForm.password.trim();
-                  if (!code && !password) {
-                    setTwoFactorError(
-                      'Provide either a current authenticator code or your password to disable two-factor authentication.',
-                    );
-                    return;
-                  }
-                  disableTwoFactorMutation.mutate({
-                    code: code || undefined,
-                    password: password || undefined,
-                  });
-                }}
-              >
-                <label>
-                  <span>Authenticator Code (optional)</span>
-                  <input
-                    className="control-input"
-                    type="text"
-                    inputMode="text"
-                    value={disableTwoFactorForm.code}
-                    onChange={(event) =>
-                      setDisableTwoFactorForm((prev) => ({ ...prev, code: event.target.value }))
-                    }
-                    placeholder="123456"
-                  />
-                </label>
-                <label>
-                  <span>Password (optional)</span>
-                  <input
-                    className="control-input"
-                    type="password"
-                    autoComplete="current-password"
-                    value={disableTwoFactorForm.password}
-                    onChange={(event) =>
-                      setDisableTwoFactorForm((prev) => ({
-                        ...prev,
-                        password: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <div className="form-row form-row--actions">
-                  <button
-                    type="submit"
-                    className="control-chip control-chip--danger"
-                    disabled={disableTwoFactorMutation.isPending}
-                  >
-                    {disableTwoFactorMutation.isPending ? 'Disabling...' : 'Disable Two-Factor'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </>
-        )}
-      </section>
+          </header>
 
-      {canManageUsers ? <AdminUserManagement /> : null}
+          <div className="twofactor-status">
+            <strong>Status:</strong> {twoFactorStatusLabel}
+          </div>
+
+          {twoFactorError ? (
+            <div className="form-feedback form-feedback--error">{twoFactorError}</div>
+          ) : null}
+          {twoFactorMessage ? <div className="form-feedback">{twoFactorMessage}</div> : null}
+
+          {!authUser?.twoFactorEnabled ? (
+            <>
+              <p className="twofactor-copy">
+                Use an authenticator app to generate six digit codes when you sign in. You will also
+                receive a one time set of recovery codes.
+              </p>
+              {twoFactorSetup ? (
+                <div className="twofactor-setup">
+                  <div className="twofactor-qr">
+                    {twoFactorSetup.qrDataUrl ? (
+                      <img src={twoFactorSetup.qrDataUrl} alt="Authenticator QR code" />
+                    ) : (
+                      <span>Generating QR code...</span>
+                    )}
+                  </div>
+                  <div className="twofactor-details">
+                    <p className="twofactor-hint">
+                      If you cannot scan the QR code, enter this key manually in your authenticator:
+                    </p>
+                    <div className="twofactor-secret">{twoFactorSetup.secret}</div>
+                    <form
+                      className="form-grid twofactor-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!twoFactorCodeInput.trim()) {
+                          return;
+                        }
+                        confirmTwoFactorMutation.mutate(twoFactorCodeInput.trim());
+                      }}
+                    >
+                      <label>
+                        <span>Authenticator Code</span>
+                        <input
+                          className="control-input"
+                          type="text"
+                          inputMode="text"
+                          autoComplete="one-time-code"
+                          value={twoFactorCodeInput}
+                          onChange={(event) => setTwoFactorCodeInput(event.target.value)}
+                          placeholder="123456"
+                        />
+                      </label>
+                      <div className="form-row form-row--actions">
+                        <button
+                          type="submit"
+                          className="submit-button"
+                          disabled={
+                            confirmTwoFactorMutation.isPending ||
+                            twoFactorCodeInput.trim().length < 6
+                          }
+                        >
+                          {confirmTwoFactorMutation.isPending ? 'Confirming...' : 'Confirm Setup'}
+                        </button>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => {
+                            setTwoFactorSetup(null);
+                            setTwoFactorCodeInput('');
+                            setTwoFactorMessage(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                    {twoFactorRecoveryCodes ? (
+                      <div className="twofactor-codes">
+                        {twoFactorRecoveryCodes.map((code) => (
+                          <code key={code}>{code}</code>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="submit-button"
+                  onClick={() => setupTwoFactorMutation.mutate()}
+                  disabled={setupTwoFactorMutation.isPending}
+                >
+                  {setupTwoFactorMutation.isPending ? 'Preparing setup...' : 'Enable Two-Factor'}
+                </button>
+              )}
+              {twoFactorRecoveryCodes && !twoFactorSetup ? (
+                <div className="twofactor-codes">
+                  {twoFactorRecoveryCodes.map((code) => (
+                    <code key={code}>{code}</code>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="twofactor-copy">
+                Enter a code from your authenticator whenever you sign in. Keep recovery codes in a
+                safe place for emergencies.
+              </p>
+              {twoFactorRecoveryCodes ? (
+                <div className="twofactor-codes">
+                  {twoFactorRecoveryCodes.map((code) => (
+                    <code key={code}>{code}</code>
+                  ))}
+                </div>
+              ) : null}
+              <div className="twofactor-section">
+                <h3 className="section-heading">Generate New Recovery Codes</h3>
+                <form
+                  className="form-grid twofactor-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!regenerateCode.trim()) {
+                      setTwoFactorError(
+                        'Enter a current authenticator code to regenerate recovery codes.',
+                      );
+                      return;
+                    }
+                    regenerateCodesMutation.mutate(regenerateCode.trim());
+                  }}
+                >
+                  <label>
+                    <span>Authenticator Code</span>
+                    <input
+                      className="control-input"
+                      type="text"
+                      inputMode="text"
+                      autoComplete="one-time-code"
+                      value={regenerateCode}
+                      onChange={(event) => setRegenerateCode(event.target.value)}
+                      placeholder="123456"
+                    />
+                  </label>
+                  <div className="form-row form-row--actions">
+                    <button
+                      type="submit"
+                      className="submit-button"
+                      disabled={
+                        regenerateCodesMutation.isPending || regenerateCode.trim().length < 6
+                      }
+                    >
+                      {regenerateCodesMutation.isPending ? 'Generating...' : 'Generate Codes'}
+                    </button>
+                  </div>
+                </form>
+                <p className="twofactor-hint">
+                  Generating a new set immediately revokes any previous recovery codes.
+                </p>
+              </div>
+              <div className="twofactor-section">
+                <h3 className="section-heading">Disable Two-Factor</h3>
+                <form
+                  className="form-grid twofactor-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const code = disableTwoFactorForm.code.trim();
+                    const password = disableTwoFactorForm.password.trim();
+                    if (!code && !password) {
+                      setTwoFactorError(
+                        'Provide either a current authenticator code or your password to disable two-factor authentication.',
+                      );
+                      return;
+                    }
+                    disableTwoFactorMutation.mutate({
+                      code: code || undefined,
+                      password: password || undefined,
+                    });
+                  }}
+                >
+                  <label>
+                    <span>Authenticator Code (optional)</span>
+                    <input
+                      className="control-input"
+                      type="text"
+                      inputMode="text"
+                      value={disableTwoFactorForm.code}
+                      onChange={(event) =>
+                        setDisableTwoFactorForm((prev) => ({ ...prev, code: event.target.value }))
+                      }
+                      placeholder="123456"
+                    />
+                  </label>
+                  <label>
+                    <span>Password (optional)</span>
+                    <input
+                      className="control-input"
+                      type="password"
+                      autoComplete="current-password"
+                      value={disableTwoFactorForm.password}
+                      onChange={(event) =>
+                        setDisableTwoFactorForm((prev) => ({
+                          ...prev,
+                          password: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <div className="form-row form-row--actions">
+                    <button
+                      type="submit"
+                      className="control-chip control-chip--danger"
+                      disabled={disableTwoFactorMutation.isPending}
+                    >
+                      {disableTwoFactorMutation.isPending ? 'Disabling...' : 'Disable Two-Factor'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </>
+          )}
+        </section>
+
+        {canManageUsers && activeSection === 'admin' ? <AdminUserManagement /> : null}
+      </div>
     </div>
   );
 }
@@ -1021,7 +1105,7 @@ function AdminUserManagement() {
   };
 
   return (
-    <section className="panel admin-panel">
+    <section id="account-admin" className="panel admin-panel">
       <header className="panel__header panel__header--stacked">
         <div>
           <h2 className="panel__title">User Management</h2>

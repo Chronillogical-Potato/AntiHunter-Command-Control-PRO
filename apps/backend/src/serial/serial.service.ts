@@ -20,6 +20,10 @@ import { SerialParseResult, SerialProtocolParser } from './serial.types';
 import { buildCommandPayload } from '../commands/command-builder';
 
 const Binding = resolveBinding();
+const dynamicImport = new Function('specifier', 'return import(specifier);') as <TModule>(
+  specifier: string,
+) => Promise<TModule>;
+
 type MeshProtoModule = typeof import('@meshtastic/protobufs');
 let meshProtoModulePromise: Promise<MeshProtoModule> | null = null;
 
@@ -84,7 +88,7 @@ class AsyncQueue {
 
 async function loadMeshModule(): Promise<MeshProtoModule> {
   if (!meshProtoModulePromise) {
-    meshProtoModulePromise = import('@meshtastic/protobufs');
+    meshProtoModulePromise = dynamicImport<MeshProtoModule>('@meshtastic/protobufs');
   }
   return meshProtoModulePromise;
 }

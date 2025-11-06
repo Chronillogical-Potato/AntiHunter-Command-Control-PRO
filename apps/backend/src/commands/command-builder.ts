@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 
-const TARGET_PATTERN = /^@(ALL|[A-Z0-9]{2,6})$/;
 const NODE_PATTERN = /^NODE_[A-Z0-9]+$/;
 const MAC_PATTERN = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 const ERASE_TOKEN_PATTERN = /^AH_[0-9]{8}_[0-9]{8}_[0-9]{8}$/;
@@ -58,10 +57,21 @@ export function buildCommandPayload(input: CommandBuildInput): CommandBuildOutpu
 
 function normalizeTarget(target: string): string {
   const normalized = target.trim().toUpperCase();
-  if (!TARGET_PATTERN.test(normalized)) {
-    throw new BadRequestException('Invalid target. Use @ALL or @NODE_<ID> (e.g., @NODE_22).');
+  if (normalized === '@ALL') {
+    return normalized;
   }
-  return normalized;
+
+  if (normalized.startsWith('@')) {
+    const withoutAt = normalized.slice(1);
+    if (NODE_PATTERN.test(withoutAt)) {
+      return normalized;
+    }
+    if (/^[A-Z0-9]{2,6}$/.test(withoutAt)) {
+      return normalized;
+    }
+  }
+
+  throw new BadRequestException('Invalid target. Use @ALL or @NODE_<ID> (e.g., @NODE_22).');
 }
 
 function normalizeName(name: string): string {

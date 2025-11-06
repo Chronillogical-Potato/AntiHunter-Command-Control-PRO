@@ -106,6 +106,9 @@ export class CommandsService {
       params: dto.params,
     });
 
+    await this.ensureSiteRecord(this.localSiteId);
+    await this.ensureSiteRecord(targetSiteId);
+
     const command = await this.prisma.commandLog.create({
       data: {
         id: commandId,
@@ -122,7 +125,6 @@ export class CommandsService {
     this.emitUpdate(command);
 
     if (targetSiteId !== this.localSiteId) {
-      await this.ensureSiteRecord(targetSiteId);
       this.remoteRequests$.next({
         id: commandId,
         siteId: targetSiteId,
@@ -512,7 +514,7 @@ export class CommandsService {
   }
 
   private async ensureSiteRecord(siteId: string) {
-    if (!siteId || siteId === this.localSiteId) {
+    if (!siteId) {
       return;
     }
 

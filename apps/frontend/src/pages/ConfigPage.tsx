@@ -297,6 +297,58 @@ export function ConfigPage() {
       ? firewallLogsQuery.error.message
       : 'Unable to load firewall logs.';
 
+  const handleFirewallLogsExport = () => {
+    if (firewallLogs.length === 0) {
+      return;
+    }
+
+    const escape = (value: unknown) => {
+      const str = value == null ? '' : String(value);
+      if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headers = [
+      'timestamp',
+      'ip',
+      'outcome',
+      'blocked',
+      'method',
+      'path',
+      'reason',
+      'country',
+      'userAgent',
+      'attempts',
+      'ruleId',
+    ];
+
+    const rows = firewallLogs.map((log) => [
+      formatDateTime(log.lastSeen),
+      log.ip,
+      log.outcome,
+      log.blocked ? 'yes' : 'no',
+      log.method.toUpperCase(),
+      log.path,
+      log.reason ?? '',
+      log.country ?? '',
+      log.userAgent ?? '',
+      String(log.attempts),
+      log.ruleId ?? '',
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.map(escape).join(',')).join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `firewall-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     if (alarmSettings?.config) {
       setLocalAlarm(alarmSettings.config);
@@ -1446,7 +1498,7 @@ export function ConfigPage() {
               </header>
               <div className="config-card__body">
                 {firewallOverviewQuery.isLoading && !firewallForm ? (
-                  <p className="form-hint">Loading firewall configurationÃ¢â-�¬Â¦</p>
+                  <p className="form-hint">Loading firewall configurationÃ¢â-¬Â¦</p>
                 ) : firewallForm ? (
                   <>
                     <form className="config-form" onSubmit={handleFirewallSubmit}>
@@ -1659,7 +1711,7 @@ export function ConfigPage() {
                         Recent firewall activity
                         <span className="firewall-log-viewer__summary-meta">
                           {firewallLogsQuery.isFetching
-                            ? 'Refreshingâ€¦'
+                            ? 'Refreshing...'
                             : `${firewallLogs.length} entries`}
                         </span>
                       </summary>
@@ -1671,7 +1723,7 @@ export function ConfigPage() {
                             onClick={() => firewallLogsQuery.refetch()}
                             disabled={firewallLogsQuery.isFetching}
                           >
-                            {firewallLogsQuery.isFetching ? 'Loadingâ€¦' : 'Refresh'}
+                            {firewallLogsQuery.isFetching ? 'Loading...' : 'Refresh'}
                           </button>
                           <button
                             type="button"
@@ -1683,7 +1735,7 @@ export function ConfigPage() {
                           </button>
                         </div>
                         {firewallLogsQuery.isLoading ? (
-                          <p className="form-hint">Loading firewall logsâ€¦</p>
+                          <p className="form-hint">Loading firewall logs...</p>
                         ) : firewallLogsQuery.isError ? (
                           <p className="form-error">{firewallLogsError}</p>
                         ) : firewallLogs.length === 0 ? (
@@ -2471,7 +2523,7 @@ export function ConfigPage() {
                               takSendPayload.trim().length === 0 || takSendMutation.isPending
                             }
                           >
-                            {takSendMutation.isPending ? 'SendingÃ¢â-�¬Â¦' : 'Send Payload'}
+                            {takSendMutation.isPending ? 'SendingÃ¢â-¬Â¦' : 'Send Payload'}
                           </button>
                           <button
                             type="button"
@@ -2499,7 +2551,7 @@ export function ConfigPage() {
                             onClick={() => reloadTakMutation.mutate()}
                             disabled={reloadTakMutation.isPending}
                           >
-                            {reloadTakMutation.isPending ? 'RestartingÃ¢â-�¬Â¦' : 'Restart Bridge'}
+                            {reloadTakMutation.isPending ? 'RestartingÃ¢â-¬Â¦' : 'Restart Bridge'}
                           </button>
                         </div>
                       </div>
@@ -2598,7 +2650,7 @@ export function ConfigPage() {
                             onClick={() => handleMqttReconnect(cfg.siteId)}
                             disabled={isConnecting}
                           >
-                            {isConnecting ? 'ConnectingÃ¢â-�¬Â¦' : 'Reconnect'}
+                            {isConnecting ? 'ConnectingÃ¢â-¬Â¦' : 'Reconnect'}
                           </button>
                           <button
                             type="button"
@@ -2606,7 +2658,7 @@ export function ConfigPage() {
                             onClick={() => handleMqttTest(cfg.siteId)}
                             disabled={isTesting}
                           >
-                            {isTesting ? 'TestingÃ¢â-�¬Â¦' : 'Test connection'}
+                            {isTesting ? 'TestingÃ¢â-¬Â¦' : 'Test connection'}
                           </button>
                         </div>
                         <label className="checkbox-label">

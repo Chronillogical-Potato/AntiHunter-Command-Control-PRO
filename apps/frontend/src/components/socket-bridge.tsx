@@ -368,6 +368,73 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
       };
     }
 
+    if (base.type === 'node.telemetry') {
+      const telemetry = payload as {
+        nodeId?: string;
+        lat?: number | string;
+        lon?: number | string;
+        lastMessage?: string | null;
+        raw?: string;
+        timestamp?: string;
+        siteId?: string;
+      };
+      const lat = toNumber(telemetry.lat);
+      const lon = toNumber(telemetry.lon);
+      const parts: string[] = [`Node ${telemetry.nodeId ?? 'unknown'} telemetry update`];
+      if (typeof lat === 'number' && typeof lon === 'number') {
+        parts.push(`(${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+      }
+      const summary = summarizeTelemetryMessage(
+        typeof telemetry.lastMessage === 'string' ? telemetry.lastMessage : undefined,
+        typeof telemetry.raw === 'string' ? telemetry.raw : undefined,
+      );
+      if (summary) {
+        parts.push(summary);
+      }
+      return {
+        message: parts.join(' '),
+        level: 'info',
+        source: 'node',
+        timestamp: typeof telemetry.timestamp === 'string' ? telemetry.timestamp : undefined,
+        siteId: telemetry.siteId ?? base.siteId,
+      };
+    }
+
+    if (base.type === 'node.upsert') {
+      const upsert = payload as {
+        originSiteId?: string;
+        payload?: {
+          id?: string;
+          name?: string | null;
+          siteId?: string | null;
+          siteName?: string | null;
+          lat?: number | string;
+          lon?: number | string;
+        };
+        siteId?: string;
+      };
+      const nodeId = upsert.payload?.id ?? base.nodeId ?? 'unknown node';
+      const siteLabel =
+        upsert.payload?.siteName ??
+        upsert.payload?.siteId ??
+        upsert.originSiteId ??
+        base.siteId ??
+        'remote site';
+      const lat = toNumber(upsert.payload?.lat);
+      const lon = toNumber(upsert.payload?.lon);
+      const parts = [`Remote node ${nodeId} update from ${siteLabel}`];
+      if (typeof lat === 'number' && typeof lon === 'number') {
+        parts.push(`(${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+      }
+      return {
+        message: parts.join(' '),
+        level: 'info',
+        source: 'node',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: upsert.payload?.siteId ?? upsert.originSiteId ?? base.siteId,
+      };
+    }
+
     if (base.type && (base.type.startsWith('node.') || base.type === 'nodes.diff')) {
       return {
         message: JSON.stringify(payload),
@@ -410,6 +477,22 @@ function extractAlarmLevel(payload: unknown): AlarmLevel | null {
     }
   }
   return null;
+}
+
+function summarizeTelemetryMessage(message?: string, raw?: string): string | undefined {
+  const candidate = (message ?? raw ?? '').trim();
+  if (!candidate) {
+    return undefined;
+  }
+  const bracket = candidate.match(/\[[^\]]+\]/);
+  if (bracket?.[0]) {
+    return bracket[0];
+  }
+  const beforeColon = candidate.split(':', 1)[0];
+  if (beforeColon && beforeColon.length > 0 && beforeColon.length <= 40) {
+    return beforeColon;
+  }
+  return candidate.length > 40 ? `${candidate.slice(0, 37)}…` : candidate;
 }
 
 interface TargetEventDetails {
