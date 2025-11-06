@@ -161,6 +161,12 @@ Secrets such as MQTT credentials, TLS PEMs, TAK API keys, and SMTP passwords are
 
 #### Hardening Checklist
 
+Recent defensive additions already in this repo:
+
+- **Authentication throttling** – login, legal acceptance, and 2FA routes now run through a Redis-backed `RateLimitGuard` that enforces both burst and sustained limits, tripping firewall escalation for abusive clients.
+- **Bot heuristics on login** – UI forms include a honeypot field plus a minimum submit time (600 ms) so scripted attacks are rejected server-side without inconveniencing operators.
+- **Neutral firewall messaging** – when abuse is detected, the API surfaces generic responses while logging detailed context internally, preventing the login page from advertising firewall decisions.
+
 While the platform ships with secure defaults, production deployments should bake the following controls into their baseline:
 
 - Enforce HTTPS everywhere with modern TLS ciphers (consider terminating behind an ALB / nginx reverse proxy with OCSP stapling).
