@@ -1819,7 +1819,7 @@ ${nodesKml}
       ) : null}
 
       <section className="strategy-table">
-        <h2>Node placement plan</h2>
+        <h2>Deployment plan</h2>
         {hasNodes ? (
           <table>
             <thead>
