@@ -392,7 +392,7 @@ export class FirewallService {
 
   async registerAuthSuccess(
     ip: string,
-    context: { path?: string; userAgent?: string } = {},
+    context: { path?: string; userAgent?: string; country?: string } = {},
   ): Promise<void> {
     const normalizedIp = this.normalizeIp(ip);
     if (!normalizedIp) {
@@ -407,6 +407,7 @@ export class FirewallService {
       blocked: false,
       reason: 'Authentication success',
       userAgent: context.userAgent,
+      country: context.country,
     });
   }
 

@@ -108,13 +108,6 @@ async function bootstrap(): Promise<void> {
             includeSubDomains: true,
           }
         : false,
-      permissionsPolicy: {
-        features: {
-          geolocation: ["'none'"],
-          microphone: ["'none'"],
-          camera: ["'none'"],
-        },
-      },
     }),
   );
 

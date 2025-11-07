@@ -88,11 +88,11 @@ export class AuthService {
   private readonly anomalyRecipients: string[];
   private readonly requireAnomalyTwoFactor: boolean;
   private readonly securityAlertRecipients: string[];
-  private readonly baseUserInclude = {
+  private readonly baseUserInclude: Prisma.UserInclude = {
     preferences: true,
     permissions: true,
     siteAccess: { include: { site: true } },
-  } as const;
+  };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -451,7 +451,7 @@ export class AuthService {
       userAgent?: string;
       anomalyDetected?: boolean;
     },
-  ): Promise<Prisma.UserGetPayload<{ include: typeof this.baseUserInclude }>> {
+  ): Promise<UserWithRelations> {
     return this.prisma.user.update({
       where: { id: user.id },
       data: {
@@ -568,7 +568,7 @@ export class AuthService {
     });
   }
 
-  private toJsonValue(value: unknown): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
+  private toJsonValue(value: unknown): Prisma.InputJsonValue {
     if (value === undefined || value === null) {
       return Prisma.JsonNull;
     }
