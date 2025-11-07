@@ -1,4 +1,4 @@
-﻿import { useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import L, { latLngBounds } from 'leaflet';
 import { ChangeEvent, FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import {

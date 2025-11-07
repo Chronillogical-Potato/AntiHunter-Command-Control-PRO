@@ -39,6 +39,16 @@ export class FirewallController {
     return this.firewallService.deleteRule(id);
   }
 
+  @Get('jailed')
+  listJailed() {
+    return this.firewallService.listJailedRules();
+  }
+
+  @Delete('jailed/:id')
+  unblockJailed(@Req() req: Request, @Param('id') id: string) {
+    return this.firewallService.unblockJailedRule(id, req.auth?.sub);
+  }
+
   @Get('logs')
   listLogs(@Query() query: ListFirewallLogsDto) {
     return this.firewallService.listLogs(query);

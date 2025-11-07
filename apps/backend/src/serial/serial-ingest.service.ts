@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Subscription } from 'rxjs';
 
 import { SerialService } from './serial.service';
@@ -10,6 +11,66 @@ import { TakService } from '../tak/tak.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
 
+const QUEUE_CLEARED_MESSAGE = 'Serial ingest queue cleared';
+
+interface PendingTask<T = unknown> {
+  run: () => Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+}
+
+class SerialIngestQueue {
+  private readonly pending: PendingTask[] = [];
+
+  private active = 0;
+
+  constructor(private readonly concurrency: number) {}
+
+  add<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.pending.push({
+        run: () => task(),
+        resolve: resolve as PendingTask['resolve'],
+        reject,
+      });
+      this.process();
+    });
+  }
+
+  clear(): void {
+    while (this.pending.length > 0) {
+      const pending = this.pending.shift();
+      pending?.reject(new Error(QUEUE_CLEARED_MESSAGE));
+    }
+  }
+
+  get size(): number {
+    return this.pending.length;
+  }
+
+  private process(): void {
+    while (this.active < this.concurrency && this.pending.length > 0) {
+      const next = this.pending.shift();
+      if (!next) {
+        break;
+      }
+      this.active += 1;
+      next
+        .run()
+        .then((result) => {
+          next.resolve(result);
+        })
+        .catch((error) => {
+          next.reject(error);
+        })
+        .finally(() => {
+          this.active -= 1;
+          this.process();
+        });
+    }
+  }
+}
+
 @Injectable()
 export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SerialIngestService.name);
@@ -17,6 +78,9 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
   private static readonly DUPLICATE_WINDOW_MS = 750;
   private static readonly DUPLICATE_CACHE_MAX = 512;
   private readonly duplicateKeys = new Map<string, number>();
+  private readonly ingestQueue: SerialIngestQueue;
+  private readonly ingestHighWaterMark: number;
+  private lastBacklogWarning = 0;
 
   constructor(
     private readonly serialService: SerialService,
@@ -26,21 +90,50 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly trackingService: TargetTrackingService,
     private readonly gateway: CommandCenterGateway,
     private readonly takService: TakService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
+    this.ingestQueue = new SerialIngestQueue(concurrency);
+    this.ingestHighWaterMark = Math.max(
+      concurrency * 10,
+      configService.get<number>('serial.ingestBuffer', 500),
+    );
+  }
 
   onModuleInit(): void {
     this.subscription = this.serialService.getParsedStream().subscribe((event) => {
-      this.handleEvent(event).catch((error) => {
-        this.logger.error(
-          `Serial ingest failure: ${error instanceof Error ? error.message : error}`,
-          error,
-        );
-      });
+      this.enqueueEvent(event);
     });
   }
 
   onModuleDestroy(): void {
     this.subscription?.unsubscribe();
+    this.ingestQueue.clear();
+  }
+
+  private enqueueEvent(event: SerialParseResult): void {
+    const backlog = this.ingestQueue.size;
+    if (backlog > this.ingestHighWaterMark) {
+      const now = Date.now();
+      if (now - this.lastBacklogWarning > 5000) {
+        this.logger.warn(`Serial ingest backlog at ${backlog} events (processing queued)`);
+        this.lastBacklogWarning = now;
+      }
+    }
+
+    void this.ingestQueue
+      .add(async () => {
+        await this.handleEvent(event);
+      })
+      .catch((error) => {
+        if (error instanceof Error && error.message === QUEUE_CLEARED_MESSAGE) {
+          return;
+        }
+        this.logger.error(
+          `Serial ingest failure: ${error instanceof Error ? error.message : error}`,
+          error,
+        );
+      });
   }
 
   private async handleEvent(event: SerialParseResult): Promise<void> {

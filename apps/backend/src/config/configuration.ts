@@ -39,6 +39,10 @@ export default () => ({
     baudRate: process.env.SERIAL_BAUD ? Number(process.env.SERIAL_BAUD) : 115200,
     delimiter: process.env.SERIAL_DELIMITER ?? '\n',
     protocol: process.env.SERIAL_PROTOCOL ?? 'meshtastic-like',
+    ingestConcurrency: process.env.SERIAL_INGEST_CONCURRENCY
+      ? Number(process.env.SERIAL_INGEST_CONCURRENCY)
+      : 1,
+    ingestBuffer: process.env.SERIAL_INGEST_BUFFER ? Number(process.env.SERIAL_INGEST_BUFFER) : 500,
     perTargetRate: process.env.SERIAL_PER_TARGET_RATE
       ? Number(process.env.SERIAL_PER_TARGET_RATE)
       : 8,

@@ -1,12 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { apiClient } from '../api/client';
 import { InventoryDevice } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
 
+type InventorySortKey =
+  | 'mac'
+  | 'vendor'
+  | 'type'
+  | 'channel'
+  | 'ssid'
+  | 'hits'
+  | 'lastSeen'
+  | 'maxRssi'
+  | 'minRssi'
+  | 'avgRssi'
+  | 'lastNode'
+  | 'lastLat';
+
 export function InventoryPage() {
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<InventorySortKey>('lastSeen');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const queryClient = useQueryClient();
   const role = useAuthStore((state) => state.user?.role ?? null);
 
@@ -57,6 +73,44 @@ export function InventoryPage() {
       window.alert(message);
     },
   });
+
+  const sortedData = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    const multiplier = sortDirection === 'asc' ? 1 : -1;
+    return [...data].sort((a, b) => {
+      const result = compareInventoryDevices(a, b, sortKey);
+      return result * multiplier;
+    });
+  }, [data, sortDirection, sortKey]);
+
+  const handleSort = (key: InventorySortKey) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (key: InventorySortKey) => {
+    if (sortKey !== key) {
+      return (
+        <span className="table-sort__icon" aria-hidden="true">
+          ↕
+        </span>
+      );
+    }
+    return (
+      <span className="table-sort__icon" aria-hidden="true">
+        {sortDirection === 'asc' ? '↑' : '↓'}
+      </span>
+    );
+  };
+
+  const ariaSort = (key: InventorySortKey): 'none' | 'ascending' | 'descending' =>
+    sortKey === key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
 
   return (
     <section className="panel">
@@ -125,21 +179,81 @@ export function InventoryPage() {
           <table>
             <thead>
               <tr>
-                <th>MAC</th>
-                <th>Vendor</th>
-                <th>Type</th>
-                <th>Channel</th>
-                <th>SSID</th>
-                <th>Hits</th>
-                <th>Last Seen</th>
-                <th>RSSI (max/min/avg)</th>
-                <th>Last Node</th>
-                <th>Last Location</th>
+                <th aria-sort={ariaSort('mac')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('mac')}>
+                    MAC {renderSortIcon('mac')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('vendor')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('vendor')}>
+                    Vendor {renderSortIcon('vendor')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('type')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('type')}>
+                    Type {renderSortIcon('type')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('channel')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('channel')}
+                  >
+                    Channel {renderSortIcon('channel')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('ssid')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('ssid')}>
+                    SSID {renderSortIcon('ssid')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('hits')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('hits')}>
+                    Hits {renderSortIcon('hits')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('lastSeen')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('lastSeen')}
+                  >
+                    Last Seen {renderSortIcon('lastSeen')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('maxRssi')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('maxRssi')}
+                  >
+                    RSSI (max/min/avg) {renderSortIcon('maxRssi')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('lastNode')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('lastNode')}
+                  >
+                    Last Node {renderSortIcon('lastNode')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('lastLat')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('lastLat')}
+                  >
+                    Last Location {renderSortIcon('lastLat')}
+                  </button>
+                </th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((device) => {
+              {sortedData.map((device) => {
                 const locationKnown =
                   typeof device.lastLat === 'number' && typeof device.lastLon === 'number';
                 return (
@@ -198,4 +312,53 @@ export function InventoryPage() {
       )}
     </section>
   );
+}
+
+function compareInventoryDevices(a: InventoryDevice, b: InventoryDevice, key: InventorySortKey) {
+  switch (key) {
+    case 'mac':
+      return compareStrings(a.mac, b.mac);
+    case 'vendor':
+      return compareStrings(a.vendor, b.vendor);
+    case 'type':
+      return compareStrings(a.type, b.type);
+    case 'channel':
+      return compareNumbers(a.channel, b.channel);
+    case 'ssid':
+      return compareStrings(a.ssid, b.ssid);
+    case 'hits':
+      return compareNumbers(a.hits, b.hits);
+    case 'lastSeen':
+      return compareNumbers(
+        a.lastSeen ? new Date(a.lastSeen).getTime() : 0,
+        b.lastSeen ? new Date(b.lastSeen).getTime() : 0,
+      );
+    case 'maxRssi':
+      return compareNumbers(a.maxRSSI, b.maxRSSI);
+    case 'minRssi':
+      return compareNumbers(a.minRSSI, b.minRSSI);
+    case 'avgRssi':
+      return compareNumbers(a.avgRSSI ?? null, b.avgRSSI ?? null);
+    case 'lastNode':
+      return compareStrings(a.lastNodeId, b.lastNodeId);
+    case 'lastLat':
+      return compareNumbers(a.lastLat, b.lastLat);
+    default:
+      return 0;
+  }
+}
+
+function compareStrings(a?: string | null, b?: string | null): number {
+  const valueA = (a ?? '').toUpperCase();
+  const valueB = (b ?? '').toUpperCase();
+  return valueA.localeCompare(valueB);
+}
+
+function compareNumbers(a?: number | null, b?: number | null): number {
+  const valueA = typeof a === 'number' && Number.isFinite(a) ? a : Number.NEGATIVE_INFINITY;
+  const valueB = typeof b === 'number' && Number.isFinite(b) ? b : Number.NEGATIVE_INFINITY;
+  if (valueA === valueB) {
+    return 0;
+  }
+  return valueA < valueB ? -1 : 1;
 }

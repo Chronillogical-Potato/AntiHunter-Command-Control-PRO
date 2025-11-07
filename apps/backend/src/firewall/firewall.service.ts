@@ -1,4 +1,4 @@
-﻿import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   FirewallConfig,
@@ -279,6 +279,41 @@ export class FirewallService {
   async deleteRule(id: string): Promise<void> {
     await this.prisma.firewallRule.delete({
       where: { id },
+    });
+  }
+
+  async listJailedRules(): Promise<FirewallRuleResponse[]> {
+    await this.cleanupExpiredRules();
+    const jailedRules = await this.prisma.firewallRule.findMany({
+      where: { type: FirewallRuleType.TEMP_BLOCK },
+      orderBy: { createdAt: 'desc' },
+    });
+    return jailedRules.map((rule) => this.mapRule(rule));
+  }
+
+  async unblockJailedRule(id: string, actorId?: string): Promise<void> {
+    const rule = await this.prisma.firewallRule.findUnique({ where: { id } });
+    if (!rule || rule.type !== FirewallRuleType.TEMP_BLOCK) {
+      throw new NotFoundException('Jailed IP not found');
+    }
+
+    await this.prisma.firewallRule.delete({ where: { id } });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorId ?? null,
+        action: 'FIREWALL_JAIL_RELEASE',
+        entity: 'FirewallRule',
+        entityId: id,
+        before: {
+          id: rule.id,
+          ip: rule.ip,
+          type: rule.type,
+          reason: rule.reason ?? null,
+          expiresAt: rule.expiresAt?.toISOString() ?? null,
+        },
+        after: Prisma.JsonNull,
+      },
     });
   }
 

@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 
 import { canonicalNodeId } from './node-store';
 import type { AlarmLevel } from '../api/types';

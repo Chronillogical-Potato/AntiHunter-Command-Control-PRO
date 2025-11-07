@@ -20,6 +20,7 @@ import type {
   FirewallPolicy,
   FirewallGeoMode,
   FirewallLog,
+  FirewallRule,
 } from '../api/types';
 import { DEFAULT_ALERT_COLORS, extractAlertColors } from '../constants/alert-colors';
 import { useAlarm } from '../providers/alarm-provider';
@@ -285,17 +286,29 @@ export function ConfigPage() {
   const firewallConfig = firewallOverviewQuery.data?.config ?? null;
   const [firewallSaving, setFirewallSaving] = useState(false);
   const [firewallLogsOpen, setFirewallLogsOpen] = useState(false);
+  const [firewallJailOpen, setFirewallJailOpen] = useState(false);
   const firewallLogsQuery = useQuery({
     queryKey: ['firewall', 'logs', { limit: 100 }],
     queryFn: () => apiClient.get<FirewallLog[]>('/config/firewall/logs?limit=100'),
     enabled: firewallLogsOpen,
     staleTime: 30_000,
   });
+  const firewallJailedQuery = useQuery({
+    queryKey: ['firewall', 'jailed'],
+    queryFn: () => apiClient.get<FirewallRule[]>('/config/firewall/jailed'),
+    enabled: firewallJailOpen,
+    staleTime: 10_000,
+  });
   const firewallLogs = firewallLogsQuery.data ?? [];
   const firewallLogsError =
     firewallLogsQuery.error instanceof Error
       ? firewallLogsQuery.error.message
       : 'Unable to load firewall logs.';
+  const jailedRules = firewallJailedQuery.data ?? [];
+  const jailedError =
+    firewallJailedQuery.error instanceof Error
+      ? firewallJailedQuery.error.message
+      : 'Unable to load jailed IPs.';
 
   const handleFirewallLogsExport = () => {
     if (firewallLogs.length === 0) {
@@ -347,6 +360,13 @@ export function ConfigPage() {
     anchor.download = `firewall-logs-${new Date().toISOString().slice(0, 10)}.csv`;
     anchor.click();
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleUnblockJailed = (id: string) => {
+    if (!id) {
+      return;
+    }
+    unblockJailedMutation.mutate(id);
   };
 
   useEffect(() => {
@@ -541,6 +561,17 @@ export function ConfigPage() {
         error instanceof Error ? error.message : 'Unable to update firewall settings.',
       );
       setFirewallSaving(false);
+    },
+  });
+
+  const unblockJailedMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/config/firewall/jailed/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['firewall', 'jailed'] });
+      setFirewallMessage('IP removed from jail.');
+    },
+    onError: (error: Error) => {
+      setFirewallError(error.message);
     },
   });
 
@@ -1790,6 +1821,61 @@ export function ConfigPage() {
                               </li>
                             ))}
                           </ul>
+                        )}
+                      </div>
+                    </details>
+                    <details
+                      className="firewall-log-viewer"
+                      open={firewallJailOpen}
+                      onToggle={(event) => setFirewallJailOpen(event.currentTarget.open)}
+                    >
+                      <summary>
+                        Jailed IPs
+                        <span className="firewall-log-viewer__summary-meta">
+                          {firewallJailedQuery.isFetching
+                            ? 'Refreshing...'
+                            : `${jailedRules.length} entries`}
+                        </span>
+                      </summary>
+                      <div className="firewall-log-viewer__body">
+                        {firewallJailedQuery.isLoading ? (
+                          <p className="form-hint">Loading jailed IPs…</p>
+                        ) : firewallJailedQuery.isError ? (
+                          <p className="form-error">{jailedError}</p>
+                        ) : jailedRules.length === 0 ? (
+                          <p className="form-hint">No IPs are currently jailed.</p>
+                        ) : (
+                          <table className="firewall-jail-table">
+                            <thead>
+                              <tr>
+                                <th>IP</th>
+                                <th>Reason</th>
+                                <th>Expires</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {jailedRules.map((rule) => (
+                                <tr key={rule.id}>
+                                  <td>{rule.ip}</td>
+                                  <td>{rule.reason ?? 'Automatic block'}</td>
+                                  <td>
+                                    {rule.expiresAt ? formatDateTime(rule.expiresAt) : 'Auto'}
+                                  </td>
+                                  <td>
+                                    <button
+                                      type="button"
+                                      className="control-chip control-chip--ghost"
+                                      onClick={() => handleUnblockJailed(rule.id)}
+                                      disabled={unblockJailedMutation.isPending}
+                                    >
+                                      Unblock
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         )}
                       </div>
                     </details>

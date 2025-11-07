@@ -1,10 +1,24 @@
-﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChangeEvent, useMemo, useState } from 'react';
 
 import { apiClient } from '../api/client';
 import type { CommandRequest, InventoryDevice, Target } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
 import { useTargetStore } from '../stores/target-store';
+
+const DEFAULT_TRIANGULATION_DURATION = 300;
+const DEFAULT_SCAN_DURATION = 60;
+
+type TargetSortKey =
+  | 'name'
+  | 'mac'
+  | 'vendor'
+  | 'type'
+  | 'ssid'
+  | 'status'
+  | 'firstNode'
+  | 'lat'
+  | 'updated';
 
 interface TriangulatePayload {
   target: Target;
@@ -14,9 +28,6 @@ interface TriangulatePayload {
 interface TrackPayload {
   target: Target;
 }
-
-const DEFAULT_TRIANGULATION_DURATION = 300;
-const DEFAULT_SCAN_DURATION = 60;
 
 function normalizeNodeTarget(nodeId?: string | null): string | null {
   if (!nodeId) {
@@ -41,6 +52,8 @@ async function sendCommand(body: CommandRequest) {
 
 export function TargetsPage() {
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<TargetSortKey>('updated');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const role = useAuthStore((state) => state.user?.role ?? null);
   const canManageTargets = role === 'ADMIN' || role === 'OPERATOR';
   const canClearTargets = role === 'ADMIN';
@@ -158,6 +171,41 @@ export function TargetsPage() {
     });
   }, [search, targetsQuery.data, vendorMap]);
 
+  const sortedTargets = useMemo(() => {
+    const multiplier = sortDirection === 'asc' ? 1 : -1;
+    return [...filteredTargets].sort((a, b) => {
+      const result = compareTargets(a, b, sortKey, vendorMap);
+      return result * multiplier;
+    });
+  }, [filteredTargets, sortDirection, sortKey, vendorMap]);
+
+  const handleSort = (key: TargetSortKey) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortIcon = (key: TargetSortKey) => {
+    if (sortKey !== key) {
+      return (
+        <span className="table-sort__icon" aria-hidden="true">
+          ↕
+        </span>
+      );
+    }
+    return (
+      <span className="table-sort__icon" aria-hidden="true">
+        {sortDirection === 'asc' ? '↑' : '↓'}
+      </span>
+    );
+  };
+
+  const ariaSort = (key: TargetSortKey): 'none' | 'ascending' | 'descending' =>
+    sortKey === key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
+
   return (
     <section className="panel">
       <header className="panel__header">
@@ -220,21 +268,65 @@ export function TargetsPage() {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>MAC</th>
-                <th>Vendor</th>
-                <th>Type</th>
-                <th>SSID</th>
-                <th>Status</th>
-                <th>First Node</th>
-                <th>Location</th>
-                <th>Updated</th>
+                <th aria-sort={ariaSort('name')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('name')}>
+                    Name {renderSortIcon('name')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('mac')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('mac')}>
+                    MAC {renderSortIcon('mac')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('vendor')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('vendor')}>
+                    Vendor {renderSortIcon('vendor')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('type')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('type')}>
+                    Type {renderSortIcon('type')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('ssid')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('ssid')}>
+                    SSID {renderSortIcon('ssid')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('status')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('status')}>
+                    Status {renderSortIcon('status')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('firstNode')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('firstNode')}
+                  >
+                    First Node {renderSortIcon('firstNode')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('lat')}>
+                  <button type="button" className="table-sort" onClick={() => handleSort('lat')}>
+                    Location {renderSortIcon('lat')}
+                  </button>
+                </th>
+                <th aria-sort={ariaSort('updated')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('updated')}
+                  >
+                    Updated {renderSortIcon('updated')}
+                  </button>
+                </th>
                 <th>Comment</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTargets.map((target) => {
+              {sortedTargets.map((target) => {
                 const mac = target.mac?.toUpperCase() ?? '';
                 const vendorEntry = mac ? vendorMap.get(mac) : undefined;
                 const trackingEntry = trackingMap[target.id];
@@ -330,4 +422,68 @@ export function TargetsPage() {
       )}
     </section>
   );
+}
+
+function compareTargets(
+  a: Target,
+  b: Target,
+  key: TargetSortKey,
+  vendorMap: Map<string, InventoryDevice>,
+) {
+  switch (key) {
+    case 'name':
+      return compareStrings(getTargetName(a), getTargetName(b));
+    case 'mac':
+      return compareStrings(a.mac?.toUpperCase(), b.mac?.toUpperCase());
+    case 'vendor':
+      return compareStrings(getVendor(a, vendorMap)?.vendor, getVendor(b, vendorMap)?.vendor);
+    case 'type':
+      return compareStrings(
+        a.deviceType ?? getVendor(a, vendorMap)?.type,
+        b.deviceType ?? getVendor(b, vendorMap)?.type,
+      );
+    case 'ssid':
+      return compareStrings(getVendor(a, vendorMap)?.ssid, getVendor(b, vendorMap)?.ssid);
+    case 'status':
+      return compareStrings(a.status, b.status);
+    case 'firstNode':
+      return compareStrings(getFirstNodeLabel(a), getFirstNodeLabel(b));
+    case 'lat':
+      return compareNumbers(a.lat, b.lat);
+    case 'updated':
+      return compareNumbers(new Date(a.updatedAt).getTime(), new Date(b.updatedAt).getTime());
+    default:
+      return 0;
+  }
+}
+
+function getTargetName(target: Target): string | undefined {
+  return target.name ?? target.mac ?? target.id;
+}
+
+function getVendor(target: Target, vendorMap: Map<string, InventoryDevice>) {
+  const mac = target.mac?.toUpperCase();
+  if (!mac) {
+    return undefined;
+  }
+  return vendorMap.get(mac);
+}
+
+function getFirstNodeLabel(target: Target): string | undefined {
+  return normalizeNodeTarget(target.firstNodeId)?.replace(/^@/, '');
+}
+
+function compareStrings(a?: string | null, b?: string | null): number {
+  const valueA = (a ?? '').toUpperCase();
+  const valueB = (b ?? '').toUpperCase();
+  return valueA.localeCompare(valueB);
+}
+
+function compareNumbers(a?: number | null, b?: number | null): number {
+  const valueA = typeof a === 'number' && Number.isFinite(a) ? a : Number.NEGATIVE_INFINITY;
+  const valueB = typeof b === 'number' && Number.isFinite(b) ? b : Number.NEGATIVE_INFINITY;
+  if (valueA === valueB) {
+    return 0;
+  }
+  return valueA < valueB ? -1 : 1;
 }
