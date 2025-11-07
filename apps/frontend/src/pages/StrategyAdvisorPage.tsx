@@ -15,7 +15,7 @@ import {
 } from 'react-leaflet';
 
 import { apiClient } from '../api/client';
-import type { Geofence, GeofenceVertex, SiteSummary } from '../api/types';
+import type { AlarmLevel, Geofence, GeofenceVertex, SiteSummary } from '../api/types';
 import { useGeofenceStore } from '../stores/geofence-store';
 
 const DEFAULT_RADIUS = 100;
@@ -2274,7 +2274,7 @@ function downloadText(filename: string, mimeType: string, content: string) {
   window.URL.revokeObjectURL(url);
 }
 
-function normalizeAlarmLevel(value: string | null): string {
+function normalizeAlarmLevel(value: string | null): AlarmLevel {
   const normalized = (value ?? '').toUpperCase();
   if (
     normalized === 'INFO' ||
