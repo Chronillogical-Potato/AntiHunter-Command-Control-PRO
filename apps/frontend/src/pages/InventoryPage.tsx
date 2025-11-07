@@ -30,7 +30,7 @@ export function InventoryPage() {
   const canPromote = role === 'ADMIN' || role === 'OPERATOR';
   const canClear = role === 'ADMIN';
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery<InventoryDevice[]>({
     queryKey: ['inventory', search],
     queryFn: async () => {
       const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -38,11 +38,11 @@ export function InventoryPage() {
     },
     refetchInterval: autoRefreshMs,
     refetchIntervalInBackground: true,
-    keepPreviousData: true,
   });
 
   useEffect(() => {
-    const nextInterval = !data || data.length === 0 ? 2000 : 10000;
+    const hasResults = Array.isArray(data) && data.length > 0;
+    const nextInterval = hasResults ? 10000 : 2000;
     setAutoRefreshMs((current) => (current === nextInterval ? current : nextInterval));
   }, [data]);
 

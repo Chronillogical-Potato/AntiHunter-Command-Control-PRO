@@ -259,6 +259,7 @@ export function StrategyAdvisorPage() {
   const [avoidancePolygons, setAvoidancePolygons] = useState<AvoidancePolygon[]>([]);
   const [obstacleError, setObstacleError] = useState<string | null>(null);
   const [nodeOverrides, setNodeOverrides] = useState<Record<string, NodeOverride>>({});
+  const [removedNodeIds, setRemovedNodeIds] = useState<Set<string>>(new Set());
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
   const [drawingGeofence, setDrawingGeofence] = useState(false);
@@ -379,7 +380,11 @@ export function StrategyAdvisorPage() {
     if (baseStrategy.nodes.length === 0) {
       return baseStrategy;
     }
-    const nodes = baseStrategy.nodes.map((node) => {
+    const relevantNodes =
+      removedNodeIds.size === 0
+        ? baseStrategy.nodes
+        : baseStrategy.nodes.filter((node) => !removedNodeIds.has(node.id));
+    const nodes = relevantNodes.map((node) => {
       const override = nodeOverrides[node.id];
       if (!override) {
         return { ...node, displayName: node.displayName ?? node.id };
@@ -473,7 +478,7 @@ export function StrategyAdvisorPage() {
       };
     });
     return { ...baseStrategy, nodes };
-  }, [baseStrategy, nodeOverrides]);
+  }, [baseStrategy, nodeOverrides, removedNodeIds]);
 
   useEffect(() => {
     if (!selectedNodeId) {
@@ -828,6 +833,46 @@ export function StrategyAdvisorPage() {
   const hasNodes = strategy.nodes.length > 0;
   const activePanelDefinition =
     STRATEGY_PANELS.find((panel) => panel.id === activePanel) ?? STRATEGY_PANELS[0];
+  const handleBookmarkNode = (node: StrategyNode | null) => {
+    if (!node) {
+      return;
+    }
+    const snippet = `${node.displayName ?? node.id} · ${node.profileId} · ${node.lat.toFixed(
+      5,
+    )}, ${node.lon.toFixed(5)}`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(snippet).catch(() => {
+        window.prompt('Copy node details', snippet);
+      });
+    } else {
+      window.prompt('Copy node details', snippet);
+    }
+  };
+  const handleInspectorReset = () => {
+    if (!selectedNode) {
+      return;
+    }
+    resetNodeOverride(selectedNode.id);
+  };
+  const handleDeleteNode = (nodeId: string) => {
+    setRemovedNodeIds((previous) => {
+      if (previous.has(nodeId)) {
+        return previous;
+      }
+      const next = new Set(previous);
+      next.add(nodeId);
+      return next;
+    });
+    setNodeOverrides((previous) => {
+      if (!(nodeId in previous)) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[nodeId];
+      return next;
+    });
+    setSelectedNodeId((current) => (current === nodeId ? null : current));
+  };
   const handlePresetChange = (event: ChangeEvent<HTMLSelectElement>) => {
     setActivePresetId(event.target.value);
   };
