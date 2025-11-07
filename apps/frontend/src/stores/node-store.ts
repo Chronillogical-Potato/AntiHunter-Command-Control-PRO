@@ -87,8 +87,8 @@ export function canonicalNodeId(value: string | null | undefined): string {
     const normalized = upper.slice(4).replace(/[^A-Z0-9]/g, '');
     return normalized ? `NODE_${normalized}` : 'NODE_UNKNOWN';
   }
-  if (/^AH[0-9A-Z]+/.test(upper)) {
-    return `NODE_${upper.replace(/[^A-Z0-9]/g, '')}`;
+  if (/^AH[0-9A-Z]+$/.test(upper)) {
+    return upper.replace(/[^A-Z0-9]/g, '');
   }
   const sanitized = upper.replace(/[^A-Z0-9]/g, '');
   return sanitized ? `NODE_${sanitized}` : 'NODE_UNKNOWN';

@@ -830,9 +830,8 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
       const normalized = upper.replace(/^NODE/, '').replace(/[^A-Z0-9]/g, '');
       return normalized ? `NODE_${normalized}` : 'NODE_UNKNOWN';
     }
-    if (/^AH[0-9A-Z]+/i.test(token)) {
-      const normalized = upper.replace(/[^A-Z0-9]/g, '');
-      return `NODE_${normalized}`;
+    if (/^AH[0-9A-Z]+$/i.test(token)) {
+      return upper.replace(/[^A-Z0-9]/g, '');
     }
     const sanitized = upper.replace(/[^A-Z0-9]/g, '');
     return sanitized ? `NODE_${sanitized}` : 'NODE_UNKNOWN';
