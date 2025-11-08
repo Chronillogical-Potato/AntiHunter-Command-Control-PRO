@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { SerialConfig } from '@prisma/client';
+import type { Prisma, SerialConfig } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateSerialConfigDto } from './dto/update-serial-config.dto';
@@ -55,14 +55,44 @@ export class SerialConfigService {
     });
   }
 
-  private buildCreatePayload(siteId: string) {
+  private buildCreatePayload(siteId: string): Prisma.SerialConfigCreateInput {
     const defaults = this.getEnvSerialDefaults();
-    const payload: Record<string, unknown> = { siteId };
-    Object.entries(defaults).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        payload[key] = value;
-      }
-    });
+    const payload: Prisma.SerialConfigCreateInput = {
+      site: {
+        connect: { id: siteId },
+      },
+    };
+
+    if (defaults.devicePath != null) {
+      payload.devicePath = defaults.devicePath;
+    }
+    if (defaults.baud != null) {
+      payload.baud = defaults.baud;
+    }
+    if (defaults.dataBits != null) {
+      payload.dataBits = defaults.dataBits;
+    }
+    if (defaults.parity != null) {
+      payload.parity = defaults.parity;
+    }
+    if (defaults.stopBits != null) {
+      payload.stopBits = defaults.stopBits;
+    }
+    if (defaults.delimiter != null) {
+      payload.delimiter = defaults.delimiter;
+    }
+    if (defaults.reconnectBaseMs != null) {
+      payload.reconnectBaseMs = defaults.reconnectBaseMs;
+    }
+    if (defaults.reconnectMaxMs != null) {
+      payload.reconnectMaxMs = defaults.reconnectMaxMs;
+    }
+    if (defaults.reconnectJitter != null) {
+      payload.reconnectJitter = defaults.reconnectJitter;
+    }
+    if (defaults.reconnectMaxAttempts != null) {
+      payload.reconnectMaxAttempts = defaults.reconnectMaxAttempts;
+    }
     return payload;
   }
 
@@ -83,10 +113,24 @@ export class SerialConfigService {
     };
   }
 
-  private getEnvSerialDefaults() {
+  private getEnvSerialDefaults(): {
+    devicePath?: string | null;
+    baud?: number | null;
+    dataBits?: number | null;
+    parity?: string | null;
+    stopBits?: number | null;
+    delimiter?: string | null;
+    reconnectBaseMs?: number | null;
+    reconnectMaxMs?: number | null;
+    reconnectJitter?: number | null;
+    reconnectMaxAttempts?: number | null;
+  } {
     const serialConfig = this.configService.get<{
       device?: string;
       baudRate?: number;
+      dataBits?: number;
+      parity?: string;
+      stopBits?: number;
       delimiter?: string;
       reconnectBaseMs?: number;
       reconnectMaxMs?: number;
@@ -98,6 +142,9 @@ export class SerialConfigService {
       ? {
           devicePath: serialConfig.device,
           baud: serialConfig.baudRate,
+          dataBits: serialConfig.dataBits,
+          parity: serialConfig.parity,
+          stopBits: serialConfig.stopBits,
           delimiter: serialConfig.delimiter,
           reconnectBaseMs: serialConfig.reconnectBaseMs,
           reconnectMaxMs: serialConfig.reconnectMaxMs,
