@@ -299,6 +299,47 @@ export class GeofencesService {
     this.changes$.next({ type: 'delete', geofence: mapped });
   }
 
+  async syncRemoteGeofenceSnapshot(
+    originSiteId: string,
+    geofences: GeofenceUpsertPayload[],
+  ): Promise<void> {
+    const receivedIds = new Set<string>();
+
+    for (const payload of geofences) {
+      const normalized: GeofenceUpsertPayload = {
+        ...payload,
+        originSiteId: payload.originSiteId ?? originSiteId,
+      };
+      receivedIds.add(normalized.id);
+      await this.syncRemoteGeofence(normalized);
+    }
+
+    const staleWhere: Prisma.GeofenceWhereInput =
+      receivedIds.size > 0
+        ? {
+            originSiteId,
+            id: { notIn: Array.from(receivedIds) },
+          }
+        : { originSiteId };
+
+    const stale = await this.prisma.geofence.findMany({
+      where: staleWhere,
+      include: { site: true },
+    });
+    if (stale.length === 0) {
+      return;
+    }
+
+    await this.prisma.geofence.deleteMany({
+      where: { id: { in: stale.map((geofence) => geofence.id) } },
+    });
+
+    stale.forEach((geofence) => {
+      const mapped = this.mapEntity(geofence);
+      this.changes$.next({ type: 'delete', geofence: mapped });
+    });
+  }
+
   private mapEntity(geofence: Geofence & { site?: Site | null }): GeofenceResponse {
     const polygonValue = Array.isArray(geofence.polygon) ? geofence.polygon : [];
     const polygon: GeofenceVertex[] = polygonValue

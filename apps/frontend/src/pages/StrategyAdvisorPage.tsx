@@ -902,9 +902,9 @@ export function StrategyAdvisorPage() {
         ...strategy.nodes.map((node) => distanceBetween(asset.lat, asset.lon, node.lat, node.lon)),
       );
       const limit = asset.minBackhaulMeters || DEFAULT_RF_BACKHAUL_METERS;
-      if (minDistance < limit) {
+      if (minDistance > limit) {
         warnings.add(
-          `${asset.name} is ${minDistance.toFixed(0)} m from the nearest node (minimum ${limit} m).`,
+          `${asset.name} is ${minDistance.toFixed(0)} m from the nearest node (maximum ${limit} m).`,
         );
       }
     });
@@ -1038,120 +1038,123 @@ export function StrategyAdvisorPage() {
     setObstacleError(null);
   };
 
-  const updateNodeOverride = (nodeId: string, changes: NodeOverride) => {
-    const baseNode = baseNodeLookup.get(nodeId);
-    if (!baseNode) {
-      return;
-    }
-    setNodeOverrides((previous) => {
-      const current = previous[nodeId] ?? {};
-      const next: NodeOverride = { ...current };
-
-      const normalizeMeters = (value?: number) => {
-        if (value == null || Number.isNaN(value) || Math.abs(value) < 0.01) {
-          return undefined;
-        }
-        return Math.max(-1_000, Math.min(1_000, value));
-      };
-
-      if (changes.radius !== undefined) {
-        const normalized = Math.max(1, changes.radius);
-        if (Number.isFinite(normalized)) {
-          next.radius = normalized;
-        }
+  const updateNodeOverride = useCallback(
+    (nodeId: string, changes: NodeOverride) => {
+      const baseNode = baseNodeLookup.get(nodeId);
+      if (!baseNode) {
+        return;
       }
+      setNodeOverrides((previous) => {
+        const current = previous[nodeId] ?? {};
+        const next: NodeOverride = { ...current };
 
-      if (changes.orientation !== undefined) {
-        if (changes.orientation == null || Number.isNaN(changes.orientation)) {
+        const normalizeMeters = (value?: number) => {
+          if (value == null || Number.isNaN(value) || Math.abs(value) < 0.01) {
+            return undefined;
+          }
+          return Math.max(-1_000, Math.min(1_000, value));
+        };
+
+        if (changes.radius !== undefined) {
+          const normalized = Math.max(1, changes.radius);
+          if (Number.isFinite(normalized)) {
+            next.radius = normalized;
+          }
+        }
+
+        if (changes.orientation !== undefined) {
+          if (changes.orientation == null || Number.isNaN(changes.orientation)) {
+            delete next.orientation;
+          } else {
+            const normalized = ((changes.orientation % 360) + 360) % 360;
+            next.orientation = normalized;
+          }
+        }
+
+        if (changes.arcWidth !== undefined) {
+          if (changes.arcWidth == null || Number.isNaN(changes.arcWidth)) {
+            delete next.arcWidth;
+          } else {
+            const normalized = Math.min(360, Math.max(10, changes.arcWidth));
+            next.arcWidth = normalized;
+          }
+        }
+
+        if (changes.name !== undefined) {
+          const baseName = baseNode.displayName ?? baseNode.id;
+          const trimmed = (changes.name ?? '').trim();
+          if (!trimmed || trimmed === baseName) {
+            delete next.name;
+          } else {
+            next.name = trimmed;
+          }
+        }
+
+        if (changes.profileId !== undefined) {
+          if (!changes.profileId || changes.profileId === baseNode.profileId) {
+            delete next.profileId;
+          } else if (PROFILE_BY_ID.has(changes.profileId)) {
+            next.profileId = changes.profileId;
+          }
+        }
+
+        if (changes.slideMeters !== undefined) {
+          const normalized = normalizeMeters(changes.slideMeters);
+          if (normalized === undefined) {
+            delete next.slideMeters;
+          } else {
+            next.slideMeters = normalized;
+          }
+        }
+
+        if (changes.moveNorthMeters !== undefined) {
+          const normalized = normalizeMeters(changes.moveNorthMeters);
+          if (normalized === undefined) {
+            delete next.moveNorthMeters;
+          } else {
+            next.moveNorthMeters = normalized;
+          }
+        }
+
+        if (changes.moveEastMeters !== undefined) {
+          const normalized = normalizeMeters(changes.moveEastMeters);
+          if (normalized === undefined) {
+            delete next.moveEastMeters;
+          } else {
+            next.moveEastMeters = normalized;
+          }
+        }
+
+        if (next.radius !== undefined && next.radius === baseNode.radius) {
+          delete next.radius;
+        }
+        if (next.orientation !== undefined && next.orientation === baseNode.orientation) {
           delete next.orientation;
-        } else {
-          const normalized = ((changes.orientation % 360) + 360) % 360;
-          next.orientation = normalized;
         }
-      }
-
-      if (changes.arcWidth !== undefined) {
-        if (changes.arcWidth == null || Number.isNaN(changes.arcWidth)) {
+        if (next.arcWidth !== undefined && next.arcWidth === baseNode.arcWidth) {
           delete next.arcWidth;
-        } else {
-          const normalized = Math.min(360, Math.max(10, changes.arcWidth));
-          next.arcWidth = normalized;
         }
-      }
-
-      if (changes.name !== undefined) {
-        const baseName = baseNode.displayName ?? baseNode.id;
-        const trimmed = (changes.name ?? '').trim();
-        if (!trimmed || trimmed === baseName) {
-          delete next.name;
-        } else {
-          next.name = trimmed;
-        }
-      }
-
-      if (changes.profileId !== undefined) {
-        if (!changes.profileId || changes.profileId === baseNode.profileId) {
+        if (next.profileId !== undefined && next.profileId === baseNode.profileId) {
           delete next.profileId;
-        } else if (PROFILE_BY_ID.has(changes.profileId)) {
-          next.profileId = changes.profileId;
         }
-      }
-
-      if (changes.slideMeters !== undefined) {
-        const normalized = normalizeMeters(changes.slideMeters);
-        if (normalized === undefined) {
-          delete next.slideMeters;
-        } else {
-          next.slideMeters = normalized;
+        if (next.name !== undefined && next.name === (baseNode.displayName ?? baseNode.id)) {
+          delete next.name;
         }
-      }
 
-      if (changes.moveNorthMeters !== undefined) {
-        const normalized = normalizeMeters(changes.moveNorthMeters);
-        if (normalized === undefined) {
-          delete next.moveNorthMeters;
-        } else {
-          next.moveNorthMeters = normalized;
+        if (Object.keys(next).length === 0) {
+          if (!previous[nodeId]) {
+            return previous;
+          }
+          const copy = { ...previous };
+          delete copy[nodeId];
+          return copy;
         }
-      }
 
-      if (changes.moveEastMeters !== undefined) {
-        const normalized = normalizeMeters(changes.moveEastMeters);
-        if (normalized === undefined) {
-          delete next.moveEastMeters;
-        } else {
-          next.moveEastMeters = normalized;
-        }
-      }
-
-      if (next.radius !== undefined && next.radius === baseNode.radius) {
-        delete next.radius;
-      }
-      if (next.orientation !== undefined && next.orientation === baseNode.orientation) {
-        delete next.orientation;
-      }
-      if (next.arcWidth !== undefined && next.arcWidth === baseNode.arcWidth) {
-        delete next.arcWidth;
-      }
-      if (next.profileId !== undefined && next.profileId === baseNode.profileId) {
-        delete next.profileId;
-      }
-      if (next.name !== undefined && next.name === (baseNode.displayName ?? baseNode.id)) {
-        delete next.name;
-      }
-
-      if (Object.keys(next).length === 0) {
-        if (!previous[nodeId]) {
-          return previous;
-        }
-        const copy = { ...previous };
-        delete copy[nodeId];
-        return copy;
-      }
-
-      return { ...previous, [nodeId]: next };
-    });
-  };
+        return { ...previous, [nodeId]: next };
+      });
+    },
+    [baseNodeLookup],
+  );
 
   const resetNodeOverride = (nodeId: string) => {
     setNodeOverrides((previous) => {
@@ -1354,11 +1357,14 @@ export function StrategyAdvisorPage() {
 
   const ensureInspector = useCallback(() => setInspectorVisible(true), []);
 
-  const insertRfAsset = useCallback((asset: RfAsset) => {
-    setRfAssets((previous) => [asset, ...previous]);
-    setSelectedRfAssetId(asset.id);
-    ensureInspector();
-  }, []);
+  const insertRfAsset = useCallback(
+    (asset: RfAsset) => {
+      setRfAssets((previous) => [asset, ...previous]);
+      setSelectedRfAssetId(asset.id);
+      ensureInspector();
+    },
+    [ensureInspector],
+  );
 
   const handleRfPlacementToggle = (kind: RfAssetKind) => {
     setRfPlacementMode((previous) => (previous === kind ? null : kind));
@@ -1401,7 +1407,7 @@ export function StrategyAdvisorPage() {
       setSelectedRfAssetId(asset.id);
       ensureInspector();
     },
-    [updateRfAsset],
+    [ensureInspector, updateRfAsset],
   );
 
   const handleDeleteRfAsset = (id: string) => {
@@ -2193,72 +2199,82 @@ ${nodesKml}
                     </button>
                   </div>
                   <div className="strategy-node-inspector__body">
-                    <label className="form-label">Name</label>
-                    <input
-                      type="text"
-                      className="control-input"
-                      value={selectedRfAsset.name}
-                      onChange={(event) =>
-                        updateRfAsset(selectedRfAsset.id, { name: event.target.value })
-                      }
-                    />
-                    <label className="form-label">Minimum backhaul distance (m)</label>
-                    <input
-                      type="number"
-                      className="control-input"
-                      min={100}
-                      step={10}
-                      value={selectedRfAsset.minBackhaulMeters}
-                      onChange={(event) =>
-                        updateRfAsset(selectedRfAsset.id, {
-                          minBackhaulMeters: Math.max(10, Number(event.target.value) || 0),
-                        })
-                      }
-                    />
-                    <label className="form-label">Directional</label>
-                    <select
-                      className="control-input"
-                      value={selectedRfAsset.directional ? 'yes' : 'no'}
-                      onChange={(event) =>
-                        updateRfAsset(selectedRfAsset.id, {
-                          directional: event.target.value === 'yes',
-                        })
-                      }
-                    >
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </select>
+                    <label className="form-label">
+                      Name
+                      <input
+                        type="text"
+                        className="control-input"
+                        value={selectedRfAsset.name}
+                        onChange={(event) =>
+                          updateRfAsset(selectedRfAsset.id, { name: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="form-label">
+                      Maximum distance from node (m)
+                      <input
+                        type="number"
+                        className="control-input"
+                        min={100}
+                        step={10}
+                        value={selectedRfAsset.minBackhaulMeters}
+                        onChange={(event) =>
+                          updateRfAsset(selectedRfAsset.id, {
+                            minBackhaulMeters: Math.max(10, Number(event.target.value) || 0),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="form-label">
+                      Directional
+                      <select
+                        className="control-input"
+                        value={selectedRfAsset.directional ? 'yes' : 'no'}
+                        onChange={(event) =>
+                          updateRfAsset(selectedRfAsset.id, {
+                            directional: event.target.value === 'yes',
+                          })
+                        }
+                      >
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </label>
                     {selectedRfAsset.directional ? (
                       <>
-                        <label className="form-label">Orientation (°)</label>
-                        <input
-                          type="range"
-                          min={0}
-                          max={360}
-                          value={selectedRfAsset.orientation}
-                          onChange={(event) =>
-                            updateRfAsset(selectedRfAsset.id, {
-                              orientation: Number(event.target.value) % 360,
-                            })
-                          }
-                        />
-                        <div className="muted">{selectedRfAsset.orientation.toFixed(1)}°</div>
+                        <label className="form-label">
+                          Orientation (&deg;)
+                          <input
+                            type="range"
+                            min={0}
+                            max={360}
+                            value={selectedRfAsset.orientation}
+                            onChange={(event) =>
+                              updateRfAsset(selectedRfAsset.id, {
+                                orientation: Number(event.target.value) % 360,
+                              })
+                            }
+                          />
+                        </label>
+                        <div className="muted">{selectedRfAsset.orientation.toFixed(1)}&deg;</div>
                         {selectedRfAsset.kind === 'repeater' ? (
                           <>
-                            <label className="form-label">Secondary orientation (°)</label>
-                            <input
-                              type="range"
-                              min={0}
-                              max={360}
-                              value={selectedRfAsset.secondaryOrientation ?? 180}
-                              onChange={(event) =>
-                                updateRfAsset(selectedRfAsset.id, {
-                                  secondaryOrientation: Number(event.target.value) % 360,
-                                })
-                              }
-                            />
+                            <label className="form-label">
+                              Secondary orientation (&deg;)
+                              <input
+                                type="range"
+                                min={0}
+                                max={360}
+                                value={selectedRfAsset.secondaryOrientation ?? 180}
+                                onChange={(event) =>
+                                  updateRfAsset(selectedRfAsset.id, {
+                                    secondaryOrientation: Number(event.target.value) % 360,
+                                  })
+                                }
+                              />
+                            </label>
                             <div className="muted">
-                              {(selectedRfAsset.secondaryOrientation ?? 180).toFixed(1)}°
+                              {(selectedRfAsset.secondaryOrientation ?? 180).toFixed(1)}&deg;
                             </div>
                           </>
                         ) : null}

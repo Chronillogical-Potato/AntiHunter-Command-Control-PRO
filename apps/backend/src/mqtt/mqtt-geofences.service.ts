@@ -21,8 +21,16 @@ type GeofenceDeleteMessage = {
   geofenceId: string;
 };
 
+type GeofenceSnapshotMessage = {
+  type: 'geofence.snapshot';
+  originSiteId: string;
+  generatedAt: string;
+  geofences: GeofenceUpsertPayload[];
+};
+
 const GEOFENCE_UPSERT_TOPIC_PATTERN = 'ahcc/+/geofences/upsert';
 const GEOFENCE_DELETE_TOPIC_PATTERN = 'ahcc/+/geofences/delete';
+const GEOFENCE_SNAPSHOT_TOPIC_PATTERN = 'ahcc/+/geofences/snapshot';
 
 @Injectable()
 export class MqttGeofencesService implements OnModuleInit, OnModuleDestroy {
@@ -105,6 +113,19 @@ export class MqttGeofencesService implements OnModuleInit, OnModuleDestroy {
           },
         );
       }),
+      new Promise<void>((resolve, reject) => {
+        context.client.subscribe(
+          GEOFENCE_SNAPSHOT_TOPIC_PATTERN,
+          { qos: context.qosEvents },
+          (err) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          },
+        );
+      }),
     ]);
 
     const existing = this.inboundHandlers.get(context.siteId);
@@ -132,11 +153,30 @@ export class MqttGeofencesService implements OnModuleInit, OnModuleDestroy {
             }`,
           );
         });
+        return;
+      }
+
+      if (topic.endsWith('/geofences/snapshot')) {
+        void this.handleInboundSnapshot(topic, payload).catch((error) => {
+          this.logger.error(
+            `Failed processing inbound geofence snapshot (${topic}): ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+        });
       }
     };
 
     this.inboundHandlers.set(context.siteId, handler);
     context.client.on('message', handler);
+
+    void this.sendSnapshotToContext(context).catch((error) => {
+      this.logger.error(
+        `Failed to publish geofence snapshot to ${context.siteId}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    });
   }
 
   private async handleLocalGeofenceEvent(event: GeofenceEvent): Promise<void> {
@@ -218,12 +258,68 @@ export class MqttGeofencesService implements OnModuleInit, OnModuleDestroy {
     await this.geofencesService.syncRemoteGeofenceDelete(parsed.geofenceId);
   }
 
+  private async handleInboundSnapshot(topic: string, payload: Buffer): Promise<void> {
+    const [, topicSiteId] = topic.split('/');
+
+    let parsed: GeofenceSnapshotMessage;
+    try {
+      parsed = JSON.parse(payload.toString('utf8')) as GeofenceSnapshotMessage;
+    } catch (error) {
+      this.logger.warn(
+        `Ignoring invalid geofence snapshot payload on ${topic}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return;
+    }
+
+    if (parsed.type !== 'geofence.snapshot') {
+      return;
+    }
+
+    const originSiteId = parsed.originSiteId ?? topicSiteId ?? this.localSiteId;
+    if (originSiteId === this.localSiteId) {
+      return;
+    }
+
+    await this.geofencesService.syncRemoteGeofenceSnapshot(originSiteId, parsed.geofences ?? []);
+  }
+
   private buildUpsertTopic(siteId: string): string {
     return `ahcc/${siteId}/geofences/upsert`;
   }
 
   private buildDeleteTopic(siteId: string): string {
     return `ahcc/${siteId}/geofences/delete`;
+  }
+
+  private buildSnapshotTopic(siteId: string): string {
+    return `ahcc/${siteId}/geofences/snapshot`;
+  }
+
+  private async sendSnapshotToContext(context: SiteMqttContext): Promise<void> {
+    const geofences = await this.geofencesService.list({ includeRemote: false });
+    const message: GeofenceSnapshotMessage = {
+      type: 'geofence.snapshot',
+      originSiteId: this.localSiteId,
+      generatedAt: new Date().toISOString(),
+      geofences: geofences.map((geofence) => this.mapGeofenceToPayload(geofence)),
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      context.client.publish(
+        this.buildSnapshotTopic(this.localSiteId),
+        JSON.stringify(message),
+        { qos: context.qosEvents },
+        (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        },
+      );
+    });
   }
 
   private mapGeofenceToPayload(geofence: GeofenceEvent['geofence']): GeofenceUpsertPayload {
