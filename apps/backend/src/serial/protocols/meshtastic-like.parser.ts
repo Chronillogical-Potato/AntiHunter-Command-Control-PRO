@@ -54,11 +54,11 @@ const ROUTER_QUEUE_FULL_REGEX = /ToPhone queue is full/i;
 const ROUTER_DROP_PACKET_REGEX = /drop packet/i;
 const ROUTER_BUSY_RX_REGEX = /busyRx/i;
 const TARGET_REGEX =
-  /^(?<node>[A-Za-z0-9_-]+):\s*Target:\s*(?<type>[A-Za-z0-9_-]+)\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s*RSSI:(?<rssi>-?\d+)\s*(?:Name:(?<name>[^[]+?))?(?:\s*GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?/i;
+  /^(?<node>[A-Za-z0-9_-]+):\s*Target:\s*(?:(?<leadingType>[A-Za-z0-9_-]+)\s+)?(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)(?:\s+Type:(?<inlineType>[A-Za-z0-9_-]+))?(?:\s+Name:(?<name>[^#]+))?(?:\s+GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?/i;
 const TARGET_DATA_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*TARGET_DATA:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+Hits=(?<hits>\d+)\s+RSSI:(?<rssi>-?\d+)(?:\s+Type:(?<type>\w+))?(?:\s+GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?(?:\s+HDOP=(?<hdop>\d+\.\d+))?/i;
 const VIBRATION_REGEX =
-  /^(?<node>[A-Za-z0-9_-]+):\s*VIBRATION:\s*Movement(?:\s+detected)?\s+at\s*(?<time>\d{2}:\d{2}:\d{2})(?:\s*GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?/i;
+  /^(?<node>[A-Za-z0-9_-]+):\s*VIBRATION:\s*Movement(?:\s+detected)?\s+at\s*(?:(?<date>\d{4}-\d{2}-\d{2})\s+)?(?<time>\d{2}:\d{2}:\d{2})(?:\s*GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?/i;
 const DEVICE_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*DEVICE:(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})(?:\s+(?<band>[A-Za-z0-9]+))?\s+(?<rssi>-?\d+)(?:\s+(?<extras>.*))?$/i;
 const GPS_STATUS_REGEX =
@@ -68,7 +68,9 @@ const GPS_SIMPLE_REGEX =
 const NODE_HEARTBEAT_REGEX =
   /^\[NODE_HB\]\s*(?<node>[A-Za-z0-9_-]+).*?GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+)/i;
 const STATUS_REGEX =
-  /^(?<node>[A-Za-z0-9_-]+)\s*:?\s*STATUS:\s*Mode:(?<mode>[A-Za-z0-9+]+)\s+Scan:(?<scan>[A-Za-z]+)\s+Hits:(?<hits>\d+)\s+Unique:(?<unique>\d+)\s+Temp:\s*(?<tempC>[0-9.]+).?C\s*\/\s*(?<tempF>[0-9.]+).?F\s+Up:(?<uptime>[0-9:]+)(?:\s+Targets:(?<targets>\d+))?(?:\s+GPS[:=](?<gpsLat>-?\d+(?:\.\d+)?),\s*(?<gpsLon>-?\d+(?:\.\d+)?))?/i;
+  /^(?<node>[A-Za-z0-9_-]+)\s*:?\s*STATUS:\s*Mode:(?<mode>[A-Za-z0-9+]+)\s+Scan:(?<scan>[A-Za-z]+)\s+Hits:(?<hits>\d+)\s+Unique:(?<unique>\d+)\s+Temp:\s*(?<tempC>[0-9.]+)\s*(?:\u00b0?\s*)?C(?:\s*\/\s*(?<tempF>[0-9.]+)\s*(?:\u00b0?\s*)?F)?\s+Up:(?<uptime>[0-9:]+)(?:\s+Targets:(?<targets>\d+))?(?:\s+GPS[:=](?<gpsLat>-?\d+(?:\.\d+)?),\s*(?<gpsLon>-?\d+(?:\.\d+)?))?/i;
+const ANOMALY_REGEX =
+  /^(?<node>[A-Za-z0-9_-]+):\s*ANOMALY(?:-(?<isNew>NEW))?:\s*(?<type>[A-Za-z0-9_-]+)\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)(?:\s+(?<details>.*))?$/i;
 const CONFIG_ACK_REGEX = /^(?<node>[A-Za-z0-9_-]+):\s*CONFIG_ACK:(?<type>[A-Z_]+):(?<value>.+)$/i;
 
 const OP_ACK_REGEX =
@@ -82,12 +84,18 @@ const BASELINE_STATUS_REGEX =
 const ERASE_ACK_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*ERASE_ACK:(?<status>STARTED|COMPLETE|CANCELLED|FAILED)/i;
 const SCAN_DONE_REGEX = /^(?<node>[A-Za-z0-9_-]+)\s+SCAN_DONE:\s*(?<details>.+)$/i;
+const LIST_SCAN_DONE_REGEX =
+  /^(?<node>[A-Za-z0-9_-]+)\s+LIST_SCAN_DONE:\s*(?<details>.+)$/i;
+const BASELINE_DONE_REGEX =
+  /^(?<node>[A-Za-z0-9_-]+):\s*BASELINE_DONE:\s*(?<details>.+)$/i;
 const STARTUP_REGEX = /^(?<node>[A-Za-z0-9_-]+):\s*STARTUP:\s*(?<details>.+)$/i;
 const OK_STATUS_REGEX = /^(?<node>[A-Za-z0-9_-]+)\s+OK\s+Status:(?<status>[A-Z]+)#?$/i;
 const GENERIC_NODE_LINE_REGEX =
   /^(?:\[(?<tag>[A-Z_]+)\]\s*)?(?<node>[A-Za-z0-9_-]+):\s*(?<body>.+)$/i;
 const FORWARDED_PREFIX_REGEX = /^(?<prefix>[0-9a-f]{2,8}):\s+(?<rest>.+)$/i;
 const ROUTER_TEXT_MSG_REGEX = /\[Router\]\s+Received text msg.*?msg=(#?[\s\S]+)$/i;
+const NODE_FORWARD_WRAPPER_REGEX = /^NODE_[A-Za-z0-9]+[:\s]+(?<body>AH[0-9A-Za-z:_\s,.-]+.*)$/i;
+const DEVICE_FALLBACK_REGEX = /^[A-Za-z0-9_-]+\s+DEVICE:?$/i;
 const STATUS_DEDUP_MS = 60_000;
 const COMMAND_STATUS_SUPPRESS_MS = 4_000;
 export class MeshtasticLikeParser implements SerialProtocolParser {
@@ -211,16 +219,20 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
     const routerMatch = ROUTER_TEXT_MSG_REGEX.exec(line);
     if (routerMatch?.[1]) {
       const embeddedMsg = routerMatch[1].trim().replace(/#$/, '');
-      return [
-        {
-          kind: 'alert',
-          level: 'INFO',
-          category: 'text',
-          message: embeddedMsg,
-          raw: line,
-        },
-      ];
+      const forwardedResults = this.parseText(embeddedMsg);
+      if (forwardedResults) {
+        return forwardedResults.map((event) => ({ ...event, raw: line }));
+      }
+      return [{ kind: 'raw', raw: line }];
     }
+
+    let normalizedLine = line;
+    let wrapperMatch = NODE_FORWARD_WRAPPER_REGEX.exec(normalizedLine);
+    while (wrapperMatch?.groups?.body) {
+      normalizedLine = wrapperMatch.groups.body.trim();
+      wrapperMatch = NODE_FORWARD_WRAPPER_REGEX.exec(normalizedLine);
+    }
+    line = normalizedLine;
 
     this.flushExpiredStatuses(results);
     if (isLogLine(line)) {
@@ -252,21 +264,20 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
       const rssi = toNumber(targetMatch.groups.rssi);
       const lat = toNumber(targetMatch.groups.lat);
       const lon = toNumber(targetMatch.groups.lon);
+      const type = targetMatch.groups.inlineType ?? targetMatch.groups.leadingType ?? undefined;
+      const name = targetMatch.groups.name?.trim();
       results.push({
         kind: 'target-detected',
         nodeId,
         mac,
         rssi,
-        type: targetMatch.groups.type,
-        name: targetMatch.groups.name?.trim(),
+        type,
+        name,
         channel: extractChannelFromText(line),
         lat,
         lon,
         raw: line,
       });
-      if (command.toUpperCase() === 'STATUS') {
-        this.recentStatusCommands.set(nodeId, Date.now());
-      }
       return this.deliverOrRaw(results, line);
     }
     const targetDataMatch = TARGET_DATA_REGEX.exec(line);
@@ -297,8 +308,11 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
       const nodeId = this.normalizeNodeId(vibrationMatch.groups.node);
       const lat = toNumber(vibrationMatch.groups.lat);
       const lon = toNumber(vibrationMatch.groups.lon);
+      const date = vibrationMatch.groups.date ?? '';
+      const time = vibrationMatch.groups.time ?? '';
       const signatureParts = [
-        vibrationMatch.groups.time ?? '',
+        date,
+        time,
         lat != null ? lat.toFixed(6) : 'lat?',
         lon != null ? lon.toFixed(6) : 'lon?',
       ];
@@ -307,17 +321,27 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         return [];
       }
       this.recordVibration(nodeId, signature);
-      const alertData: Record<string, unknown> = { time: vibrationMatch.groups.time };
+      const alertData: Record<string, unknown> = { time };
+      if (date) {
+        alertData.date = date;
+      }
+      let coordinateSummary: string | undefined;
       if (lat != null && lon != null) {
         alertData.lat = lat;
         alertData.lon = lon;
+        coordinateSummary = `${formatCoordinate(lat, true)}, ${formatCoordinate(lon, false)}`;
+      }
+      const tsLabel = date ? `${date} ${time}`.trim() : time;
+      const messageParts = [`${nodeId} VIBRATION ${tsLabel}`.trim()];
+      if (coordinateSummary) {
+        messageParts.push(coordinateSummary);
       }
       results.push({
         kind: 'alert',
         level: 'CRITICAL',
         category: 'vibration',
         nodeId,
-        message: `${nodeId} VIBRATION ${vibrationMatch.groups.time}`,
+        message: messageParts.join('\n'),
         data: alertData,
         raw: line,
       });
@@ -348,6 +372,50 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         raw: line,
       });
       return this.deliverOrRaw(results, line);
+    }
+    const anomalyMatch = ANOMALY_REGEX.exec(line);
+    if (anomalyMatch?.groups) {
+      const nodeId = this.normalizeNodeId(anomalyMatch.groups.node);
+      const mac = normalizeMac(anomalyMatch.groups.mac);
+      const rssi = toNumber(anomalyMatch.groups.rssi);
+      const type = anomalyMatch.groups.type?.toUpperCase();
+      const details = anomalyMatch.groups.details?.replace(/#$/, '').trim();
+      const nameMatch = details ? /(?:Name|N):([^#]+)/i.exec(details) : null;
+      const name = nameMatch?.[1]?.trim();
+      const channel = extractChannelFromText(details ?? line);
+      const isNew = Boolean(anomalyMatch.groups.isNew);
+      const alertData: Record<string, unknown> = {
+        mac,
+        rssi,
+        type,
+        isNew,
+      };
+      if (name) {
+        alertData.name = name;
+      }
+      if (channel != null) {
+        alertData.channel = channel;
+      }
+      if (details) {
+        alertData.details = details;
+      }
+      const messageParts = [`${nodeId}`, 'ANOMALY', type ?? '', mac];
+      if (rssi != null) {
+        messageParts.push(`RSSI ${rssi}`);
+      }
+      results.push({
+        kind: 'alert',
+        level: isNew ? 'ALERT' : 'NOTICE',
+        category: 'anomaly',
+        nodeId,
+        message: messageParts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim(),
+        data: alertData,
+        raw: line,
+      });
+      return this.deliverOrRaw(results, line);
+    }
+    if (DEVICE_FALLBACK_REGEX.test(line)) {
+      return [{ kind: 'raw', raw: line }];
     }
     const gpsStatusMatch = GPS_STATUS_REGEX.exec(line);
     if (gpsStatusMatch?.groups) {
@@ -494,6 +562,32 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         kind: 'command-result',
         nodeId,
         command: 'SCAN_DONE',
+        payload,
+        raw: line,
+      });
+      return this.deliverOrRaw(results, line);
+    }
+    const listScanDoneMatch = LIST_SCAN_DONE_REGEX.exec(line);
+    if (listScanDoneMatch?.groups) {
+      const nodeId = this.normalizeNodeId(listScanDoneMatch.groups.node);
+      const payload = listScanDoneMatch.groups.details.trim().replace(/#$/, '');
+      results.push({
+        kind: 'command-result',
+        nodeId,
+        command: 'LIST_SCAN_DONE',
+        payload,
+        raw: line,
+      });
+      return this.deliverOrRaw(results, line);
+    }
+    const baselineDoneMatch = BASELINE_DONE_REGEX.exec(line);
+    if (baselineDoneMatch?.groups) {
+      const nodeId = this.normalizeNodeId(baselineDoneMatch.groups.node);
+      const payload = baselineDoneMatch.groups.details.trim().replace(/#$/, '');
+      results.push({
+        kind: 'command-result',
+        nodeId,
+        command: 'BASELINE_DONE',
         payload,
         raw: line,
       });
