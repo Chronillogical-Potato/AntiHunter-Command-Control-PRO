@@ -521,6 +521,26 @@ Optional environment flags:
 
 Frontend currently consumes backend settings via API, so no extra `.env` is needed.
 
+### Environment file layout
+
+The backend resolves `process.env` in this order:
+
+1. **Repository root `.env`** – global defaults shared by the workspace (useful for local development).
+2. **`apps/backend/.env`** – overrides that apply only to the NestJS service (preferred place for backend secrets when running `pnpm dev`).
+3. **`apps/backend/prisma/.env`** – read exclusively by Prisma CLI utilities (migrations, `prisma studio`, seed scripts). This file normally only contains `DATABASE_URL` so migrations can run without loading the full backend environment.
+
+The files are optional; supply whichever ones make sense for your deployment model (for Docker/Kubernetes you can mount an external env file instead). When values are duplicated, the later file in the list wins.
+
+### Serial defaults & persistence
+
+The serial stack now persists its configuration through the database so that each site retains its last-known settings even after restarts.
+
+- On first access (`GET /serial/config`), the backend seeds the `SerialConfig` row for the current site with any `SERIAL_*` values that were present in the environment (e.g., `SERIAL_DEVICE`, `SERIAL_BAUD`, `SERIAL_DELIMITER`, `SERIAL_RECONNECT_BASE_MS`, etc.). This makes the UI immediately reflect the values you shipped via `.env`, but operators can still revise them from the **Config → Serial** card.
+- Subsequent edits through the UI/API write directly to the `SerialConfig` table and override the env defaults for that site. Env variables only act as bootstrap values; they do not overwrite user changes.
+- Multi-site deployments get one serial profile per site ID. When you add a new site, its initial config will again fall back to whatever `SERIAL_*` values are active in the environment of that backend instance.
+
+If you change the env defaults and want them to apply to an existing site, use the UI/API to update that site’s serial settings or remove the row (the service will recreate it using the new defaults). 
+
 ### Two-Factor Authentication (optional)
 
 1. Choose a 32+ character secret used to encrypt TOTP seeds and add it to `apps/backend/.env`:

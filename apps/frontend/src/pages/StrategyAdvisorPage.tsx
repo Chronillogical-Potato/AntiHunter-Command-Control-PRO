@@ -44,6 +44,7 @@ const TILE_ATTRIBUTION = '&copy; OpenStreetMap contributors';
 const SLIDE_RANGE_METERS = 200;
 const LATERAL_RANGE_METERS = 120;
 const METERS_PER_DEGREE_LAT = 111_320;
+const DEFAULT_RF_BACKHAUL_METERS = 1_000;
 
 type NodeDeploymentType = 'wifi' | 'radar' | 'rf';
 
@@ -244,6 +245,22 @@ interface NodeOverride {
   profileId?: NodeProfileId;
 }
 
+type RfAssetKind = 'gateway' | 'repeater';
+
+interface RfAsset {
+  id: string;
+  kind: RfAssetKind;
+  name: string;
+  lat: number;
+  lon: number;
+  directional: boolean;
+  orientation: number;
+  beamWidth: number;
+  secondaryOrientation?: number;
+  secondaryBeamWidth?: number;
+  minBackhaulMeters: number;
+}
+
 interface NodePathData {
   origin: GeofenceVertex;
   projected: { x: number; y: number }[];
@@ -291,6 +308,9 @@ export function StrategyAdvisorPage() {
   const removeView = useMapViewsStore((state) => state.removeView);
   const [fitEnabled, setFitEnabled] = useState(true);
   const [inspectorVisible, setInspectorVisible] = useState(true);
+  const [rfAssets, setRfAssets] = useState<RfAsset[]>([]);
+  const [selectedRfAssetId, setSelectedRfAssetId] = useState<string | null>(null);
+  const [rfPlacementMode, setRfPlacementMode] = useState<RfAssetKind | null>(null);
   const idBase = useId();
   const presetSelectId = `${idBase}-preset`;
   const profileSelectId = `${idBase}-profile`;
@@ -520,6 +540,10 @@ export function StrategyAdvisorPage() {
   );
   const selectedNodeOverride = selectedNode ? (nodeOverrides[selectedNode.id] ?? null) : null;
   const baseSelectedNode = selectedNode ? (baseNodeLookup.get(selectedNode.id) ?? null) : null;
+  const selectedRfAsset = useMemo(
+    () => rfAssets.find((asset) => asset.id === selectedRfAssetId) ?? null,
+    [rfAssets, selectedRfAssetId],
+  );
   const inspectorHasOverride =
     selectedNodeOverride != null && Object.keys(selectedNodeOverride).length > 0;
   const inspectorRadiusValue = selectedNode?.radius ?? 0;
@@ -870,8 +894,22 @@ export function StrategyAdvisorPage() {
     if (strategy.nodes.some((node) => node.flags.includes('anchor-constraint'))) {
       warnings.add('Some nodes exceed the maximum backhaul distance from the nearest anchor.');
     }
+    rfAssets.forEach((asset) => {
+      if (strategy.nodes.length === 0) {
+        return;
+      }
+      const minDistance = Math.min(
+        ...strategy.nodes.map((node) => distanceBetween(asset.lat, asset.lon, node.lat, node.lon)),
+      );
+      const limit = asset.minBackhaulMeters || DEFAULT_RF_BACKHAUL_METERS;
+      if (minDistance < limit) {
+        warnings.add(
+          `${asset.name} is ${minDistance.toFixed(0)} m from the nearest node (minimum ${limit} m).`,
+        );
+      }
+    });
     return Array.from(warnings);
-  }, [selectedGeofences.length, strategy.nodes]);
+  }, [rfAssets, selectedGeofences.length, strategy.nodes]);
 
   const hasNodes = strategy.nodes.length > 0;
   const activePanelDefinition =
@@ -1148,6 +1186,7 @@ export function StrategyAdvisorPage() {
 
   const handleSelectNode = (nodeId: string) => {
     setSelectedNodeId(nodeId);
+    setSelectedRfAssetId(null);
     setInspectorVisible(true);
   };
 
@@ -1157,6 +1196,7 @@ export function StrategyAdvisorPage() {
 
   const handleCloseInspector = () => {
     setSelectedNodeId(null);
+    setSelectedRfAssetId(null);
     setInspectorVisible(false);
   };
 
@@ -1311,6 +1351,65 @@ export function StrategyAdvisorPage() {
     },
     [nodeOverrides, setActivePresetId, updateNodeOverride],
   );
+
+  const ensureInspector = useCallback(() => setInspectorVisible(true), []);
+
+  const insertRfAsset = useCallback((asset: RfAsset) => {
+    setRfAssets((previous) => [asset, ...previous]);
+    setSelectedRfAssetId(asset.id);
+    ensureInspector();
+  }, []);
+
+  const handleRfPlacementToggle = (kind: RfAssetKind) => {
+    setRfPlacementMode((previous) => (previous === kind ? null : kind));
+    setSelectedNodeId(null);
+    setSelectedRfAssetId(null);
+    ensureInspector();
+  };
+
+  const handleRfDrop = useCallback(
+    (kind: RfAssetKind, lat: number, lon: number) => {
+      const ordinal = rfAssets.filter((asset) => asset.kind === kind).length + 1;
+      const newAsset: RfAsset = {
+        id: crypto?.randomUUID?.() ?? `rf_${Math.random().toString(36).slice(2, 10)}`,
+        kind,
+        name: kind === 'gateway' ? `RF Gateway ${ordinal}` : `RF Repeater ${ordinal}`,
+        lat,
+        lon,
+        directional: true,
+        orientation: 0,
+        beamWidth: 60,
+        secondaryOrientation: kind === 'repeater' ? 180 : undefined,
+        secondaryBeamWidth: kind === 'repeater' ? 60 : undefined,
+        minBackhaulMeters: DEFAULT_RF_BACKHAUL_METERS,
+      };
+      insertRfAsset(newAsset);
+      setRfPlacementMode(null);
+    },
+    [insertRfAsset, rfAssets],
+  );
+
+  const updateRfAsset = useCallback((id: string, changes: Partial<RfAsset>) => {
+    setRfAssets((previous) =>
+      previous.map((asset) => (asset.id === id ? { ...asset, ...changes } : asset)),
+    );
+  }, []);
+
+  const handleRfMarkerDragEnd = useCallback(
+    (asset: RfAsset, lat: number, lon: number) => {
+      updateRfAsset(asset.id, { lat, lon });
+      setSelectedRfAssetId(asset.id);
+      ensureInspector();
+    },
+    [updateRfAsset],
+  );
+
+  const handleDeleteRfAsset = (id: string) => {
+    setRfAssets((previous) => previous.filter((asset) => asset.id !== id));
+    if (selectedRfAssetId === id) {
+      setSelectedRfAssetId(null);
+    }
+  };
 
   const handleGeofencePoint = (vertex: GeofenceVertex) => {
     if (!drawingGeofence) {
@@ -1558,6 +1657,8 @@ ${nodesKml}
                 enabled={drawingGeofence}
                 onPoint={handleGeofencePoint}
                 onHover={handleGeofenceHover}
+                rfPlacementMode={rfPlacementMode}
+                onRfDrop={(lat, lon, kind) => handleRfDrop(kind, lat, lon)}
               />
               <SelectedNodeFocus node={selectedNode} />
               {selectedGeofences.map((geofence) =>
@@ -1628,6 +1729,32 @@ ${nodesKml}
                   </Tooltip>
                 </Marker>
               ))}
+              {rfAssets.map((asset) => (
+                <Marker
+                  key={asset.id}
+                  position={[asset.lat, asset.lon]}
+                  icon={buildRfIcon(asset)}
+                  draggable
+                  eventHandlers={{
+                    click: () => {
+                      setSelectedRfAssetId(asset.id);
+                      setSelectedNodeId(null);
+                      ensureInspector();
+                    },
+                    dragend: (event) => {
+                      const marker = event.target as L.Marker;
+                      const latLng = marker.getLatLng();
+                      handleRfMarkerDragEnd(asset, latLng.lat, latLng.lng);
+                    },
+                  }}
+                >
+                  <Tooltip direction="top" offset={[0, -12]} opacity={1} sticky>
+                    <strong>{asset.name}</strong>
+                    <div>{asset.kind === 'gateway' ? 'RF Gateway' : 'RF Repeater'}</div>
+                    <div>Backhaul min: {asset.minBackhaulMeters} m</div>
+                  </Tooltip>
+                </Marker>
+              ))}
               {strategy.nodes.map((node) => (
                 <Circle
                   key={`${node.id}-radius`}
@@ -1683,6 +1810,36 @@ ${nodesKml}
                     />
                   );
                 })}
+              {rfAssets.map((asset) => {
+                if (!asset.directional) {
+                  return null;
+                }
+                const rays = [];
+                const primaryEnd = projectInDirection(asset.lat, asset.lon, 200, asset.orientation);
+                rays.push(
+                  <Polyline
+                    key={`${asset.id}-primary`}
+                    positions={[[asset.lat, asset.lon], primaryEnd]}
+                    pathOptions={{ color: '#dc2626', weight: 2 }}
+                  />,
+                );
+                if (asset.kind === 'repeater' && asset.secondaryOrientation != null) {
+                  const secondaryEnd = projectInDirection(
+                    asset.lat,
+                    asset.lon,
+                    200,
+                    asset.secondaryOrientation,
+                  );
+                  rays.push(
+                    <Polyline
+                      key={`${asset.id}-secondary`}
+                      positions={[[asset.lat, asset.lon], secondaryEnd]}
+                      pathOptions={{ color: '#fb923c', weight: 2, dashArray: '6 4' }}
+                    />,
+                  );
+                }
+                return rays;
+              })}
               {drawingGeofence && drawingPositions.length > 0 ? (
                 <>
                   <Polyline
@@ -1764,6 +1921,24 @@ ${nodesKml}
                   ))}
                 </select>
               </label>
+              <div className="rf-placement-buttons">
+                <button
+                  type="button"
+                  className={`control-chip${rfPlacementMode === 'gateway' ? ' control-chip--primary' : ''}`}
+                  onClick={() => handleRfPlacementToggle('gateway')}
+                >
+                  {rfPlacementMode === 'gateway' ? 'Click map to place gateway' : 'Drop RF Gateway'}
+                </button>
+                <button
+                  type="button"
+                  className={`control-chip${rfPlacementMode === 'repeater' ? ' control-chip--primary' : ''}`}
+                  onClick={() => handleRfPlacementToggle('repeater')}
+                >
+                  {rfPlacementMode === 'repeater'
+                    ? 'Click map to place repeater'
+                    : 'Drop RF Repeater'}
+                </button>
+              </div>
               <button
                 type="button"
                 className={`control-chip${fitEnabled ? '' : ' control-chip--ghost'}`}
@@ -2002,6 +2177,102 @@ ${nodesKml}
                     </button>
                   </div>
                 </>
+              ) : selectedRfAsset ? (
+                <>
+                  <div className="strategy-node-inspector__header">
+                    <div>
+                      <h2>{selectedRfAsset.name}</h2>
+                      <p>{selectedRfAsset.kind === 'gateway' ? 'RF Gateway' : 'RF Repeater'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="control-chip control-chip--ghost"
+                      onClick={handleCloseInspector}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="strategy-node-inspector__body">
+                    <label className="form-label">Name</label>
+                    <input
+                      type="text"
+                      className="control-input"
+                      value={selectedRfAsset.name}
+                      onChange={(event) =>
+                        updateRfAsset(selectedRfAsset.id, { name: event.target.value })
+                      }
+                    />
+                    <label className="form-label">Minimum backhaul distance (m)</label>
+                    <input
+                      type="number"
+                      className="control-input"
+                      min={100}
+                      step={10}
+                      value={selectedRfAsset.minBackhaulMeters}
+                      onChange={(event) =>
+                        updateRfAsset(selectedRfAsset.id, {
+                          minBackhaulMeters: Math.max(10, Number(event.target.value) || 0),
+                        })
+                      }
+                    />
+                    <label className="form-label">Directional</label>
+                    <select
+                      className="control-input"
+                      value={selectedRfAsset.directional ? 'yes' : 'no'}
+                      onChange={(event) =>
+                        updateRfAsset(selectedRfAsset.id, {
+                          directional: event.target.value === 'yes',
+                        })
+                      }
+                    >
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                    {selectedRfAsset.directional ? (
+                      <>
+                        <label className="form-label">Orientation (°)</label>
+                        <input
+                          type="range"
+                          min={0}
+                          max={360}
+                          value={selectedRfAsset.orientation}
+                          onChange={(event) =>
+                            updateRfAsset(selectedRfAsset.id, {
+                              orientation: Number(event.target.value) % 360,
+                            })
+                          }
+                        />
+                        <div className="muted">{selectedRfAsset.orientation.toFixed(1)}°</div>
+                        {selectedRfAsset.kind === 'repeater' ? (
+                          <>
+                            <label className="form-label">Secondary orientation (°)</label>
+                            <input
+                              type="range"
+                              min={0}
+                              max={360}
+                              value={selectedRfAsset.secondaryOrientation ?? 180}
+                              onChange={(event) =>
+                                updateRfAsset(selectedRfAsset.id, {
+                                  secondaryOrientation: Number(event.target.value) % 360,
+                                })
+                              }
+                            />
+                            <div className="muted">
+                              {(selectedRfAsset.secondaryOrientation ?? 180).toFixed(1)}°
+                            </div>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="control-chip control-chip--danger"
+                      onClick={() => handleDeleteRfAsset(selectedRfAsset.id)}
+                    >
+                      Delete asset
+                    </button>
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="strategy-node-inspector__header">
@@ -2113,6 +2384,65 @@ ${nodesKml}
           <p className="empty-hint">
             Select a geofence and adjust parameters to generate placements.
           </p>
+        )}
+      </section>
+      <section className="strategy-table">
+        <h2>RF assets</h2>
+        {rfAssets.length > 0 ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+                <th>Orientation</th>
+                <th>Backhaul min (m)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rfAssets.map((asset) => (
+                <tr key={asset.id}>
+                  <td>{asset.name}</td>
+                  <td>{asset.kind === 'gateway' ? 'Gateway' : 'Repeater'}</td>
+                  <td>{asset.lat.toFixed(6)}</td>
+                  <td>{asset.lon.toFixed(6)}</td>
+                  <td>
+                    {asset.directional ? `${asset.orientation.toFixed(1)}°` : 'Omni'}
+                    {asset.kind === 'repeater' && asset.secondaryOrientation != null
+                      ? ` / ${(asset.secondaryOrientation ?? 0).toFixed(1)}°`
+                      : null}
+                  </td>
+                  <td>{asset.minBackhaulMeters}</td>
+                  <td>
+                    <div className="strategy-row-actions">
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => {
+                          setSelectedRfAssetId(asset.id);
+                          setSelectedNodeId(null);
+                          ensureInspector();
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="control-chip control-chip--danger"
+                        onClick={() => handleDeleteRfAsset(asset.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">Drop RF gateways or repeaters on the map to list them here.</p>
         )}
       </section>
     </section>
@@ -2570,6 +2900,18 @@ function computeDeltaMeters(
   return { north, east };
 }
 
+function buildRfIcon(asset: RfAsset) {
+  const isRepeater = asset.kind === 'repeater';
+  const baseColor = isRepeater ? '#f97316' : '#dc2626';
+  const label = asset.directional ? '↗' : '◎';
+  return L.divIcon({
+    html: `<div class="rf-asset-marker" style="background:${baseColor}">${label}</div>`,
+    className: 'rf-asset-wrapper',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+}
+
 function StrategyMapInitializer({ onReady }: { onReady: (map: L.Map) => void }) {
   const map = useMap();
   useEffect(() => {
@@ -2582,17 +2924,27 @@ function StrategyDrawingHandler({
   enabled,
   onPoint,
   onHover,
+  rfPlacementMode,
+  onRfDrop,
 }: {
   enabled: boolean;
   onPoint?: (vertex: GeofenceVertex) => void;
   onHover?: (vertex: GeofenceVertex | null) => void;
+  rfPlacementMode?: RfAssetKind | null;
+  onRfDrop?: (lat: number, lon: number, kind: RfAssetKind) => void;
 }) {
   useMapEvents({
     click(event) {
       if (!enabled || !onPoint) {
+        if (rfPlacementMode && onRfDrop) {
+          onRfDrop(event.latlng.lat, event.latlng.lng, rfPlacementMode);
+        }
         return;
       }
       onPoint({ lat: event.latlng.lat, lon: event.latlng.lng });
+      if (rfPlacementMode && onRfDrop) {
+        onRfDrop(event.latlng.lat, event.latlng.lng, rfPlacementMode);
+      }
     },
     mousemove(event) {
       if (!enabled || !onHover) {

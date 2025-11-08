@@ -639,6 +639,42 @@ body.theme-dark .control-chip[disabled] {
   color: var(--color-text-muted, #cbd5f5);
 }
 
+.rf-placement-buttons {
+  display: flex;
+
+  gap: 0.5rem;
+
+  flex-wrap: wrap;
+}
+
+.rf-asset-wrapper {
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+}
+
+.rf-asset-marker {
+  width: 28px;
+
+  height: 28px;
+
+  border-radius: 50%;
+
+  color: #fff;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  font-size: 0.9rem;
+
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
 .geofence-drawing-controls {
   display: flex;
 
@@ -3163,7 +3199,6 @@ body.theme-dark .control-chip[disabled] {
   width: 100%;
 }
 
-
 .account-header {
   display: flex;
   align-items: center;
@@ -4092,7 +4127,18 @@ body.theme-dark .strategy-table__row--selected {
 
 .firewall-log-entry__ip {
   font-weight: 600;
-  font-family: var(--font-mono, 'Fira Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
+  font-family: var(
+    --font-mono,
+    'Fira Mono',
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    'Courier New',
+    monospace
+  );
   font-size: 0.95rem;
 }
 
