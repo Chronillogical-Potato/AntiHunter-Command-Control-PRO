@@ -89,12 +89,14 @@ const GENERIC_NODE_LINE_REGEX =
 const FORWARDED_PREFIX_REGEX = /^(?<prefix>[0-9a-f]{2,8}):\s+(?<rest>.+)$/i;
 const ROUTER_TEXT_MSG_REGEX = /\[Router\]\s+Received text msg.*?msg=(#?[\s\S]+)$/i;
 const STATUS_DEDUP_MS = 60_000;
+const COMMAND_STATUS_SUPPRESS_MS = 4_000;
 export class MeshtasticLikeParser implements SerialProtocolParser {
   private readonly triangulationBuffers: Map<string, TriangulationBuffer>;
   private readonly pendingStatuses: Map<string, PendingStatus>;
   private readonly statusCache: Map<string, { message: string; timestamp: number }>;
   private readonly recentGpsEvents: Map<string, { lat: number; lon: number; timestamp: number }>;
   private readonly recentVibrationEvents: Map<string, { hash: string; timestamp: number }>;
+  private readonly recentStatusCommands: Map<string, number>;
   private static readonly PENDING_STATUS_TTL_MS = 1500;
   private static readonly GPS_DUPLICATE_WINDOW_MS = 7000;
   private static readonly VIBRATION_DUPLICATE_WINDOW_MS = 7000;
@@ -105,6 +107,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
     this.statusCache = new Map();
     this.recentGpsEvents = new Map();
     this.recentVibrationEvents = new Map();
+    this.recentStatusCommands = new Map();
   }
   parseLine(line: string): SerialParseResult[] {
     const stripped = stripAnsi(line ?? '');
@@ -127,6 +130,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
     this.statusCache.clear();
     this.recentGpsEvents.clear();
     this.recentVibrationEvents.clear();
+    this.recentStatusCommands.clear();
   }
   private parseBinary(raw: string): SerialParseResult[] {
     const { Mesh, Portnums, Telemetry } = requireMeshModule();
@@ -206,7 +210,16 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
     // Normalize router forwarded text frames (credit: @lukeswitz)
     const routerMatch = ROUTER_TEXT_MSG_REGEX.exec(line);
     if (routerMatch?.[1]) {
-      return [];
+      const embeddedMsg = routerMatch[1].trim().replace(/#$/, '');
+      return [
+        {
+          kind: 'alert',
+          level: 'INFO',
+          category: 'text',
+          message: embeddedMsg,
+          raw: line,
+        },
+      ];
     }
 
     this.flushExpiredStatuses(results);
@@ -251,6 +264,9 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         lon,
         raw: line,
       });
+      if (command.toUpperCase() === 'STATUS') {
+        this.recentStatusCommands.set(nodeId, Date.now());
+      }
       return this.deliverOrRaw(results, line);
     }
     const targetDataMatch = TARGET_DATA_REGEX.exec(line);
@@ -436,6 +452,14 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         rawLines: [line],
         createdAt: Date.now(),
       };
+      const lastCommand = this.recentStatusCommands.get(nodeId);
+      const suppress =
+        lastCommand != null &&
+        Date.now() - lastCommand < COMMAND_STATUS_SUPPRESS_MS &&
+        !hasInlineGps;
+      if (suppress) {
+        return this.deliverOrRaw(results, line);
+      }
       if (hasInlineGps) {
         const formattedLat = formatCoordinate(lat, true);
         const formattedLon = formatCoordinate(lon, false);
