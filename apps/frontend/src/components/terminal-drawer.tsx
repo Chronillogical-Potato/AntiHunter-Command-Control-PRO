@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 
 import { TerminalEntry, useTerminalStore } from '../stores/terminal-store';
 

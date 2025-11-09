@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+﻿import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ import { SidebarNav } from './components/sidebar-nav';
 import { SocketBridge } from './components/socket-bridge';
 import { TerminalDrawer } from './components/terminal-drawer';
 import { DEFAULT_ALERT_COLORS, extractAlertColors } from './constants/alert-colors';
+import { AddonPage } from './pages/AddonPage';
 import { CommandConsolePage } from './pages/CommandConsolePage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ExportsPage } from './pages/ExportsPage';
@@ -75,6 +76,7 @@ export default function App() {
               <Route path="/strategy" element={<StrategyAdvisorPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/console" element={<CommandConsolePage />} />
+              <Route path="/addon" element={<AddonPage />} />
               <Route path="/config" element={<ConfigPage />} />
               <Route path="/exports" element={<ExportsPage />} />
               <Route path="/scheduler" element={<SchedulerPage />} />

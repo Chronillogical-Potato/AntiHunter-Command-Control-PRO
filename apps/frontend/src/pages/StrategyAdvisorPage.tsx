@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+﻿import { useQuery } from '@tanstack/react-query';
 import L, { latLngBounds, type LatLngExpression } from 'leaflet';
 import {
   ChangeEvent,
@@ -20,6 +20,7 @@ import {
 } from 'react-icons/md';
 import {
   Circle,
+  LayersControl,
   MapContainer,
   Marker,
   Polygon,
@@ -33,6 +34,7 @@ import {
 import { apiClient } from '../api/client';
 import type { AlarmLevel, Geofence, GeofenceVertex, SiteSummary } from '../api/types';
 import { useGeofenceStore } from '../stores/geofence-store';
+import { useMapPreferences } from '../stores/map-store';
 import { type SavedMapView, useMapViewsStore } from '../stores/map-views-store';
 
 const DEFAULT_RADIUS = 100;
@@ -41,6 +43,35 @@ const EARTH_RADIUS = 6_371_000;
 const CUSTOM_PRESET_ID = 'custom';
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTRIBUTION = '&copy; OpenStreetMap contributors';
+
+const BASE_LAYERS = [
+  {
+    key: 'osm',
+    name: 'Street (OpenStreetMap)',
+    url: TILE_URL,
+    attribution: TILE_ATTRIBUTION,
+  },
+  {
+    key: 'satellite',
+    name: 'Satellite (Esri)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution:
+      'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+  },
+  {
+    key: 'topography',
+    name: 'Topography (OpenTopo)',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution:
+      'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
+  },
+  {
+    key: 'dark',
+    name: 'Dark (Carto)',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  },
+];
 const SLIDE_RANGE_METERS = 200;
 const LATERAL_RANGE_METERS = 120;
 const METERS_PER_DEGREE_LAT = 111_320;
@@ -208,8 +239,8 @@ const STRATEGY_PRESETS: StrategyPreset[] = [
 ] as const;
 
 const STRATEGY_PANELS = [
-  { id: 'plan', label: 'Plan', description: 'Presets & coverage tuning' },
   { id: 'areas', label: 'Areas & Anchors', description: 'Geofences, anchors, obstacles' },
+  { id: 'plan', label: 'Plan', description: 'Presets & coverage tuning' },
   { id: 'summary', label: 'Summary', description: 'Totals & quick exports' },
 ] as const;
 
@@ -306,6 +337,14 @@ export function StrategyAdvisorPage() {
   const savedViews = useMapViewsStore((state) => state.views);
   const addView = useMapViewsStore((state) => state.addView);
   const removeView = useMapViewsStore((state) => state.removeView);
+  const mapStyle = useMapPreferences((state) => state.mapStyle);
+  const setMapStyle = useMapPreferences((state) => state.setMapStyle);
+  const activeMapStyle = BASE_LAYERS.some((layer) => layer.key === mapStyle) ? mapStyle : 'osm';
+  useEffect(() => {
+    if (!BASE_LAYERS.some((layer) => layer.key === mapStyle)) {
+      setMapStyle('osm');
+    }
+  }, [mapStyle, setMapStyle]);
   const [fitEnabled, setFitEnabled] = useState(true);
   const [inspectorVisible, setInspectorVisible] = useState(true);
   const [rfAssets, setRfAssets] = useState<RfAsset[]>([]);
@@ -751,6 +790,22 @@ export function StrategyAdvisorPage() {
             </button>
           </div>
         </form>
+        <div className="rf-placement-buttons">
+          <button
+            type="button"
+            className={`control-chip${rfPlacementMode === 'gateway' ? ' control-chip--primary' : ''}`}
+            onClick={() => handleRfPlacementToggle('gateway')}
+          >
+            {rfPlacementMode === 'gateway' ? 'Click map to place gateway' : 'Drop RF Gateway'}
+          </button>
+          <button
+            type="button"
+            className={`control-chip${rfPlacementMode === 'repeater' ? ' control-chip--primary' : ''}`}
+            onClick={() => handleRfPlacementToggle('repeater')}
+          >
+            {rfPlacementMode === 'repeater' ? 'Click map to place repeater' : 'Drop RF Repeater'}
+          </button>
+        </div>
         {anchors.length > 0 ? (
           <ul className="strategy-anchor-list">
             {anchors.map((anchor) => (
@@ -1657,7 +1712,18 @@ ${nodesKml}
               scrollWheelZoom
               preferCanvas
             >
-              <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+              <LayersControl position="topright">
+                {BASE_LAYERS.map((layer) => (
+                  <LayersControl.BaseLayer
+                    key={layer.key}
+                    checked={layer.key === activeMapStyle}
+                    name={layer.name}
+                  >
+                    <TileLayer attribution={layer.attribution} url={layer.url} />
+                  </LayersControl.BaseLayer>
+                ))}
+              </LayersControl>
+              <StrategyBaseLayerListener onChange={setMapStyle} />
               <StrategyMapInitializer onReady={handleMapReady} />
               <StrategyDrawingHandler
                 enabled={drawingGeofence}
@@ -2926,6 +2992,23 @@ function buildRfIcon(asset: RfAsset) {
     iconSize: [28, 28],
     iconAnchor: [14, 14],
   });
+}
+
+function StrategyBaseLayerListener({ onChange }: { onChange: (key: string) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (event: L.LayersControlEvent) => {
+      const match = BASE_LAYERS.find((layer) => layer.name === event.name);
+      if (match) {
+        onChange(match.key);
+      }
+    };
+    map.on('baselayerchange', handler);
+    return () => {
+      map.off('baselayerchange', handler);
+    };
+  }, [map, onChange]);
+  return null;
 }
 
 function StrategyMapInitializer({ onReady }: { onReady: (map: L.Map) => void }) {

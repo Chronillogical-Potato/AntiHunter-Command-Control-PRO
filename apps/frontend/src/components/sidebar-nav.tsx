@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+﻿import type { ComponentType } from 'react';
 import {
   MdMap,
   MdSensors,
@@ -11,6 +11,7 @@ import {
   MdOutlineAreaChart,
   MdPerson,
   MdHub,
+  MdExtension,
 } from 'react-icons/md';
 import { NavLink } from 'react-router-dom';
 
@@ -26,9 +27,10 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/inventory', label: 'Inventory', icon: MdWifiTethering },
   { to: '/targets', label: 'Targets', icon: MdMyLocation },
   { to: '/geofences', label: 'Geofences', icon: MdOutlineAreaChart },
-  { to: '/strategy', label: 'Strategy Advisor', icon: MdHub },
   { to: '/nodes', label: 'Nodes', icon: MdSensors },
   { to: '/scheduler', label: 'Scheduler', icon: MdEventNote },
+  { to: '/strategy', label: 'Strategy Advisor', icon: MdHub },
+  { to: '/addon', label: 'Addon', icon: MdExtension },
   { to: '/config', label: 'Config', icon: MdSettings },
   { to: '/exports', label: 'Exports', icon: MdDownload },
   { to: '/account', label: 'Account', icon: MdPerson },
