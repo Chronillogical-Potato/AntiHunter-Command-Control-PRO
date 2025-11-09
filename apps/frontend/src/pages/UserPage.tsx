@@ -1247,12 +1247,14 @@ function AdminUserManagement() {
                   (user.preferences?.timeFormat as TimeFormatPreference | undefined) ?? '24h';
                 return (
                   <tr key={user.id} className={!user.isActive ? 'is-inactive' : undefined}>
-                    <td>{user.email}</td>
-                    <td>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '--'}</td>
-                    <td>
-                      <select
-                        className="table-select"
-                        value={user.role}
+                      <td data-label="Email">{user.email}</td>
+                      <td data-label="Name">
+                        {[user.firstName, user.lastName].filter(Boolean).join(' ') || '--'}
+                      </td>
+                      <td data-label="Role">
+                        <select
+                          className="table-select"
+                          value={user.role}
                         onChange={(event) =>
                           handleRoleChange(user.id, event.target.value as UserRole)
                         }
@@ -1264,11 +1266,11 @@ function AdminUserManagement() {
                         <option value="VIEWER">Viewer</option>
                       </select>
                     </td>
-                    <td>{user.isActive ? 'Active' : 'Inactive'}</td>
-                    <td>
-                      <select
-                        className="table-select"
-                        value={userTimeFormat}
+                      <td data-label="Status">{user.isActive ? 'Active' : 'Inactive'}</td>
+                      <td data-label="Time Format">
+                        <select
+                          className="table-select"
+                          value={userTimeFormat}
                         onChange={(event) =>
                           updateMutation.mutate({
                             id: user.id,
@@ -1281,8 +1283,8 @@ function AdminUserManagement() {
                         <option value="12h">12-hour</option>
                       </select>
                     </td>
-                    <td>
-                      <div className="button-group">
+                      <td data-label="Actions">
+                        <div className="button-group">
                         <button
                           type="button"
                           className="control-chip"
@@ -1518,12 +1520,12 @@ function AdminUserManagement() {
                   </thead>
                   <tbody>
                     {siteDraft.map((assignment) => (
-                      <tr key={assignment.siteId}>
-                        <td>{assignment.siteName ?? assignment.siteId}</td>
-                        <td>
-                          <select
-                            className="table-select"
-                            value={assignment.level}
+                        <tr key={assignment.siteId}>
+                          <td data-label="Site">{assignment.siteName ?? assignment.siteId}</td>
+                          <td data-label="Level">
+                            <select
+                              className="table-select"
+                              value={assignment.level}
                             onChange={(event) => {
                               const nextLevel = event.target.value as SiteAccessLevel;
                               setSiteDraft((prev) =>
@@ -1539,10 +1541,10 @@ function AdminUserManagement() {
                             <option value="MANAGE">Manage</option>
                           </select>
                         </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="control-chip"
+                          <td data-label="Action">
+                            <button
+                              type="button"
+                              className="control-chip"
                             onClick={() => handleRemoveSite(assignment.siteId)}
                           >
                             Remove

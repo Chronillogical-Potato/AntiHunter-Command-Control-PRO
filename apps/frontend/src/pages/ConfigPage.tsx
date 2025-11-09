@@ -1085,30 +1085,32 @@ export function ConfigPage() {
 
   return (
     <section className="panel config-page">
-      <header className="panel__header">
-        <div>
-          <h1 className="panel__title">Configuration</h1>
-          <p className="panel__subtitle">
-            Manage appearance, alarms, serial transport, detection defaults, federation, and
-            retention.
-          </p>
-        </div>
-        <div className="controls-row">
-          <button
-            type="button"
-            className="control-chip"
-            onClick={handleTestSerial}
-            disabled={serialTestMutation.isPending}
-          >
-            {serialTestMutation.isPending ? 'Testing...' : 'Test Serial'}
-          </button>
-          <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
-            Import JSON
-          </button>
-          <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
-            Export JSON
-          </button>
-        </div>
+        <header className="panel__header">
+          <div>
+            <h1 className="panel__title">Configuration</h1>
+            <p className="panel__subtitle">
+              Manage appearance, alarms, serial transport, detection defaults, federation, and
+              retention.
+            </p>
+          </div>
+          <div className="controls-row config-header-controls">
+            <div className="config-header-controls__pair">
+              <button
+                type="button"
+                className="control-chip"
+                onClick={handleTestSerial}
+                disabled={serialTestMutation.isPending}
+              >
+                {serialTestMutation.isPending ? 'Testing...' : 'Test Serial'}
+              </button>
+              <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
+                Import JSON
+              </button>
+            </div>
+            <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
+              Export JSON
+            </button>
+          </div>
         {configNotice ? (
           <div
             className={

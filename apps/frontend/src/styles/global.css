@@ -5,3 +5,8 @@
 
 
 
+
+.config-header-controls{display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;}
+.config-header-controls__pair{display:flex;gap:0.5rem;}
+.config-header-controls__pair .control-chip{flex:1 1 auto;}
+.config-header-controls>.control-chip{flex:0 1 220px;}
