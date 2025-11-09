@@ -993,15 +993,27 @@ Serve `apps/frontend/dist` with your preferred static host (Nginx, S3, etc.) and
    - `git pull`, `pnpm install`, `prisma migrate deploy`, rebuild bundles, restart services.
    - See [Updating an Existing Deployment](#updating-an-existing-deployment) and [Troubleshooting](#troubleshooting) for migration recovery steps (P1000/P3009/P3018).
 
-### Automated Deployment Script
+### Automated Deployment Script (Debian/Ubuntu)
 
-For an all-in-one rollout, adjust `scripts/deploy-nginx-backend.sh` and run it with sudo. The script pulls the latest code, builds backend and frontend, writes the backend `.env`, (re)creates the systemd service, installs an HTTPS Nginx site, and reloads everything.
+For a guided production rollout on Debian/Ubuntu servers we ship `scripts/deploy-production.sh`. It is interactive and will:
 
-```bash
-sudo scripts/deploy-nginx-backend.sh
-```
+1. Validate prerequisites (non-root sudo user, supported distro).
+2. Install Node.js LTS, pnpm, PostgreSQL, nginx, certbot, fail2ban, and UFW.
+3. Clone/update this repository under `/opt/ahcc`, install dependencies, run Prisma migrations/seeds, and build backend/frontend artifacts.
+4. Generate a backend `.env` from your answers (DB password, JWT secret, SITE_ID, serial defaults, etc.) and configure systemd + nginx (self-signed or LetsEncrypt TLS).
+5. Optionally enable nightly backups and fail2ban rules.
 
-Review the variables at the top of the script (`REPO_DIR`, `DOMAIN`, certificate paths, database URL, etc.) before executing. The script prints post-deploy health checks you can curl to confirm the stack is healthy.
+> **Important:** Audit the script before running it. Run it as the dedicated service user (not root) with passwordless sudo:
+>
+> ```bash
+> sudo adduser --system --group --home /opt/ahcc --shell /bin/bash ahcc
+> sudo usermod -aG sudo,dialout ahcc
+> sudo -iu ahcc
+> chmod +x scripts/deploy-production.sh
+> ./scripts/deploy-production.sh
+> ```
+
+The script prints a deployment summary (URLs, generated credentials). Store it securely and delete the file afterward.
 
 ## Serial Hardware & Meshtastic Sniffer
 
