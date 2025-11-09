@@ -668,6 +668,7 @@ The script provides options to:
 3. List all migrations in chronological order.
 4. Run `prisma migrate deploy` against the configured database.
 5. Run `prisma migrate reset --force --skip-seed` (drops the schema; only use when you intend to rebuild).
+6. Drop and recreate the entire `public` schema (hard reset). Follow with option 4 to reapply migrations.
 
 Each action logs the exact `pnpm prisma …` command executed so you can reproduce it manually later. Use this helper any time a production upgrade leaves the `_prisma_migrations` table out of sync with the actual schema.
 

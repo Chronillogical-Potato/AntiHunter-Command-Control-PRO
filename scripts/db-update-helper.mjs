@@ -130,6 +130,32 @@ async function runMigrateReset() {
   }
 }
 
+async function dropSchema() {
+  console.log('\nDANGER: This will drop schema "public" and recreate it. ALL DATA WILL BE LOST.');
+  const confirm = await ask('Type "DROP" to continue or press Enter to cancel: ');
+  if (confirm !== 'DROP') {
+    console.log('Operation cancelled.\n');
+    return;
+  }
+  const script =
+    'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO CURRENT_USER;';
+  try {
+    await runCommand('pnpm', [
+      '--filter',
+      '@command-center/backend',
+      'exec',
+      'prisma',
+      'db',
+      'execute',
+      '--script',
+      script,
+    ]);
+    console.log('\nSchema recreated. Run option 4 afterwards to reapply migrations.\n');
+  } catch (error) {
+    console.error('\nFailed to drop schema:', error.message, '\n');
+  }
+}
+
 async function showMenu() {
   console.log('\n=== Database Update Helper ===\n');
   console.log('1) Baseline initial migration (20251027205237_init)');
@@ -137,6 +163,7 @@ async function showMenu() {
   console.log('3) List migrations');
   console.log('4) Run prisma migrate deploy');
   console.log('5) Run prisma migrate reset --force --skip-seed');
+  console.log('6) Drop and recreate public schema (clears database)');
   console.log('0) Exit\n');
   const choice = await ask('Select an option: ');
   switch (choice) {
@@ -156,6 +183,9 @@ async function showMenu() {
       break;
     case '5':
       await runMigrateReset();
+      break;
+    case '6':
+      await dropSchema();
       break;
     case '0':
       rl.close();
