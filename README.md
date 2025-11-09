@@ -471,26 +471,35 @@ pnpm install
 Create `apps/backend/.env`:
 
 ```
-
+# Core backend wiring
 DATABASE_URL="postgresql://command_center:command_center@localhost:5432/command_center"
-
 PORT=3000
+HTTP_PREFIX=api
+LOG_LEVEL=info
+SITE_ID=alpha
+SITE_NAME="Alpha Site"
+
+# HTTPS (leave disabled for local dev)
 HTTPS_ENABLED=false
 HTTPS_KEY_PATH=
 HTTPS_CERT_PATH=
 
-HTTP_PREFIX=api
-
-LOG_LEVEL=info
-
-SERIAL_DEVICE=/dev/ttyUSB0        # leave blank for UI-only development
-
+# Serial defaults (seed the single SerialConfig row)
+SERIAL_DEVICE=/dev/ttyUSB0
 SERIAL_BAUD=115200
+SERIAL_DATA_BITS=8
+SERIAL_PARITY=none
+SERIAL_STOP_BITS=1
+SERIAL_DELIMITER=\n
+SERIAL_RECONNECT_BASE_MS=1000
+SERIAL_RECONNECT_MAX_MS=15000
+SERIAL_RECONNECT_JITTER=0.2
+SERIAL_RECONNECT_MAX_ATTEMPTS=0
+SERIAL_PROTOCOL=meshtastic-like
 
+# Command protections
 ALLOW_FOREVER=true
-
 ALLOW_ERASE_FORCE=false
-
 ```
 
 Optional environment flags:
@@ -679,12 +688,14 @@ When you already have AntiHunter Command & Control PRO running in a live environ
    pnpm install
    ```
 2. **Apply database migrations** (required whenever new migrations exist).
+
    ```bash
    pnpm --filter @command-center/backend exec prisma migrate deploy
    ```
 
    - In containerized or managed environments, execute the same command inside the deployment target prior to restarting services.
    - If the migration fails, resolve the database issue before proceeding; never run the backend against a partially migrated schema.
+
 3. **Rebuild backend and frontend bundles**
    ```bash
    pnpm --filter @command-center/backend build
