@@ -56,7 +56,6 @@ export function AppHeader() {
   };
 
   const authenticated = status === 'authenticated' && user;
-  const isAdmin = authenticated && user?.role === 'ADMIN';
 
   return (
     <header className="app-header">
@@ -79,11 +78,6 @@ export function AppHeader() {
           <MdSignalWifiStatusbar4Bar />
           {isConnected ? 'Connected' : 'Disconnected'}
         </div>
-        {isAdmin ? (
-          <Link to="/account" className="control-chip">
-            Admin
-          </Link>
-        ) : null}
         {authenticated ? (
           <div className="user-pill" title={`Signed in as ${user.email}`}>
             <span className="user-pill__label">{user.email}</span>

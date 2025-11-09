@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiClient } from '../api/client';
 import { CommandRequest, CommandResponse, SiteSummary } from '../api/types';
@@ -232,6 +232,51 @@ export function CommandConsolePage() {
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const selectorRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+
+  const updateMenuPosition = useCallback(() => {
+    if (typeof window === 'undefined' || !selectorRef.current) {
+      return;
+    }
+    if (window.innerWidth > 768) {
+      setMenuPosition(null);
+      return;
+    }
+    const rect = selectorRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const width = Math.min(480, Math.max(rect.width, viewportWidth - 32));
+    const horizontalMargin = 16;
+    const left = Math.max(
+      horizontalMargin,
+      Math.min(viewportWidth - width - horizontalMargin, (viewportWidth - width) / 2),
+    );
+    const top = rect.bottom + 12;
+    setMenuPosition({ top, left, width });
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuPosition(null);
+      return;
+    }
+    updateMenuPosition();
+    if (typeof window === 'undefined' || window.innerWidth > 768) {
+      return;
+    }
+    const handleWindowChange = () => {
+      updateMenuPosition();
+    };
+    window.addEventListener('resize', handleWindowChange);
+    window.addEventListener('scroll', handleWindowChange, true);
+    return () => {
+      window.removeEventListener('resize', handleWindowChange);
+      window.removeEventListener('scroll', handleWindowChange, true);
+    };
+  }, [menuOpen, updateMenuPosition]);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -592,7 +637,22 @@ export function CommandConsolePage() {
                 </span>
               </button>
               {menuOpen ? (
-                <div className="command-menu" ref={menuRef}>
+                <div
+                  className="command-menu"
+                  ref={menuRef}
+                  style={
+                    menuPosition
+                      ? {
+                          position: 'fixed',
+                          top: `${menuPosition.top}px`,
+                          left: `${menuPosition.left}px`,
+                          width: `${menuPosition.width}px`,
+                          marginTop: 0,
+                          transform: 'none',
+                        }
+                      : undefined
+                  }
+                >
                   {groupedCommands.map(({ group, commands }) => (
                     <div key={group} className="command-menu__group">
                       <div className="command-menu__title">{group}</div>

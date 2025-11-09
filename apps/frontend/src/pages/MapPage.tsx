@@ -395,7 +395,7 @@ export function MapPage() {
             {onlineCount} nodes online | {nodeList.length} total tracked
           </p>
         </div>
-        <div className="controls-row">
+        <div className="controls-row map-controls-row">
           <button
             type="button"
             className={`control-chip ${fitEnabled ? 'is-active' : ''}`}

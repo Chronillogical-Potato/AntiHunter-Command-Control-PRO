@@ -21,6 +21,7 @@ import { NodesPage } from './pages/NodesPage';
 import { SchedulerPage } from './pages/SchedulerPage';
 import { StrategyAdvisorPage } from './pages/StrategyAdvisorPage';
 import { TargetsPage } from './pages/TargetsPage';
+import { TerminalEventsPage } from './pages/TerminalEventsPage';
 import { UserPage } from './pages/UserPage';
 import { useTheme } from './providers/theme-provider';
 import { useAuthStore } from './stores/auth-store';
@@ -76,6 +77,7 @@ export default function App() {
               <Route path="/strategy" element={<StrategyAdvisorPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/console" element={<CommandConsolePage />} />
+              <Route path="/terminal" element={<TerminalEventsPage />} />
               <Route path="/addon" element={<AddonPage />} />
               <Route path="/config" element={<ConfigPage />} />
               <Route path="/exports" element={<ExportsPage />} />

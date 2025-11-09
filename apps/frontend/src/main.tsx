@@ -9,6 +9,7 @@ import { SocketProvider } from './providers/socket-provider';
 import { ThemeProvider } from './providers/theme-provider';
 
 import './styles/global.css';
+import './styles/mobile.css';
 import 'leaflet/dist/leaflet.css';
 
 const rootElement = document.getElementById('root');
