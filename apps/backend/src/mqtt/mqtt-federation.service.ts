@@ -23,6 +23,9 @@ type NodeUpsertMessage = {
     siteColor?: string | null;
     siteCountry?: string | null;
     siteCity?: string | null;
+    temperatureC?: number | null;
+    temperatureF?: number | null;
+    temperatureUpdatedAt?: string | null;
   };
 };
 
@@ -102,6 +105,11 @@ export class MqttFederationService implements OnModuleInit, OnModuleDestroy {
         siteColor: node.siteColor ?? null,
         siteCountry: node.siteCountry ?? null,
         siteCity: node.siteCity ?? null,
+        temperatureC: node.temperatureC ?? null,
+        temperatureF: node.temperatureF ?? null,
+        temperatureUpdatedAt: node.temperatureUpdatedAt
+          ? node.temperatureUpdatedAt.toISOString()
+          : null,
       },
     };
 
@@ -181,6 +189,9 @@ export class MqttFederationService implements OnModuleInit, OnModuleDestroy {
     const nodeTs = nodePayload.ts ? new Date(nodePayload.ts) : new Date();
     const nodeLastSeen = nodePayload.lastSeen ? new Date(nodePayload.lastSeen) : undefined;
     const targetSiteId = nodePayload.siteId ?? originSiteId;
+    const temperatureUpdatedAt = nodePayload.temperatureUpdatedAt
+      ? new Date(nodePayload.temperatureUpdatedAt)
+      : undefined;
 
     await this.ensureSiteRecord(
       targetSiteId,
@@ -204,6 +215,11 @@ export class MqttFederationService implements OnModuleInit, OnModuleDestroy {
       siteCountry: nodePayload.siteCountry ?? undefined,
       siteCity: nodePayload.siteCity ?? undefined,
       originSiteId,
+      temperatureC:
+        typeof nodePayload.temperatureC === 'number' ? nodePayload.temperatureC : undefined,
+      temperatureF:
+        typeof nodePayload.temperatureF === 'number' ? nodePayload.temperatureF : undefined,
+      temperatureUpdatedAt,
     });
   }
 
