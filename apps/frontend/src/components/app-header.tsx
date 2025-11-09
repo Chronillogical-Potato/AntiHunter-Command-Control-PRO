@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MdBrightness4, MdBrightness7, MdLogout, MdSignalWifiStatusbar4Bar } from 'react-icons/md';
-import { Link } from 'react-router-dom';
 
 import { apiClient } from '../api/client';
 import type { AuthUser } from '../api/types';

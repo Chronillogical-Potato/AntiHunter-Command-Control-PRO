@@ -562,12 +562,6 @@
     padding-inline: 0.35rem;
   }
 }
-  .terminal-drawer__list--page {
-    max-height: none;
-  }
-
-
-
-
-
-
+.terminal-drawer__list--page {
+  max-height: none;
+}
