@@ -652,6 +652,25 @@ pnpm prisma:seed
 
 Seed inserts singleton config rows (AppConfig, AlarmConfig, VisualConfig, CoverageConfig) plus a default site and admin user stub.
 
+### Database Update Helper
+
+Upgrading older deployments that already contain manually created tables can generate Prisma errors (missing relations, duplicate tables, etc.). To simplify recovery, the repository ships with an interactive helper:
+
+```bash
+# from the repo root
+pnpm update-db
+```
+
+The script provides options to:
+
+1. Baseline (mark as applied) the initial migration `20251027205237_init` without changing data.
+2. Baseline any other migration once you've confirmed the schema change already exists.
+3. List all migrations in chronological order.
+4. Run `prisma migrate deploy` against the configured database.
+5. Run `prisma migrate reset --force --skip-seed` (drops the schema; only use when you intend to rebuild).
+
+Each action logs the exact `pnpm prisma …` command executed so you can reproduce it manually later. Use this helper any time a production upgrade leaves the `_prisma_migrations` table out of sync with the actual schema.
+
 ## Running the Stack
 
 Open two terminals:
