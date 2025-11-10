@@ -19,6 +19,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { MailModule } from './mail/mail.module';
 import { MqttModule } from './mqtt/mqtt.module';
 import { NodesModule } from './nodes/nodes.module';
+import { DronesModule } from './drones/drones.module';
 import { OuiModule } from './oui/oui.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SerialModule } from './serial/serial.module';
@@ -69,6 +70,7 @@ import { WsModule } from './ws/ws.module';
     HealthModule,
     SerialModule,
     NodesModule,
+    DronesModule,
     InventoryModule,
     CommandsModule,
     EventsModule,

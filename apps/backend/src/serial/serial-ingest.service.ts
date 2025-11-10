@@ -10,6 +10,7 @@ import { NodesService } from '../nodes/nodes.service';
 import { TakService } from '../tak/tak.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
+import { DronesService } from '../drones/drones.service';
 
 const QUEUE_CLEARED_MESSAGE = 'Serial ingest queue cleared';
 
@@ -90,6 +91,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly trackingService: TargetTrackingService,
     private readonly gateway: CommandCenterGateway,
     private readonly takService: TakService,
+    private readonly dronesService: DronesService,
     configService: ConfigService,
   ) {
     const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
@@ -360,6 +362,41 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           result: event.payload,
           timestamp: new Date(),
         });
+        break;
+      case 'drone-telemetry':
+        {
+          const timestamp = event.timestamp ?? new Date();
+          const nodeSnapshot = event.nodeId ? this.nodesService.getSnapshotById(event.nodeId) : undefined;
+          const resolvedSiteId = nodeSnapshot?.siteId ?? siteId;
+          await this.dronesService.upsert({
+            id: event.droneId,
+            mac: event.mac ?? null,
+            nodeId: event.nodeId ?? null,
+            siteId: resolvedSiteId,
+            siteName: nodeSnapshot?.siteName ?? undefined,
+            siteColor: nodeSnapshot?.siteColor ?? undefined,
+            siteCountry: nodeSnapshot?.siteCountry ?? undefined,
+            siteCity: nodeSnapshot?.siteCity ?? undefined,
+            lat: event.lat,
+            lon: event.lon,
+            lastSeen: timestamp,
+          });
+          this.gateway.emitEvent({
+            type: 'drone.telemetry',
+            droneId: event.droneId,
+            mac: event.mac ?? null,
+            nodeId: event.nodeId ?? null,
+            lat: event.lat,
+            lon: event.lon,
+            rssi: event.rssi ?? null,
+            siteId: resolvedSiteId,
+            siteName: nodeSnapshot?.siteName ?? null,
+            siteColor: nodeSnapshot?.siteColor ?? null,
+            siteCountry: nodeSnapshot?.siteCountry ?? null,
+            siteCity: nodeSnapshot?.siteCity ?? null,
+            timestamp: timestamp.toISOString(),
+          });
+        }
         break;
       case 'raw':
       default:

@@ -16,7 +16,7 @@ import {
 } from 'react-icons/md';
 
 import { apiClient } from '../api/client';
-import type { AlarmLevel, AppSettings, GeofenceVertex, SiteSummary, Target } from '../api/types';
+import type { AlarmLevel, AppSettings, Drone, GeofenceVertex, SiteSummary, Target } from '../api/types';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
 import { extractAlertColors } from '../constants/alert-colors';
 import type { AlertColorConfig } from '../constants/alert-colors';
@@ -29,6 +29,7 @@ import { type SavedMapView, useMapViewsStore } from '../stores/map-views-store';
 import { canonicalNodeId, useNodeStore } from '../stores/node-store';
 import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
+import { useDroneStore } from '../stores/drone-store';
 
 const GEOFENCE_HIGHLIGHT_MS = 10_000;
 
@@ -71,6 +72,21 @@ export function MapPage() {
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000,
   });
+
+  const drones = useDroneStore((state) => state.list);
+  const setDronesStore = useDroneStore((state) => state.setDrones);
+  const dronesQuery = useQuery({
+    queryKey: ['drones'],
+    queryFn: () => apiClient.get<Drone[]>('/drones'),
+    enabled: isAuthenticated,
+    staleTime: 30 * 1000,
+  });
+
+  useEffect(() => {
+    if (dronesQuery.data) {
+      setDronesStore(dronesQuery.data);
+    }
+  }, [dronesQuery.data, setDronesStore]);
 
   const sitesQuery = useQuery({
     queryKey: ['sites'],
@@ -438,6 +454,7 @@ export function MapPage() {
           nodes={nodeList}
           trails={histories}
           targets={targetMarkers}
+          drones={drones}
           alertIndicators={alertIndicatorMap}
           alertColors={alertColors}
           defaultRadius={mapDefaultRadius}

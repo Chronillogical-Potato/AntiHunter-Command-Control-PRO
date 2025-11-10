@@ -5,6 +5,7 @@ import { Subscription } from 'rxjs';
 import { MqttService, SiteMqttContext } from './mqtt.service';
 import { EventBusService, CommandCenterEvent } from '../events/event-bus.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
+import { DronesService } from '../drones/drones.service';
 
 type EventBroadcastMessage = {
   type: 'event.broadcast';
@@ -19,6 +20,7 @@ const FEDERATED_EVENT_TYPES = new Set([
   'event.target',
   'command.ack',
   'command.result',
+  'drone.telemetry',
 ]);
 
 @Injectable()
@@ -34,6 +36,7 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
     private readonly eventBus: EventBusService,
     private readonly mqttService: MqttService,
     private readonly gateway: CommandCenterGateway,
+    private readonly dronesService: DronesService,
   ) {
     this.localSiteId = configService.get<string>('site.id', 'default');
     this.enabled = configService.get<boolean>('mqtt.enabled', true);
@@ -152,6 +155,23 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
       ...message.payload,
       siteId: message.payload.siteId ?? originSiteId,
     };
+
+    if (event.type === 'drone.telemetry') {
+      const droneId = typeof event.droneId === 'string' ? event.droneId : undefined;
+      const lat = typeof event.lat === 'number' ? event.lat : Number(event.lat);
+      const lon = typeof event.lon === 'number' ? event.lon : Number(event.lon);
+      if (droneId && Number.isFinite(lat) && Number.isFinite(lon)) {
+        await this.dronesService.upsert({
+          id: droneId,
+          mac: typeof event.mac === 'string' ? event.mac : null,
+          nodeId: typeof event.nodeId === 'string' ? event.nodeId : null,
+          siteId: event.siteId ?? originSiteId,
+          lat,
+          lon,
+          lastSeen: event.timestamp ? new Date(event.timestamp as string) : new Date(),
+        });
+      }
+    }
 
     this.gateway.emitEvent(event, { skipBus: true });
   }

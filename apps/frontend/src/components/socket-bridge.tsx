@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-import type { AlarmLevel, Geofence, Target } from '../api/types';
+import type { AlarmLevel, Drone, Geofence, Target } from '../api/types';
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
@@ -9,6 +9,7 @@ import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
 import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
+import { useDroneStore } from '../stores/drone-store';
 
 const NOTIFICATION_CATEGORIES = new Set(['gps', 'status', 'console']);
 const DEVICE_LINE_REGEX =
@@ -25,6 +26,9 @@ export function SocketBridge() {
   const applyDiff = useNodeStore((state) => state.applyDiff);
   const addEntry = useTerminalStore((state) => state.addEntry);
   const triggerAlert = useAlertStore((state) => state.triggerAlert);
+  const setDrones = useDroneStore((state) => state.setDrones);
+  const upsertDrone = useDroneStore((state) => state.upsert);
+  const removeDrone = useDroneStore((state) => state.remove);
 
   useEffect(() => {
     if (!socket) {
@@ -36,6 +40,9 @@ export function SocketBridge() {
         setInitialNodes(payload.nodes);
         if (Array.isArray(payload.geofences)) {
           useGeofenceStore.getState().setGeofences(payload.geofences);
+        }
+        if (Array.isArray(payload.drones)) {
+          setDrones(payload.drones);
         }
       }
     };
@@ -78,6 +85,28 @@ export function SocketBridge() {
     };
 
     const handleEvent = (payload: unknown) => {
+      if (isDroneTelemetryEvent(payload)) {
+        upsertDrone({
+          id: payload.droneId,
+          mac: payload.mac ?? null,
+          nodeId: payload.nodeId ?? null,
+          siteId: payload.siteId ?? null,
+          siteName: payload.siteName ?? null,
+          siteColor: payload.siteColor ?? null,
+          siteCountry: payload.siteCountry ?? null,
+          siteCity: payload.siteCity ?? null,
+          lat: payload.lat,
+          lon: payload.lon,
+          lastSeen: payload.timestamp ?? new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (isDroneRemovalEvent(payload)) {
+        removeDrone(payload.droneId);
+        return;
+      }
+
       const entry = parseEventPayload(payload);
       addEntry(entry);
       const alarmLevel = extractAlarmLevel(payload);
@@ -241,7 +270,18 @@ export function SocketBridge() {
       socket.off('geofences.upsert', handleGeofenceUpsert);
       socket.off('geofences.delete', handleGeofenceDelete);
     };
-  }, [socket, setInitialNodes, applyDiff, addEntry, play, triggerAlert, queryClient]);
+  }, [
+    socket,
+    setInitialNodes,
+    applyDiff,
+    addEntry,
+    play,
+    triggerAlert,
+    queryClient,
+    setDrones,
+    upsertDrone,
+    removeDrone,
+  ]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -259,6 +299,7 @@ export function SocketBridge() {
 interface InitPayload {
   nodes: NodeSummary[];
   geofences?: Geofence[];
+  drones?: Drone[];
 }
 
 function isInitPayload(payload: unknown): payload is InitPayload {
@@ -272,6 +313,47 @@ function isInitPayload(payload: unknown): payload is InitPayload {
 
 function isNodeDiffPayload(payload: unknown): payload is NodeDiffPayload {
   return typeof payload === 'object' && payload !== null && 'type' in payload && 'node' in payload;
+}
+
+type DroneTelemetryEventPayload = {
+  type: 'drone.telemetry';
+  droneId: string;
+  lat: number;
+  lon: number;
+  timestamp?: string;
+  mac?: string | null;
+  nodeId?: string | null;
+  siteId?: string | null;
+  siteName?: string | null;
+  siteColor?: string | null;
+  siteCountry?: string | null;
+  siteCity?: string | null;
+};
+
+type DroneRemoveEventPayload = {
+  type: 'drone.remove';
+  droneId: string;
+};
+
+function isDroneTelemetryEvent(payload: unknown): payload is DroneTelemetryEventPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Partial<DroneTelemetryEventPayload>;
+  return (
+    candidate.type === 'drone.telemetry' &&
+    typeof candidate.droneId === 'string' &&
+    typeof candidate.lat === 'number' &&
+    typeof candidate.lon === 'number'
+  );
+}
+
+function isDroneRemovalEvent(payload: unknown): payload is DroneRemoveEventPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Partial<DroneRemoveEventPayload>;
+  return candidate.type === 'drone.remove' && typeof candidate.droneId === 'string';
 }
 
 function parseEventPayload(payload: unknown): TerminalEntryInput {

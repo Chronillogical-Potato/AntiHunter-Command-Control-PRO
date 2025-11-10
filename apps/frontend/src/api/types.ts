@@ -189,6 +189,20 @@ export interface UpdateGeofenceRequest {
   alarm?: Partial<GeofenceAlarmConfig>;
 }
 
+export interface Drone {
+  id: string;
+  mac?: string | null;
+  nodeId?: string | null;
+  siteId?: string | null;
+  siteName?: string | null;
+  siteColor?: string | null;
+  siteCountry?: string | null;
+  siteCity?: string | null;
+  lat: number;
+  lon: number;
+  lastSeen: string;
+}
+
 export interface AppSettings {
   id: number;
   appName: string;

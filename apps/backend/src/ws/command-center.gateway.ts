@@ -26,6 +26,7 @@ import { SendCommandDto } from '../commands/dto/send-command.dto';
 import { EventBusService, CommandCenterEvent } from '../events/event-bus.service';
 import { GeofenceEvent, GeofenceResponse, GeofencesService } from '../geofences/geofences.service';
 import { NodesService } from '../nodes/nodes.service';
+import { DronesService } from '../drones/drones.service';
 
 @WebSocketGateway({
   namespace: '/ws',
@@ -54,6 +55,7 @@ export class CommandCenterGateway
     private readonly authService: AuthService,
     private readonly eventBus: EventBusService,
     private readonly geofencesService: GeofencesService,
+    private readonly dronesService: DronesService,
   ) {}
 
   afterInit(server: Server): void {
@@ -96,9 +98,12 @@ export class CommandCenterGateway
       );
     }
 
+    const drones = this.dronesService.getSnapshot();
+
     client.emit('init', {
       nodes,
       geofences,
+      drones,
     });
 
     const subscription = this.nodesService.getDiffStream().subscribe((diff) => {

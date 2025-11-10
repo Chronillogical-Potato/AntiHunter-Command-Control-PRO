@@ -61,6 +61,8 @@ const VIBRATION_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*VIBRATION:\s*Movement(?:\s+detected)?\s+at\s*(?:(?<date>\d{4}-\d{2}-\d{2})\s+)?(?<time>\d{2}:\d{2}:\d{2})(?:\s*GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?/i;
 const DEVICE_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*DEVICE:(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})(?:\s+(?<band>[A-Za-z0-9]+))?\s+(?<rssi>-?\d+)(?:\s+(?<extras>.*))?$/i;
+const DRONE_REGEX =
+  /^(?<node>[A-Za-z0-9_-]+):\s*DRONE:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+ID:(?<droneId>[A-Za-z0-9]+)\s+GPS:(?<lat>-?\d+(?:\.\d+)?),\s*(?<lon>-?\d+(?:\.\d+)?)(?:\s+RSSI:(?<rssi>-?\d+))?/i;
 const ATTACK_REGEX = /^(?<node>[A-Za-z0-9_-]+):\s*ATTACK:\s*(?<details>.+)$/i;
 const GPS_STATUS_REGEX =
   /^(?<node>[A-Za-z0-9_-]+)\s*:?\s*GPS:\s*(?<status>[A-Z]+)\s*Location(?:[:=]|\s+)(?:[A-Z]+\s+)*(?<lat>-?\d+(?:\.\d+)?)(?:\s*(?:deg)?\s*[NnSs])?\s*,\s*(?<lon>-?\d+(?:\.\d+)?)(?:\s*(?:deg)?\s*[EeWw])?\s*Satellites[=:](?<sats>\d+)\s*HDOP[=:](?<hdop>\d+(?:\.\d+)?)/i;
@@ -349,6 +351,28 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
         raw: line,
       });
       return this.deliverOrRaw(results, line);
+    }
+    const droneMatch = DRONE_REGEX.exec(line);
+    if (droneMatch?.groups) {
+      const nodeId = this.normalizeNodeId(droneMatch.groups.node);
+      const mac = normalizeMac(droneMatch.groups.mac);
+      const droneId = droneMatch.groups.droneId?.trim() || mac;
+      const lat = toNumber(droneMatch.groups.lat);
+      const lon = toNumber(droneMatch.groups.lon);
+      if (droneId && lat != null && lon != null) {
+        results.push({
+          kind: 'drone-telemetry',
+          nodeId,
+          droneId,
+          mac,
+          lat,
+          lon,
+          rssi: toNumber(droneMatch.groups.rssi),
+          raw: line,
+          timestamp: new Date(),
+        });
+        return this.deliverOrRaw(results, line);
+      }
     }
     const deviceMatch = DEVICE_REGEX.exec(line);
     if (deviceMatch?.groups) {

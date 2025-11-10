@@ -16,6 +16,7 @@ import { NodesModule } from '../nodes/nodes.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TargetsModule } from '../targets/targets.module';
 import { WsModule } from '../ws/ws.module';
+import { DronesModule } from '../drones/drones.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { WsModule } from '../ws/ws.module';
     TargetsModule,
     GeofencesModule,
     WsModule,
+    DronesModule,
   ],
   providers: [
     MqttService,

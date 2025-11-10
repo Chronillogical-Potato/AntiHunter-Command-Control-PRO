@@ -9,6 +9,7 @@ import { TakModule } from '../tak/tak.module';
 import { TargetsModule } from '../targets/targets.module';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { WsModule } from '../ws/ws.module';
+import { DronesModule } from '../drones/drones.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { WsModule } from '../ws/ws.module';
     WsModule,
     TargetsModule,
     TakModule,
+    DronesModule,
   ],
   providers: [SerialIngestService, TargetTrackingService],
 })

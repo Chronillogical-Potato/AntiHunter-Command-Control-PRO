@@ -151,24 +151,43 @@ model AppConfig {
 }
 
 model Node {
-  id           String    @id
-  siteId       String?
-  originSiteId String?
-  name         String?
-  lastMessage  String?
-  lastSeen     DateTime?
-  temperatureC Float?
-  temperatureF Float?
+  id                   String    @id
+  siteId               String?
+  originSiteId         String?
+  name                 String?
+  lastMessage          String?
+  lastSeen             DateTime?
+  temperatureC         Float?
+  temperatureF         Float?
   temperatureUpdatedAt DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   site           Site?                 @relation(fields: [siteId], references: [id])
   positions      NodePosition[]
   triangulations TriangulationResult[]
+  drones         Drone[]
 
   @@index([siteId])
   @@index([originSiteId])
+}
+
+model Drone {
+  id        String   @id
+  mac       String?
+  nodeId    String?
+  siteId    String?
+  lat       Float
+  lon       Float
+  lastSeen  DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  node Node? @relation(fields: [nodeId], references: [id])
+  site Site? @relation(fields: [siteId], references: [id])
+
+  @@index([siteId])
+  @@index([nodeId])
 }
 
 model NodePosition {
@@ -414,6 +433,7 @@ model Site {
   templates         CommandTemplate[]
   userAccess        UserSiteAccess[]
   firewallLogs      FirewallLog[]
+  drones            Drone[]
 }
 
 model SerialConfig {

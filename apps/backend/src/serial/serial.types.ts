@@ -2,6 +2,7 @@ export type SerialParseResult =
   | SerialNodeTelemetry
   | SerialTargetDetected
   | SerialAlertEvent
+  | SerialDroneTelemetry
   | SerialCommandAck
   | SerialCommandResult
   | SerialRawFrame;
@@ -40,6 +41,18 @@ export interface SerialAlertEvent {
   message: string;
   data?: Record<string, unknown>;
   raw: string;
+}
+
+export interface SerialDroneTelemetry {
+  kind: 'drone-telemetry';
+  nodeId?: string;
+  droneId: string;
+  mac?: string;
+  lat: number;
+  lon: number;
+  rssi?: number;
+  raw: string;
+  timestamp?: Date;
 }
 
 export interface SerialCommandAck {

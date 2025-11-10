@@ -21,6 +21,7 @@ import type { AlertColorConfig } from '../../constants/alert-colors';
 import type { NodeHistoryPoint, NodeSummary } from '../../stores/node-store';
 import { canonicalNodeId } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
+import type { DroneMarker } from '../../stores/drone-store';
 
 const FALLBACK_CENTER: LatLngExpression = [0, 0];
 const DEFAULT_RADIUS_FALLBACK = 50;
@@ -231,6 +232,7 @@ interface CommandCenterMapProps {
   nodes: NodeSummary[];
   trails: Record<string, NodeHistoryPoint[]>;
   targets: TargetMarker[];
+  drones: DroneMarker[];
   alertIndicators: Map<string, IndicatorSeverity>;
   alertColors: AlertColorConfig;
   defaultRadius: number;
@@ -257,6 +259,7 @@ export function CommandCenterMap({
   nodes,
   trails,
   targets,
+  drones,
   alertIndicators,
   alertColors,
   defaultRadius,
@@ -297,6 +300,12 @@ export function CommandCenterMap({
       const latSum = nodes.reduce((acc, node) => acc + node.lat, 0);
       const lonSum = nodes.reduce((acc, node) => acc + node.lon, 0);
       return [latSum / nodes.length, lonSum / nodes.length];
+    }
+
+    if (drones.length > 0) {
+      const latSum = drones.reduce((acc, drone) => acc + drone.lat, 0);
+      const lonSum = drones.reduce((acc, drone) => acc + drone.lon, 0);
+      return [latSum / drones.length, lonSum / drones.length];
     }
 
     if (targets.length > 0) {
@@ -473,8 +482,8 @@ export function CommandCenterMap({
           const historyPositions =
             target.history?.map((point) => [point.lat, point.lon] as LatLngTuple) ?? [];
           const hasTrail = historyPositions.length > 1;
-          return (
-            <Fragment key={target.id}>
+      return (
+        <Fragment key={target.id}>
               {hasTrail ? (
                 <Polyline
                   positions={historyPositions}
@@ -506,7 +515,29 @@ export function CommandCenterMap({
               </Marker>
             </Fragment>
           );
-        })}
+        })} 
+
+      {drones.map((drone) => {
+        const position: LatLngExpression = [drone.lat, drone.lon];
+        return (
+          <Marker key={`drone-${drone.id}`} position={position} icon={createDroneIcon(drone)}>
+            <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+              <div className="drone-tooltip">
+                <strong>Drone {drone.id}</strong>
+                {drone.mac && <div>MAC: {drone.mac}</div>}
+                {drone.nodeId && <div>Reported by: {drone.nodeId}</div>}
+                {drone.siteName || drone.siteId ? (
+                  <div>Site: {drone.siteName ?? drone.siteId}</div>
+                ) : null}
+                <div>
+                  Location: {drone.lat.toFixed(5)}, {drone.lon.toFixed(5)}
+                </div>
+                <div>Last seen: {new Date(drone.lastSeen).toLocaleTimeString()}</div>
+              </div>
+            </Tooltip>
+          </Marker>
+        );
+      })}
     </MapContainer>
   );
 }
