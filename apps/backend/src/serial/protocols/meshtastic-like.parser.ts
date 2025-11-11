@@ -359,7 +359,7 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
       });
       return this.deliverOrRaw(results, line);
     }
-    const droneTelemetry = this.parseDroneTelemetry(normalized, line);
+    const droneTelemetry = this.parseDroneTelemetry(line, line);
     if (droneTelemetry) {
       results.push(droneTelemetry);
       return this.deliverOrRaw(results, line);
