@@ -4,6 +4,7 @@ import type { Drone } from '../api/types';
 
 export interface DroneMarker {
   id: string;
+  droneId?: string | null;
   mac?: string | null;
   nodeId?: string | null;
   siteId?: string | null;
@@ -13,6 +14,11 @@ export interface DroneMarker {
   siteCity?: string | null;
   lat: number;
   lon: number;
+  altitude?: number | null;
+  speed?: number | null;
+  operatorLat?: number | null;
+  operatorLon?: number | null;
+  rssi?: number | null;
   lastSeen: string;
 }
 
@@ -20,7 +26,9 @@ interface DroneStoreState {
   map: Record<string, DroneMarker>;
   list: DroneMarker[];
   setDrones: (drones: Drone[]) => void;
-  upsert: (drone: Partial<Drone> & { id: string; lat: number; lon: number; lastSeen?: string }) => void;
+  upsert: (
+    drone: Partial<Drone> & { id: string; lat: number; lon: number; lastSeen?: string },
+  ) => void;
   remove: (id: string) => void;
 }
 
@@ -51,9 +59,12 @@ export const useDroneStore = create<DroneStoreState>()((set) => ({
     }),
 }));
 
-function normalizeDrone(drone: Partial<Drone> & { id: string; lat: number; lon: number; lastSeen?: string }): DroneMarker {
+function normalizeDrone(
+  drone: Partial<Drone> & { id: string; lat: number; lon: number; lastSeen?: string },
+): DroneMarker {
   return {
     id: drone.id,
+    droneId: drone.droneId ?? null,
     mac: drone.mac ?? null,
     nodeId: drone.nodeId ?? null,
     siteId: drone.siteId ?? null,
@@ -63,6 +74,11 @@ function normalizeDrone(drone: Partial<Drone> & { id: string; lat: number; lon: 
     siteCity: drone.siteCity ?? null,
     lat: drone.lat,
     lon: drone.lon,
+    altitude: drone.altitude ?? null,
+    speed: drone.speed ?? null,
+    operatorLat: drone.operatorLat ?? null,
+    operatorLon: drone.operatorLon ?? null,
+    rssi: drone.rssi ?? null,
     lastSeen: drone.lastSeen ?? new Date().toISOString(),
   };
 }

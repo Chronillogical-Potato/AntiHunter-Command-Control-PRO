@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { CommandsModule } from '../commands/commands.module';
+import { DronesModule } from '../drones/drones.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { SerialIngestService } from '../serial/serial-ingest.service';
@@ -9,7 +10,6 @@ import { TakModule } from '../tak/tak.module';
 import { TargetsModule } from '../targets/targets.module';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { WsModule } from '../ws/ws.module';
-import { DronesModule } from '../drones/drones.module';
 
 @Module({
   imports: [

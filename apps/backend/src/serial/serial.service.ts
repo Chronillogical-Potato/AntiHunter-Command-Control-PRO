@@ -397,15 +397,26 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   async disconnect(): Promise<void> {
-    if (!this.port) {
+    const port = this.port;
+    if (!port) {
       return;
     }
 
     this.manualDisconnect = true;
     this.clearReconnectTimer();
+    const isOpen =
+      typeof (port as SerialPortStream & { isOpen?: boolean }).isOpen === 'boolean'
+        ? (port as SerialPortStream & { isOpen?: boolean }).isOpen
+        : true;
+    if (!isOpen) {
+      this.cleanup();
+      this.manualDisconnect = false;
+      return;
+    }
+
     try {
       await new Promise<void>((resolve, reject) => {
-        this.port?.close((err) => {
+        port.close((err) => {
           if (err) {
             reject(err);
             return;

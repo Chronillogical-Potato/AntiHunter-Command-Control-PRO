@@ -715,6 +715,7 @@ When you already have AntiHunter Command & Control PRO running in a live environ
 
    - In containerized or managed environments, execute the same command inside the deployment target prior to restarting services.
    - If the migration fails, resolve the database issue before proceeding; never run the backend against a partially migrated schema.
+   - Need to baseline or roll back a troublesome migration interactively? Run `node scripts/db-update-helper.mjs` for a guided menu that can mark migrations as applied/rolled back, rerun `migrate deploy`, or wipe the schema.
 
 3. **Rebuild backend and frontend bundles**
    ```bash
@@ -1065,13 +1066,15 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 
 ## Useful Scripts
 
-| Command                                               | Description                                            |
-| ----------------------------------------------------- | ------------------------------------------------------ |
-| `pnpm lint`                                           | ESLint across backend + frontend                       |
-| `pnpm format`                                         | Prettier writes                                        |
-| `pnpm --filter @command-center/backend prisma:studio` | Inspect DB via Prisma Studio                           |
-| `pnpm --filter @command-center/backend prisma:seed`   | Reseed config rows                                     |
-| `pnpm seed`                                           | Shortcut to seed default admin (requires pnpm on host) |
+| Command                                               | Description                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| `pnpm lint`                                           | ESLint across backend + frontend                                          |
+| `pnpm format`                                         | Prettier writes                                                           |
+| `pnpm --filter @command-center/backend prisma:studio` | Inspect DB via Prisma Studio                                              |
+| `pnpm --filter @command-center/backend prisma:seed`   | Reseed config rows                                                        |
+| `pnpm seed`                                           | Shortcut to seed default admin (requires pnpm on host)                    |
+| `node scripts/db-update-helper.mjs`                   | Interactive menu to baseline/resolve migrations or reset the schema       |
+| `pnpm --filter @command-center/frontend preview`      | Preview SPA production build                                              |
 
 > **Docker note.** Production containers only install runtime dependencies, so the first time you seed from inside the backend container you must install the backend workspace dev deps and then run the seed:
 >
@@ -1088,9 +1091,6 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 > ```bash
 > docker compose exec backend sh -lc "cd /app && pnpm --filter @command-center/backend prisma:seed"
 > ```
->
-> | `pnpm --filter @command-center/frontend preview` | Preview SPA production build |
-
 ## Operations & Maintenance
 
 - **Clearing nodes:** The UI invokes `DELETE /nodes`, which now removes rows from `Node`, `NodePosition`, `NodeCoverageOverride`, and `TriangulationResult` tables in addition to clearing the in-memory cache. This prevents stale nodes from reappearing when new telemetry arrives.

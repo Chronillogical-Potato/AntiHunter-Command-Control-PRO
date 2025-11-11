@@ -23,10 +23,10 @@ import { Server, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import { CommandState, CommandsService } from '../commands/commands.service';
 import { SendCommandDto } from '../commands/dto/send-command.dto';
+import { DronesService } from '../drones/drones.service';
 import { EventBusService, CommandCenterEvent } from '../events/event-bus.service';
 import { GeofenceEvent, GeofenceResponse, GeofencesService } from '../geofences/geofences.service';
 import { NodesService } from '../nodes/nodes.service';
-import { DronesService } from '../drones/drones.service';
 
 @WebSocketGateway({
   namespace: '/ws',

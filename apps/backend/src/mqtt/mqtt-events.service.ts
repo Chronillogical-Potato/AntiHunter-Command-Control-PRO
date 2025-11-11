@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { Subscription } from 'rxjs';
 
 import { MqttService, SiteMqttContext } from './mqtt.service';
+import { DronesService } from '../drones/drones.service';
 import { EventBusService, CommandCenterEvent } from '../events/event-bus.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
-import { DronesService } from '../drones/drones.service';
 
 type EventBroadcastMessage = {
   type: 'event.broadcast';
@@ -163,12 +163,38 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
       if (droneId && Number.isFinite(lat) && Number.isFinite(lon)) {
         await this.dronesService.upsert({
           id: droneId,
+          droneId,
           mac: typeof event.mac === 'string' ? event.mac : null,
           nodeId: typeof event.nodeId === 'string' ? event.nodeId : null,
           siteId: event.siteId ?? originSiteId,
+          siteName: typeof event.siteName === 'string' ? event.siteName : null,
+          siteColor: typeof event.siteColor === 'string' ? event.siteColor : null,
+          siteCountry: typeof event.siteCountry === 'string' ? event.siteCountry : null,
+          siteCity: typeof event.siteCity === 'string' ? event.siteCity : null,
           lat,
           lon,
+          altitude:
+            typeof event.altitude === 'number'
+              ? event.altitude
+              : (toNumber(event.altitude as string | number | null | undefined) ?? null),
+          speed:
+            typeof event.speed === 'number'
+              ? event.speed
+              : (toNumber(event.speed as string | number | null | undefined) ?? null),
+          operatorLat:
+            typeof event.operatorLat === 'number'
+              ? event.operatorLat
+              : (toNumber(event.operatorLat as string | number | null | undefined) ?? null),
+          operatorLon:
+            typeof event.operatorLon === 'number'
+              ? event.operatorLon
+              : (toNumber(event.operatorLon as string | number | null | undefined) ?? null),
+          rssi:
+            typeof event.rssi === 'number'
+              ? event.rssi
+              : (toNumber(event.rssi as string | number | null | undefined) ?? null),
           lastSeen: event.timestamp ? new Date(event.timestamp as string) : new Date(),
+          ts: event.timestamp ? new Date(event.timestamp as string) : new Date(),
         });
       }
     }
@@ -180,4 +206,15 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
     const sanitized = eventType.replace(/\//g, '-').replace(/\s+/g, '-').replace(/\./g, '-');
     return `ahcc/${siteId}/events/${sanitized}`;
   }
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }

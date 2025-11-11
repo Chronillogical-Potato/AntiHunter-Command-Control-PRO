@@ -173,21 +173,28 @@ model Node {
 }
 
 model Drone {
-  id        String   @id
-  mac       String?
-  nodeId    String?
-  siteId    String?
-  lat       Float
-  lon       Float
-  lastSeen  DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id
+  droneId     String?
+  mac         String?
+  nodeId      String?
+  siteId      String?
+  lat         Float
+  lon         Float
+  altitude    Float?
+  speed       Float?
+  operatorLat Float?
+  operatorLon Float?
+  rssi        Int?
+  lastSeen    DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   node Node? @relation(fields: [nodeId], references: [id])
   site Site? @relation(fields: [siteId], references: [id])
 
   @@index([siteId])
   @@index([nodeId])
+  @@index([droneId])
 }
 
 model NodePosition {

@@ -50,6 +50,10 @@ export interface SerialDroneTelemetry {
   mac?: string;
   lat: number;
   lon: number;
+  altitude?: number;
+  speed?: number;
+  operatorLat?: number;
+  operatorLon?: number;
   rssi?: number;
   raw: string;
   timestamp?: Date;

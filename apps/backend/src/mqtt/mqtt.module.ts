@@ -10,13 +10,13 @@ import { MqttTargetsService } from './mqtt-targets.service';
 import { MqttController } from './mqtt.controller';
 import { MqttService } from './mqtt.service';
 import { CommandsModule } from '../commands/commands.module';
+import { DronesModule } from '../drones/drones.module';
 import { GeofencesModule } from '../geofences/geofences.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TargetsModule } from '../targets/targets.module';
 import { WsModule } from '../ws/ws.module';
-import { DronesModule } from '../drones/drones.module';
 
 @Module({
   imports: [

@@ -1,10 +1,10 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Drone, Site } from '@prisma/client';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
 
-import { PrismaService } from '../prisma/prisma.service';
-import type { Drone, Site } from '@prisma/client';
 import { DroneDiff, DroneSnapshot } from './drones.types';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class DronesService implements OnModuleInit, OnModuleDestroy {
@@ -16,7 +16,7 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly prisma: PrismaService,
-    configService: ConfigService,
+    private readonly configService: ConfigService,
   ) {
     this.localSiteId = configService.get<string>('site.id', 'default');
   }
@@ -39,7 +39,8 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy(): void {
-    // no-op
+    this.snapshot$.complete();
+    this.diff$.complete();
   }
 
   getSnapshot(): DroneSnapshot[] {
@@ -61,40 +62,59 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
       lastSeen: snapshot.lastSeen ?? new Date(),
     };
 
-    await this.ensureSiteRecord(
-      normalized.siteId,
-      normalized.siteName ?? null,
-      normalized.siteColor ?? null,
-      normalized.siteCountry ?? null,
-      normalized.siteCity ?? null,
-    );
+    try {
+      await this.ensureSiteRecord(
+        normalized.siteId,
+        normalized.siteName ?? null,
+        normalized.siteColor ?? null,
+        normalized.siteCountry ?? null,
+        normalized.siteCity ?? null,
+      );
 
-    const record = await this.prisma.drone.upsert({
-      where: { id: normalized.id },
-      create: {
-        id: normalized.id,
-        mac: normalized.mac ?? null,
-        nodeId: normalized.nodeId ?? null,
-        siteId: normalized.siteId ?? null,
-        lat: normalized.lat,
-        lon: normalized.lon,
-        lastSeen: normalized.lastSeen,
-      },
-      update: {
-        mac: normalized.mac ?? null,
-        nodeId: normalized.nodeId ?? null,
-        siteId: normalized.siteId ?? null,
-        lat: normalized.lat,
-        lon: normalized.lon,
-        lastSeen: normalized.lastSeen,
-      },
-      include: { site: true },
-    });
+      const record = await this.prisma.drone.upsert({
+        where: { id: normalized.id },
+        create: {
+          id: normalized.id,
+          droneId: normalized.droneId ?? null,
+          mac: normalized.mac ?? null,
+          nodeId: normalized.nodeId ?? null,
+          siteId: normalized.siteId ?? null,
+          lat: normalized.lat,
+          lon: normalized.lon,
+          altitude: normalized.altitude ?? null,
+          speed: normalized.speed ?? null,
+          operatorLat: normalized.operatorLat ?? null,
+          operatorLon: normalized.operatorLon ?? null,
+          rssi: normalized.rssi != null ? Math.round(normalized.rssi) : null,
+          lastSeen: normalized.lastSeen,
+        },
+        update: {
+          droneId: normalized.droneId ?? null,
+          mac: normalized.mac ?? null,
+          nodeId: normalized.nodeId ?? null,
+          siteId: normalized.siteId ?? null,
+          lat: normalized.lat,
+          lon: normalized.lon,
+          altitude: normalized.altitude ?? null,
+          speed: normalized.speed ?? null,
+          operatorLat: normalized.operatorLat ?? null,
+          operatorLon: normalized.operatorLon ?? null,
+          rssi: normalized.rssi != null ? Math.round(normalized.rssi) : null,
+          lastSeen: normalized.lastSeen,
+        },
+        include: { site: true },
+      });
 
-    const mapped = this.mapEntity(record);
-    this.drones.set(mapped.id, mapped);
-    this.emitSnapshot();
-    this.diff$.next({ type: 'upsert', drone: mapped });
+      const mapped = this.mapEntity(record);
+      this.drones.set(mapped.id, mapped);
+      this.emitSnapshot();
+      this.diff$.next({ type: 'upsert', drone: mapped });
+    } catch (error) {
+      this.logger.error(
+        `Failed to upsert drone ${snapshot.id}: ${error instanceof Error ? error.message : error}`,
+      );
+      throw error;
+    }
   }
 
   async remove(id: string): Promise<void> {
@@ -103,7 +123,9 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     await this.prisma.drone.delete({ where: { id } }).catch((error) => {
-      this.logger.warn(`Failed to delete drone ${id}: ${error instanceof Error ? error.message : error}`);
+      this.logger.warn(
+        `Failed to delete drone ${id}: ${error instanceof Error ? error.message : error}`,
+      );
     });
     this.drones.delete(id);
     this.emitSnapshot();
@@ -111,12 +133,15 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private emitSnapshot(): void {
-    this.snapshot$.next(Array.from(this.drones.values()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime()));
+    this.snapshot$.next(
+      Array.from(this.drones.values()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime()),
+    );
   }
 
   private mapEntity(drone: Drone & { site?: Site | null }): DroneSnapshot {
     return {
       id: drone.id,
+      droneId: drone.droneId ?? null,
       mac: drone.mac ?? null,
       nodeId: drone.nodeId ?? null,
       siteId: drone.siteId ?? null,
@@ -126,6 +151,11 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
       siteCity: drone.site?.city ?? null,
       lat: drone.lat,
       lon: drone.lon,
+      altitude: drone.altitude ?? null,
+      speed: drone.speed ?? null,
+      operatorLat: drone.operatorLat ?? null,
+      operatorLon: drone.operatorLon ?? null,
+      rssi: drone.rssi ?? null,
       lastSeen: drone.lastSeen,
       ts: drone.updatedAt,
     };

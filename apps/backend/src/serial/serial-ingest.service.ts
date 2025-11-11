@@ -5,12 +5,12 @@ import { Subscription } from 'rxjs';
 import { SerialService } from './serial.service';
 import { SerialAlertEvent, SerialParseResult, SerialTargetDetected } from './serial.types';
 import { CommandsService } from '../commands/commands.service';
+import { DronesService } from '../drones/drones.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { NodesService } from '../nodes/nodes.service';
 import { TakService } from '../tak/tak.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
-import { DronesService } from '../drones/drones.service';
 
 const QUEUE_CLEARED_MESSAGE = 'Serial ingest queue cleared';
 
@@ -366,21 +366,49 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
       case 'drone-telemetry':
         {
           const timestamp = event.timestamp ?? new Date();
-          const nodeSnapshot = event.nodeId ? this.nodesService.getSnapshotById(event.nodeId) : undefined;
+          const nodeSnapshot = event.nodeId
+            ? this.nodesService.getSnapshotById(event.nodeId)
+            : undefined;
           const resolvedSiteId = nodeSnapshot?.siteId ?? siteId;
           await this.dronesService.upsert({
             id: event.droneId,
+            droneId: event.droneId,
             mac: event.mac ?? null,
             nodeId: event.nodeId ?? null,
             siteId: resolvedSiteId,
-            siteName: nodeSnapshot?.siteName ?? undefined,
-            siteColor: nodeSnapshot?.siteColor ?? undefined,
-            siteCountry: nodeSnapshot?.siteCountry ?? undefined,
-            siteCity: nodeSnapshot?.siteCity ?? undefined,
+            siteName: nodeSnapshot?.siteName ?? null,
+            siteColor: nodeSnapshot?.siteColor ?? null,
+            siteCountry: nodeSnapshot?.siteCountry ?? null,
+            siteCity: nodeSnapshot?.siteCity ?? null,
             lat: event.lat,
             lon: event.lon,
+            altitude: event.altitude ?? null,
+            speed: event.speed ?? null,
+            operatorLat: event.operatorLat ?? null,
+            operatorLon: event.operatorLon ?? null,
+            rssi: event.rssi ?? null,
             lastSeen: timestamp,
+            ts: timestamp,
           });
+
+          if (event.mac && event.nodeId) {
+            await this.inventoryService.recordDetection(
+              {
+                kind: 'target-detected',
+                nodeId: event.nodeId,
+                mac: event.mac,
+                rssi: event.rssi,
+                type: 'Drone',
+                lat: event.lat,
+                lon: event.lon,
+                raw: event.raw,
+              },
+              resolvedSiteId,
+              event.lat,
+              event.lon,
+            );
+          }
+
           this.gateway.emitEvent({
             type: 'drone.telemetry',
             droneId: event.droneId,
@@ -388,6 +416,10 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             nodeId: event.nodeId ?? null,
             lat: event.lat,
             lon: event.lon,
+            altitude: event.altitude ?? null,
+            speed: event.speed ?? null,
+            operatorLat: event.operatorLat ?? null,
+            operatorLon: event.operatorLon ?? null,
             rssi: event.rssi ?? null,
             siteId: resolvedSiteId,
             siteName: nodeSnapshot?.siteName ?? null,

@@ -16,12 +16,20 @@ import {
 } from 'react-icons/md';
 
 import { apiClient } from '../api/client';
-import type { AlarmLevel, AppSettings, Drone, GeofenceVertex, SiteSummary, Target } from '../api/types';
+import type {
+  AlarmLevel,
+  AppSettings,
+  Drone,
+  GeofenceVertex,
+  SiteSummary,
+  Target,
+} from '../api/types';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
 import { extractAlertColors } from '../constants/alert-colors';
 import type { AlertColorConfig } from '../constants/alert-colors';
 import { useAlertStore } from '../stores/alert-store';
 import { useAuthStore } from '../stores/auth-store';
+import { useDroneStore } from '../stores/drone-store';
 import { useGeofenceStore } from '../stores/geofence-store';
 import { useMapCommandStore } from '../stores/map-command-store';
 import { useMapPreferences } from '../stores/map-store';
@@ -29,7 +37,6 @@ import { type SavedMapView, useMapViewsStore } from '../stores/map-views-store';
 import { canonicalNodeId, useNodeStore } from '../stores/node-store';
 import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
-import { useDroneStore } from '../stores/drone-store';
 
 const GEOFENCE_HIGHLIGHT_MS = 10_000;
 

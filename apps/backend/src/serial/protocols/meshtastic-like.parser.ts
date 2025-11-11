@@ -1,5 +1,6 @@
 import {
   SerialCommandAck,
+  SerialDroneTelemetry,
   SerialNodeTelemetry,
   SerialParseResult,
   SerialProtocolParser,
@@ -61,8 +62,14 @@ const VIBRATION_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*VIBRATION:\s*Movement(?:\s+detected)?\s+at\s*(?:(?<date>\d{4}-\d{2}-\d{2})\s+)?(?<time>\d{2}:\d{2}:\d{2})(?:\s*GPS[=:](?<lat>-?\d+\.\d+),\s*(?<lon>-?\d+\.\d+))?/i;
 const DEVICE_REGEX =
   /^(?<node>[A-Za-z0-9_-]+):\s*DEVICE:(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})(?:\s+(?<band>[A-Za-z0-9]+))?\s+(?<rssi>-?\d+)(?:\s+(?<extras>.*))?$/i;
-const DRONE_REGEX =
-  /^(?<node>[A-Za-z0-9_-]+):\s*DRONE:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+ID:(?<droneId>[A-Za-z0-9]+)\s+GPS:(?<lat>-?\d+(?:\.\d+)?),\s*(?<lon>-?\d+(?:\.\d+)?)(?:\s+RSSI:(?<rssi>-?\d+))?/i;
+const DRONE_LINE_REGEX =
+  /^(?<node>[A-Za-z0-9_-]+):\s*DRONE:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+ID:(?<droneId>[A-Za-z0-9_-]+)\b(?<rest>.*)$/i;
+const DRONE_GPS_REGEX = /GPS:(?<lat>-?\d+(?:\.\d+)?),\s*(?<lon>-?\d+(?:\.\d+)?)/i;
+const DRONE_ALT_REGEX = /ALT:(?<value>-?\d+(?:\.\d+)?)/i;
+const DRONE_SPEED_REGEX = /SPD:(?<value>-?\d+(?:\.\d+)?)/i;
+const DRONE_OPERATOR_REGEX = /OP:(?<lat>-?\d+(?:\.\d+)?),\s*(?<lon>-?\d+(?:\.\d+)?)/i;
+const DRONE_RSSI_COLON_REGEX = /RSSI:?\s*(?<value>-?\d+)/i;
+const DRONE_RSSI_PREFIX_REGEX = /\bR(?<value>-?\d+)\b/;
 const ATTACK_REGEX = /^(?<node>[A-Za-z0-9_-]+):\s*ATTACK:\s*(?<details>.+)$/i;
 const GPS_STATUS_REGEX =
   /^(?<node>[A-Za-z0-9_-]+)\s*:?\s*GPS:\s*(?<status>[A-Z]+)\s*Location(?:[:=]|\s+)(?:[A-Z]+\s+)*(?<lat>-?\d+(?:\.\d+)?)(?:\s*(?:deg)?\s*[NnSs])?\s*,\s*(?<lon>-?\d+(?:\.\d+)?)(?:\s*(?:deg)?\s*[EeWw])?\s*Satellites[=:](?<sats>\d+)\s*HDOP[=:](?<hdop>\d+(?:\.\d+)?)/i;
@@ -352,27 +359,10 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
       });
       return this.deliverOrRaw(results, line);
     }
-    const droneMatch = DRONE_REGEX.exec(line);
-    if (droneMatch?.groups) {
-      const nodeId = this.normalizeNodeId(droneMatch.groups.node);
-      const mac = normalizeMac(droneMatch.groups.mac);
-      const droneId = droneMatch.groups.droneId?.trim() || mac;
-      const lat = toNumber(droneMatch.groups.lat);
-      const lon = toNumber(droneMatch.groups.lon);
-      if (droneId && lat != null && lon != null) {
-        results.push({
-          kind: 'drone-telemetry',
-          nodeId,
-          droneId,
-          mac,
-          lat,
-          lon,
-          rssi: toNumber(droneMatch.groups.rssi),
-          raw: line,
-          timestamp: new Date(),
-        });
-        return this.deliverOrRaw(results, line);
-      }
+    const droneTelemetry = this.parseDroneTelemetry(normalized, line);
+    if (droneTelemetry) {
+      results.push(droneTelemetry);
+      return this.deliverOrRaw(results, line);
     }
     const deviceMatch = DEVICE_REGEX.exec(line);
     if (deviceMatch?.groups) {
@@ -930,6 +920,63 @@ export class MeshtasticLikeParser implements SerialProtocolParser {
     }
     return false;
   }
+
+  private parseDroneTelemetry(
+    normalizedLine: string,
+    rawLine: string,
+  ): SerialDroneTelemetry | null {
+    const match = DRONE_LINE_REGEX.exec(normalizedLine);
+    if (!match?.groups) {
+      return null;
+    }
+
+    const nodeId = this.normalizeNodeId(match.groups.node);
+    const mac = normalizeMac(match.groups.mac);
+    const droneId = match.groups.droneId?.trim() || mac;
+    if (!droneId) {
+      return null;
+    }
+
+    const rest = match.groups.rest ?? '';
+    const gpsMatch = DRONE_GPS_REGEX.exec(rest);
+    if (!gpsMatch?.groups) {
+      return null;
+    }
+
+    const lat = toNumber(gpsMatch.groups.lat);
+    const lon = toNumber(gpsMatch.groups.lon);
+    if (lat == null || lon == null) {
+      return null;
+    }
+
+    const altitude = toNumber(DRONE_ALT_REGEX.exec(rest)?.groups?.value ?? null);
+    const speed = toNumber(DRONE_SPEED_REGEX.exec(rest)?.groups?.value ?? null);
+    const operatorMatch = DRONE_OPERATOR_REGEX.exec(rest);
+    const operatorLat = toNumber(operatorMatch?.groups?.lat ?? null);
+    const operatorLon = toNumber(operatorMatch?.groups?.lon ?? null);
+
+    let rssi = toNumber(DRONE_RSSI_COLON_REGEX.exec(rest)?.groups?.value ?? null);
+    if (rssi == null) {
+      rssi = toNumber(DRONE_RSSI_PREFIX_REGEX.exec(rest)?.groups?.value ?? null);
+    }
+
+    return {
+      kind: 'drone-telemetry',
+      nodeId,
+      droneId,
+      mac,
+      lat,
+      lon,
+      altitude: altitude ?? undefined,
+      speed: speed ?? undefined,
+      operatorLat: operatorLat ?? undefined,
+      operatorLon: operatorLon ?? undefined,
+      rssi: rssi ?? undefined,
+      raw: rawLine,
+      timestamp: new Date(),
+    };
+  }
+
   private toTelemetry(
     nodeId: string,
     lat: number,

@@ -18,10 +18,10 @@ import 'leaflet.heat';
 
 import type { Geofence, GeofenceVertex } from '../../api/types';
 import type { AlertColorConfig } from '../../constants/alert-colors';
+import type { DroneMarker } from '../../stores/drone-store';
 import type { NodeHistoryPoint, NodeSummary } from '../../stores/node-store';
 import { canonicalNodeId } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
-import type { DroneMarker } from '../../stores/drone-store';
 
 const FALLBACK_CENTER: LatLngExpression = [0, 0];
 const DEFAULT_RADIUS_FALLBACK = 50;
@@ -106,6 +106,23 @@ function createTargetIcon(target: TargetMarker): DivIcon {
     iconAnchor: [15, 15],
   });
 }
+
+function createDroneIcon(drone: DroneMarker): DivIcon {
+  const label = drone.droneId ?? drone.id;
+  return divIcon({
+    html: `<div class="drone-marker"><span>${label}</span></div>`,
+    className: 'drone-marker-wrapper',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+  });
+}
+
+const DRONE_OPERATOR_ICON = divIcon({
+  html: '<div class="drone-operator-marker">OP</div>',
+  className: 'drone-operator-wrapper',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
 
 function formatNodeLabel(node: NodeSummary): string {
   const siteCode = deriveSiteCode(node.siteName, node.siteId);
@@ -315,7 +332,7 @@ export function CommandCenterMap({
     }
 
     return FALLBACK_CENTER;
-  }, [nodes, targets]);
+  }, [nodes, drones, targets]);
 
   useEffect(() => {
     if (mapRef.current && nodes.length > 0 && followEnabled) {
@@ -482,8 +499,8 @@ export function CommandCenterMap({
           const historyPositions =
             target.history?.map((point) => [point.lat, point.lon] as LatLngTuple) ?? [];
           const hasTrail = historyPositions.length > 1;
-      return (
-        <Fragment key={target.id}>
+          return (
+            <Fragment key={target.id}>
               {hasTrail ? (
                 <Polyline
                   positions={historyPositions}
@@ -515,27 +532,77 @@ export function CommandCenterMap({
               </Marker>
             </Fragment>
           );
-        })} 
+        })}
 
       {drones.map((drone) => {
-        const position: LatLngExpression = [drone.lat, drone.lon];
+        const dronePosition: LatLngExpression = [drone.lat, drone.lon];
+        const hasOperator =
+          typeof drone.operatorLat === 'number' &&
+          Number.isFinite(drone.operatorLat) &&
+          typeof drone.operatorLon === 'number' &&
+          Number.isFinite(drone.operatorLon);
+        const operatorPosition: LatLngExpression | null = hasOperator
+          ? [drone.operatorLat!, drone.operatorLon!]
+          : null;
+
         return (
-          <Marker key={`drone-${drone.id}`} position={position} icon={createDroneIcon(drone)}>
-            <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
-              <div className="drone-tooltip">
-                <strong>Drone {drone.id}</strong>
-                {drone.mac && <div>MAC: {drone.mac}</div>}
-                {drone.nodeId && <div>Reported by: {drone.nodeId}</div>}
-                {drone.siteName || drone.siteId ? (
-                  <div>Site: {drone.siteName ?? drone.siteId}</div>
-                ) : null}
-                <div>
-                  Location: {drone.lat.toFixed(5)}, {drone.lon.toFixed(5)}
+          <Fragment key={`drone-${drone.id}`}>
+            {hasOperator && operatorPosition ? (
+              <>
+                <Polyline
+                  positions={[dronePosition, operatorPosition]}
+                  pathOptions={{
+                    color: '#f97316',
+                    weight: 2,
+                    opacity: 0.7,
+                    dashArray: '8, 12',
+                  }}
+                />
+                <Marker position={operatorPosition} icon={DRONE_OPERATOR_ICON}>
+                  <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+                    <div className="drone-operator-tooltip">
+                      <strong>Drone Operator</strong>
+                      <div>Drone ID: {drone.droneId ?? drone.id}</div>
+                      {drone.mac && <div>MAC: {drone.mac}</div>}
+                      <div>
+                        Location: {drone.operatorLat!.toFixed(6)}, {drone.operatorLon!.toFixed(6)}
+                      </div>
+                    </div>
+                  </Tooltip>
+                </Marker>
+              </>
+            ) : null}
+            <Marker position={dronePosition} icon={createDroneIcon(drone)}>
+              <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+                <div className="drone-tooltip">
+                  <strong>Drone {drone.droneId ?? drone.id}</strong>
+                  {drone.mac && <div>MAC: {drone.mac}</div>}
+                  {drone.nodeId && <div>Detected by: {drone.nodeId}</div>}
+                  {drone.siteName || drone.siteId ? (
+                    <div>Site: {drone.siteName ?? drone.siteId}</div>
+                  ) : null}
+                  <div>
+                    Location: {drone.lat.toFixed(6)}, {drone.lon.toFixed(6)}
+                  </div>
+                  {typeof drone.altitude === 'number' && Number.isFinite(drone.altitude) ? (
+                    <div>Altitude: {drone.altitude.toFixed(1)} m</div>
+                  ) : null}
+                  {typeof drone.speed === 'number' && Number.isFinite(drone.speed) ? (
+                    <div>Speed: {drone.speed.toFixed(1)} m/s</div>
+                  ) : null}
+                  {typeof drone.rssi === 'number' && Number.isFinite(drone.rssi) ? (
+                    <div>RSSI: {drone.rssi} dBm</div>
+                  ) : null}
+                  {hasOperator && drone.operatorLat != null && drone.operatorLon != null ? (
+                    <div>
+                      Operator: {drone.operatorLat.toFixed(6)}, {drone.operatorLon.toFixed(6)}
+                    </div>
+                  ) : null}
+                  <div>Last seen: {new Date(drone.lastSeen).toLocaleTimeString()}</div>
                 </div>
-                <div>Last seen: {new Date(drone.lastSeen).toLocaleTimeString()}</div>
-              </div>
-            </Tooltip>
-          </Marker>
+              </Tooltip>
+            </Marker>
+          </Fragment>
         );
       })}
     </MapContainer>

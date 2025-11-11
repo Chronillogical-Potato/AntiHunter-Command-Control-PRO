@@ -5,11 +5,11 @@ import type { AlarmLevel, Drone, Geofence, Target } from '../api/types';
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
+import { useDroneStore } from '../stores/drone-store';
 import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
 import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
-import { useDroneStore } from '../stores/drone-store';
 
 const NOTIFICATION_CATEGORIES = new Set(['gps', 'status', 'console']);
 const DEVICE_LINE_REGEX =
@@ -86,8 +86,10 @@ export function SocketBridge() {
 
     const handleEvent = (payload: unknown) => {
       if (isDroneTelemetryEvent(payload)) {
+        const timestamp = payload.timestamp ?? new Date().toISOString();
         upsertDrone({
           id: payload.droneId,
+          droneId: payload.droneId,
           mac: payload.mac ?? null,
           nodeId: payload.nodeId ?? null,
           siteId: payload.siteId ?? null,
@@ -97,8 +99,47 @@ export function SocketBridge() {
           siteCity: payload.siteCity ?? null,
           lat: payload.lat,
           lon: payload.lon,
-          lastSeen: payload.timestamp ?? new Date().toISOString(),
+          altitude: payload.altitude ?? null,
+          speed: payload.speed ?? null,
+          operatorLat: payload.operatorLat ?? null,
+          operatorLon: payload.operatorLon ?? null,
+          rssi: payload.rssi ?? null,
+          lastSeen: timestamp,
         });
+
+        const macSegment = payload.mac ? ` MAC:${payload.mac}` : '';
+        const rssiSegment = payload.rssi != null ? ` RSSI:${payload.rssi}dBm` : '';
+        const altitudeSegment = payload.altitude != null ? ` ALT:${payload.altitude}m` : '';
+        const speedSegment = payload.speed != null ? ` SPD:${payload.speed}m/s` : '';
+        const operatorSegment =
+          payload.operatorLat != null && payload.operatorLon != null
+            ? ` OP:${payload.operatorLat.toFixed(6)},${payload.operatorLon.toFixed(6)}`
+            : '';
+        const viaSegment = payload.nodeId ? ` via ${payload.nodeId}` : '';
+        const message = `Drone ${payload.droneId}${viaSegment} GPS:${payload.lat.toFixed(6)},${payload.lon.toFixed(
+          6,
+        )}${altitudeSegment}${speedSegment}${rssiSegment}${operatorSegment}${macSegment}`;
+
+        addEntry({
+          message,
+          level: 'alert',
+          source: 'drone',
+          timestamp,
+          siteId: payload.siteId ?? undefined,
+        });
+
+        triggerAlert({
+          nodeId: payload.nodeId ?? payload.droneId,
+          siteId: payload.siteId ?? undefined,
+          category: 'drone',
+          level: 'ALERT',
+          message,
+          lat: payload.lat,
+          lon: payload.lon,
+          timestamp,
+        });
+
+        play('ALERT');
         return;
       }
 
@@ -318,9 +359,6 @@ function isNodeDiffPayload(payload: unknown): payload is NodeDiffPayload {
 type DroneTelemetryEventPayload = {
   type: 'drone.telemetry';
   droneId: string;
-  lat: number;
-  lon: number;
-  timestamp?: string;
   mac?: string | null;
   nodeId?: string | null;
   siteId?: string | null;
@@ -328,6 +366,14 @@ type DroneTelemetryEventPayload = {
   siteColor?: string | null;
   siteCountry?: string | null;
   siteCity?: string | null;
+  lat: number;
+  lon: number;
+  altitude?: number | null;
+  speed?: number | null;
+  operatorLat?: number | null;
+  operatorLon?: number | null;
+  rssi?: number | null;
+  timestamp?: string;
 };
 
 type DroneRemoveEventPayload = {
