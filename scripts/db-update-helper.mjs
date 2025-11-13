@@ -86,11 +86,23 @@ function analyzeStatus(output) {
 }
 
 async function getStatus() {
-  const result = await runPrisma(['migrate', 'status', '--schema', prismaSchemaPath], { capture: true });
-  return {
-    raw: result.stdout + result.stderr,
-    state: analyzeStatus(result.stdout + result.stderr),
-  };
+  try {
+    const result = await runPrisma(['migrate', 'status', '--schema', prismaSchemaPath], {
+      capture: true,
+    });
+    const output = (result.stdout ?? '') + (result.stderr ?? '');
+    return {
+      raw: output,
+      state: analyzeStatus(output),
+    };
+  } catch (error) {
+    const output = [error.stdout, error.stderr, error.message].filter(Boolean).join('\n');
+    const state = analyzeStatus(output);
+    if (state === 'pending' || state === 'needsBaseline') {
+      return { raw: output, state };
+    }
+    throw error;
+  }
 }
 
 async function applyMigrations() {
