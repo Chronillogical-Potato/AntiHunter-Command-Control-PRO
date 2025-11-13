@@ -17,26 +17,28 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Feature Highlights](#feature-highlights)
-3. [UI Modules at a Glance](#ui-modules-at-a-glance)
-4. [Architecture](#architecture)
-5. [Security & Hardening](#security--hardening)
-6. [Repository Layout](#repository-layout)
-7. [Prerequisites](#prerequisites)
-8. [Platform Setup](#platform-setup)
-9. [Installation](#installation)
-10. [Configuration](#configuration)
-11. [Database & Migrations](#database--migrations)
-12. [Running the Stack](#running-the-stack)
+2. [Core Features](#core-features)
+   - [Key Highlights](#key-highlights)
+   - [Drone Awareness & FAA Enhancements](#drone-awareness--faa-enhancements)
+   - [UI Modules at a Glance](#ui-modules-at-a-glance)
+3. [Architecture](#architecture)
+4. [Security & Hardening](#security--hardening)
+5. [Repository Layout](#repository-layout)
+6. [Prerequisites](#prerequisites)
+7. [Platform Setup](#platform-setup)
+8. [Installation](#installation)
+9. [Configuration](#configuration)
+10. [Database & Migrations](#database--migrations)
+11. [Running the Stack](#running-the-stack)
     - [Updating an Existing Deployment](#updating-an-existing-deployment)
-13. [Running with Docker](#running-with-docker)
-14. [Building for Production](#building-for-production)
-15. [Production Deployment](#production-deployment)
-16. [Serial Hardware & Meshtastic Sniffer](#serial-hardware--meshtastic-sniffer)
-17. [Useful Scripts](#useful-scripts)
-18. [Operations & Maintenance](#operations--maintenance)
-19. [Troubleshooting](#troubleshooting)
-20. [Legal Disclaimer](#legal-disclaimer)
+12. [Running with Docker](#running-with-docker)
+13. [Building for Production](#building-for-production)
+14. [Production Deployment](#production-deployment)
+15. [Serial Hardware & Meshtastic Sniffer](#serial-hardware--meshtastic-sniffer)
+16. [Useful Scripts](#useful-scripts)
+17. [Operations & Maintenance](#operations--maintenance)
+18. [Troubleshooting](#troubleshooting)
+19. [Legal Disclaimer](#legal-disclaimer)
 
 ---
 
@@ -44,7 +46,9 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 
 AntiHunter Command & Control PRO turns raw radio/mesh telemetry into actionable situational awareness. The application keeps track of nodes, devices, and geofences, allows operators to launch complex detection sequences, and streams alerts through a tone-aware alarm engine. Everything is multi-site aware and backed by Prisma/PostgreSQL for durability.
 
-## Feature Highlights
+## Core Features
+
+### Key Highlights
 
 - **Real-time node tracking:** live map, trails/history, dynamic radius pulses, and geofence focus.
 
@@ -66,47 +70,38 @@ AntiHunter Command & Control PRO turns raw radio/mesh telemetry into actionable 
 
 - **Operations controls:** API and UI actions to clear nodes, manage coverage, and import/export settings.
 - **Security posture:** built-in rate limiting, honeypot+submit heuristics, MFA, and an adaptive firewall with geo/IP policies, auto-bans, and detailed auditing
-## Drone Awareness & FAA Enhancements
+### Drone Awareness & FAA Enhancements
 
-- **Drone Tracker & Inventory drawer:** automatically opens when telemetry arrives, showing each drone/operator pair on a single row with headings, FAA metadata, signal strength, map focus buttons, and status controls (Friendly / Neutral / Hostile / Unknown). Hostile rows pulsate red while Unknown defaults to blue to match map markers. Clicking any marker reopens the drawer instantly.
-- **Inventory mirroring:** set DRONES_RECORD_INVENTORY=true to persist detections automatically. Clearing the Inventory panel now flushes in-memory drones/operators so markers disappear until rediscovered.
-- **FAA registry integration:** upload the FAA ReleasableAircraft.zip (or MASTER.txt) via **Config ? FAA Registry** for offline lookups, and keep FAA_ONLINE_LOOKUP_ENABLED=true when internet is available to hit https://uasdoc.faa.gov/listDocs/{RID}. Lookups obey FAA_ONLINE_CACHE_TTL_MINUTES/FAA_ONLINE_LOOKUP_COOLDOWN_MINUTES so ingest stays real-time.
-- **Drone geofence alarms:** geofence evaluation now includes airborne tracks. Breaches fire the dedicated **Drone Geofence Breach** alarm slot (with its own audio) and pulse the affected polygon while highlighting the culprit.
-- **Flight trails & status colors:** drones draw historical trails plus heading vectors, and both drones/operators inherit the status palette (Friendly, Neutral, Hostile, Unknown). MQTT federation and websocket events include the status + FAA fields so every client stays synchronised.
-- **Simulator-driven testing:** scripts/drone-simulator.cjs emits realistic mesh frames (node bootstrap + drone/operator telemetry) every 5 seconds, enabling end-to-end testing—FAA enrichment, alarms, inventory—without field hardware. See [Useful Scripts](#useful-scripts).
-
-## Drone Awareness & FAA Enhancements
-
-### Drone Tracker & Inventory Drawer
+#### Drone Tracker & Inventory Drawer
 
 - The live map now spawns a **Drone Tracker & Inventory** drawer whenever a telemetry frame arrives. The drawer lists every tracked drone/operator pair on a single line, shows the current heading (cardinal string), operator details, FAA metadata, and exposes map focus buttons for each entry.
 - Clicking a drone or operator on the map re-opens the drawer if it was dismissed. Hostile rows pulse red, neutral/friendly rows pick up their site colors, and **Unknown** defaults to the new blue palette so status is immediately obvious.
 - Status changes (Friendly / Neutral / Hostile) are committed through `PATCH /api/drones/:id/status` and reflected everywhere (map markers, drawer rows, Socket.IO events, MQTT federation). The UI guards against race conditions so you can keep toggling a status even while telemetry continues to stream.
 - Set `DRONES_RECORD_INVENTORY=true` (see [Configuration](#configuration)) to automatically mirror every drone detection into the Inventory module; clearing inventory now flushes the drone cache and removes map markers until fresh telemetry arrives.
 
-### FAA Registry Integration
+#### FAA Registry Integration
 
-- The **Config ? FAA Registry** card can download and parse the public `ReleasableAircraft.zip` archive from the FAA (`https://registry.faa.gov/database/ReleasableAircraft.zip`). Uploading the ZIP (or just `MASTER.txt`) populates the local lookup cache.
+- The **Config -> FAA Registry** card can download and parse the public `ReleasableAircraft.zip` archive from the FAA (`https://registry.faa.gov/database/ReleasableAircraft.zip`). Uploading the ZIP (or just `MASTER.txt`) populates the local lookup cache.
 - When the Command Center has internet access, it also performs on-demand lookups using the uasdoc API (`https://uasdoc.faa.gov/listDocs/{RID}`) through a throttled background queue. Results are cached for `FAA_ONLINE_CACHE_TTL_MINUTES` (default 60) and each RID/MAC lookup is rate-limited via `FAA_ONLINE_LOOKUP_COOLDOWN_MINUTES` (default 10).
 - FAA matches update the drawer, map tooltips, and websocket/MQTT payloads automatically, so operators always see the craft and registrant names even after a restart.
 
-### Drone Geofence Breach Alarms
+#### Drone Geofence Breach Alarms
 
-- Geofences now evaluate drone positions in addition to ground nodes. Tripping a perimeter raises a dedicated **Drone Geofence Breach** alarm level with its own sound slot on the **Config ? Alarms** page.
+- Geofences now evaluate drone positions in addition to ground nodes. Tripping a perimeter raises a dedicated **Drone Geofence Breach** alarm level with its own sound slot on the **Config -> Alarms** page.
 - While a breach is active the impacted geofence keeps its configured color but pulsates to draw attention, and the Drone Tracker drawer highlights the offending aircraft.
 
-### Flight Trails, Operators, and Persistence
+#### Flight Trails, Operators, and Persistence
 
 - Each drone and operator pin now uses the same status-driven palette, includes heading vectors, and draws a historical trail so you can reconstruct the approach path.
 - The backend keeps only one copy of each drone snapshot in memory and debounces writes to the database, preventing the persistence flood that previously occurred when running simulators or high-rate feeds.
 - MQTT federation has been updated to publish only local drones and to retry failed subscriptions with exponential backoff, ensuring remote sites receive telemetry even across flaky links.
 
-### Simulator-Driven Testing
+#### Simulator-Driven Testing
 
-- `scripts/drone-simulator.cjs` posts fully formatted mesh lines to `/api/serial/simulate`, bootstraps a node, and streams drone telemetry (drone + operator positions) every 5 s. Supply an ADMIN JWT via `--token` to drive end-to-end tests without field hardware—see [Useful Scripts](#useful-scripts) for usage.
+- `scripts/drone-simulator.cjs` posts fully formatted mesh lines to `/api/serial/simulate`, bootstraps a node, and streams drone telemetry (drone + operator positions) every 5 s. Supply an ADMIN JWT via `--token` to drive end-to-end tests without field hardwareâ€”see [Useful Scripts](#useful-scripts) for usage.
 - The simulator supports real RID/MAC lists, adjustable speeds, and node/operator geometry. Because it mirrors the on-air payload format, every downstream parser (inventory, FAA lookup, alarms, MQTT) exercises the exact same code path you get from the live mesh.
 
-## UI Modules at a Glance
+### UI Modules at a Glance
 
 Each primary view ships with rich operator context.
 
@@ -191,7 +186,7 @@ Each deployment runs its site-local C2 server and still functions if federation 
 
 | Surface             | Protocols & safeguards                                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Device ingest**   | Serial (USB/UART) ? Meshtastic JSON/CBOR frames; optional signed frame validation; port selection locked behind RBAC.                      |
+| **Device ingest**   | Serial (USB/UART) -> Meshtastic JSON/CBOR frames; optional signed frame validation; port selection locked behind RBAC.                      |
 | **C2 API**          | HTTPS (configurable TLS certificates) + JWT auth; REST/WS share the same bearer token; role-aware guards on every controller.              |
 | **Federation**      | MQTT (mqtt://... mqtts://, ws://... wss://) with per-site client IDs, QoS 1, optional mutual TLS (CA/cert/key). Topics namespaced `ahcc/`. |
 | **Operator UI**     | HTTPS SPA; per-user preferences (theme, time format) stored server-side; alarm sounds served via signed URLs.                              |
@@ -219,14 +214,14 @@ Multi-site deployments share state through a single broker. All topics live unde
 | `ahcc/<siteId>/targets/upsert`   | publish + subscribe | Target lifecycle payloads (status, notes, tags, location, device metadata).                                                             |
 | `ahcc/<siteId>/targets/delete`   | publish + subscribe | `{ targetId }` payload notifying a target deletion.                                                                                     |
 | `ahcc/<siteId>/commands/events`  | publish + subscribe | Command lifecycle messages (`command.event`) so consoles stay aligned.                                                                  |
-| `ahcc/<siteId>/commands/request` | publish + subscribe | Remote command execution request for another site?s serial worker.                                                                      |
+| `ahcc/<siteId>/commands/request` | publish + subscribe | Remote command execution request for another site's serial worker.                                                                      |
 | `ahcc/<siteId>/events/<type>`    | publish + subscribe | High-value broadcasts (`event.alert`, `event.target`, `command.ack`, `command.result`). `<type>` is sanitized (slashes/dots -> dashes). |
 
 All topics use QoS 1 by default (configurable per site). Publishers short-circuit when the `originSiteId` matches their own so messages are not looped. If additional replication streams are added, follow the `ahcc/<site>/<resource>/<action>` convention.
 
 #### MQTT Configuration Cheat Sheet
 
-Configure federation per site in **Config ? MQTT** (or directly via the `MqttConfig` table). Key fields:
+Configure federation per site in **Config -> MQTT** (or directly via the `MqttConfig` table). Key fields:
 
 | Field                                      | Purpose                                                           | Notes                                                                                                 |
 | ------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -244,7 +239,7 @@ Set `SITE_ID` to the local site identifier (defaults to `default`). Each Command
 
 ## Security & Hardening
 
-AntiHunter ships with layered defenses—RBAC, MFA, rate limiting, and a programmable firewall. This section groups every capability and explains how to tune it.
+AntiHunter ships with layered defenses: RBAC, MFA, rate limiting, and a programmable firewall. This section groups every capability and explains how to tune it.
 
 ### Authentication & Session Controls
 
@@ -268,7 +263,7 @@ AntiHunter ships with layered defenses—RBAC, MFA, rate limiting, and a programma
 
 - `RateLimitGuard` protects every auth endpoint with both burst and sustained windows.
 - Login forms include a honeypot field plus a minimum submit timer (`AUTH_MIN_SUBMIT_MS`).
-- When a limit trips, the firewall’s auth-failure counter auto-bans the offending IP while returning a neutral message to the UI.
+- When a limit trips, the firewall's auth-failure counter auto-bans the offending IP while returning a neutral message to the UI.
 
 | Rule / Env var                                                | Default           | Notes                                                                                        |
 | ------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------- |
@@ -312,14 +307,14 @@ The `/config/firewall` API (and Config UI) manages allow/deny policies, geo filt
 
 ### Transport & Secrets
 
-Keep certificates, mail credentials, and site identifiers in environment variables—never in source control. When terminating TLS inside NestJS, provide PEM paths via the variables below.
+Keep certificates, mail credentials, and site identifiers in environment variablesâ€”never in source control. When terminating TLS inside NestJS, provide PEM paths via the variables below.
 
 | Setting                                                                        | Default   | Notes                                                                 |
 | ------------------------------------------------------------------------------ | --------- | --------------------------------------------------------------------- |
 | `HTTPS_ENABLED`                                                                | auto      | Forces the backend to expect TLS; otherwise inferred from cert paths. |
 | `HTTPS_KEY_PATH` / `HTTPS_CERT_PATH` / `HTTPS_CA_PATH` / `HTTPS_PASSPHRASE`    | _(unset)_ | PEM bundle + optional passphrase for in-process TLS.                  |
 | `HTTP_PREFIX`                                                                  | `api`     | Namespace for REST routes (useful when reverse proxying).             |
-| `HTTP_REDIRECT_PORT`                                                           | _(unset)_ | Enables HTTP?HTTPS redirects when running dual listeners.             |
+| `HTTP_REDIRECT_PORT`                                                           | _(unset)_ | Enables HTTP->HTTPS redirects when running dual listeners.             |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE`, `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM` | _(unset)_ | SMTP settings for invite/reset emails. Require STARTTLS/SMTPS.        |
 | `SITE_ID`                                                                      | `default` | Tag firewall logs, MQTT topics, and exports per site for auditing.    |
 
@@ -327,15 +322,15 @@ Keep certificates, mail credentials, and site identifiers in environment variabl
 
 ### Command Audit & Attestation
 
-- Every `CommandLog` row stores the originating IP, user-agent, and optional client fingerprint for “who sent this command?” investigations.
+- Every `CommandLog` row stores the originating IP, user-agent, and optional client fingerprint for "who sent this command?" investigations.
 - REST and WebSocket command paths automatically pass metadata; remote MQTT fan-out preserves origin site IDs for cross-site attestations.
 - Config updates (App + Firewall) are persisted in `AuditLog` with before/after snapshots to provide tamper-evident history.
 
 ### Hardening Checklist
 
-- **Authentication throttling** – login, legal acceptance, and 2FA routes now run through a Redis-backed `RateLimitGuard` that enforces both burst and sustained limits, tripping firewall escalation for abusive clients.
-- **Bot heuristics on login** – UI forms include a honeypot field plus a minimum submit time (600?ms) so scripted attacks are rejected server-side without inconveniencing operators.
-- **Neutral firewall messaging** – when abuse is detected, the API surfaces neutral responses while logging detailed context internally, preventing the login page from advertising firewall decisions.
+- **Authentication throttling** â€” login, legal acceptance, and 2FA routes now run through a Redis-backed `RateLimitGuard` that enforces both burst and sustained limits, tripping firewall escalation for abusive clients.
+- **Bot heuristics on login** â€” UI forms include a honeypot field plus a minimum submit time (600 ms) so scripted attacks are rejected server-side without inconveniencing operators.
+- **Neutral firewall messaging** â€” when abuse is detected, the API surfaces neutral responses while logging detailed context internally, preventing the login page from advertising firewall decisions.
 - Enforce HTTPS everywhere with modern TLS ciphers (consider terminating behind an ALB / nginx reverse proxy with OCSP stapling).
 - Rotate JWT signing secrets and database credentials regularly; store them in a vault or managed secret store.
 - Enable 2FA for all privileged users and keep recovery codes in offline storage.
@@ -458,13 +453,13 @@ brew services start postgresql
    pnpm --filter @command-center/frontend dev
    ```
 
-6. **Configure serial** ? list ports, then set Config ? Serial
+6. **Configure serial** â€“ list ports, then set Config -> Serial
 
    ```bash
    pnpm --filter @command-center/backend exec node -e "const { SerialPortStream } = require('@serialport/stream'); SerialPortStream.list().then(list => console.log(list));"
    ```
 
-7. **Enable MQTT federation** in Config ? MQTT (set broker URL/credentials and enable replication).
+7. **Enable MQTT federation** in Config -> MQTT (set broker URL/credentials and enable replication).
 
 8. **Verify runtime site**
    ```bash
@@ -577,17 +572,17 @@ Frontend currently consumes backend settings via API, so no extra `.env` is need
 ### Drone & FAA configuration quick steps
 
 1. **Mirror detections into inventory:** add `DRONES_RECORD_INVENTORY=true` to `apps/backend/.env` (or set it via your secrets manager) and restart the backend. Every drone telemetry event that includes a MAC + node id is now persisted in the Inventory module in addition to the live tracker.
-2. **Seed FAA data offline:** download [ReleasableAircraft.zip](https://registry.faa.gov/database/ReleasableAircraft.zip) from the FAA, then open **Config ? FAA Registry** in the UI and click **Upload ZIP** (or upload `MASTER.txt`) to populate the local cache. The parser runs server-side and the FAA card shows ingest progress plus the number of cached aircraft.
+2. **Seed FAA data offline:** download [ReleasableAircraft.zip](https://registry.faa.gov/database/ReleasableAircraft.zip) from the FAA, then open **Config -> FAA Registry** in the UI and click **Upload ZIP** (or upload `MASTER.txt`) to populate the local cache. The parser runs server-side and the FAA card shows ingest progress plus the number of cached aircraft.
 3. **Enable/disable online lookups:** the same FAA card exposes a **Online Lookup** toggle backed by `FAA_ONLINE_LOOKUP_ENABLED`. Leave it on when the Command Center has outbound internet access; turn it off for fully air-gapped deployments. Online lookups hit `https://uasdoc.faa.gov/listDocs/{RID}` using the cooldown/TTL described by the env vars above.
-4. **Customize drone geofence alarms:** browse to **Config ? Alarms**, scroll to the new **Drone Geofence Breach** slot, upload a custom tone if desired, and test it with the preview button. The alarm fires whenever a tracked drone crosses a geofence boundary.
+4. **Customize drone geofence alarms:** browse to **Config -> Alarms**, scroll to the new **Drone Geofence Breach** slot, upload a custom tone if desired, and test it with the preview button. The alarm fires whenever a tracked drone crosses a geofence boundary.
 
 ### Environment file layout
 
 The backend resolves `process.env` in this order:
 
-1. **Repository root `.env`** – global defaults shared by the workspace (useful for local development).
-2. **`apps/backend/.env`** – overrides that apply only to the NestJS service (preferred place for backend secrets when running `pnpm dev`).
-3. **`apps/backend/prisma/.env`** – read exclusively by Prisma CLI utilities (migrations, `prisma studio`, seed scripts). This file normally only contains `DATABASE_URL` so migrations can run without loading the full backend environment.
+1. **Repository root `.env`** â€“ global defaults shared by the workspace (useful for local development).
+2. **`apps/backend/.env`** â€“ overrides that apply only to the NestJS service (preferred place for backend secrets when running `pnpm dev`).
+3. **`apps/backend/prisma/.env`** â€“ read exclusively by Prisma CLI utilities (migrations, `prisma studio`, seed scripts). This file normally only contains `DATABASE_URL` so migrations can run without loading the full backend environment.
 
 The files are optional; supply whichever ones make sense for your deployment model (for Docker/Kubernetes you can mount an external env file instead). When values are duplicated, the later file in the list wins.
 
@@ -595,8 +590,8 @@ The files are optional; supply whichever ones make sense for your deployment mod
 
 Each Command Center installation owns a single local LoRa gateway, so the serial stack now persists **one global configuration** (record id `serial`) regardless of how many sites you manage through federation.
 
-- On first access (`GET /serial/config`), the backend seeds that global record with any `SERIAL_*` values present in the environment (e.g., `SERIAL_DEVICE`, `SERIAL_BAUD`, `SERIAL_DELIMITER`, `SERIAL_RECONNECT_BASE_MS`, etc.). The **Config ? Serial** card immediately reflects those defaults so operators can tweak them without touching `.env`.
-- Subsequent edits through the UI/API write directly to the database and override the env defaults. Environment variables are only used as bootstrap values—they will not overwrite saved settings on restart.
+- On first access (`GET /serial/config`), the backend seeds that global record with any `SERIAL_*` values present in the environment (e.g., `SERIAL_DEVICE`, `SERIAL_BAUD`, `SERIAL_DELIMITER`, `SERIAL_RECONNECT_BASE_MS`, etc.). The **Config -> Serial** card immediately reflects those defaults so operators can tweak them without touching `.env`.
+- Subsequent edits through the UI/API write directly to the database and override the env defaults. Environment variables are only used as bootstrap valuesâ€”they will not overwrite saved settings on restart.
 - Changing the env defaults later? Use the UI/API (or delete the lone `SerialConfig` row) to reapply them. `SITE_ID` still labels events for federation, but it no longer influences serial persistence.
 - The Serial card also shows a **Detected Ports** dropdown (populated from `GET /serial/ports`) and a **Reset to defaults** button (`POST /serial/config/reset`). Use them to quickly switch USB devices or re-seed from the current env without touching the database manually.
 
@@ -608,7 +603,7 @@ Each Command Center installation owns a single local LoRa gateway, so the serial
    TWO_FACTOR_ISSUER="AntiHunter Command Center"
    ```
    Restart the backend after updating the file.
-2. Users can now browse to **Account ? Two-Factor Authentication**, click **Enable Two-Factor**, scan the QR code with Google Authenticator (or any TOTP app), submit the current code, and download/store the generated recovery codes.
+2. Users can now browse to **Account -> Two-Factor Authentication**, click **Enable Two-Factor**, scan the QR code with Google Authenticator (or any TOTP app), submit the current code, and download/store the generated recovery codes.
 3. Administrators can regenerate recovery codes or disable 2FA from the same panel. Temporary login tokens for 2FA challenges expire after `TWO_FACTOR_TOKEN_EXPIRY` (default 10 minutes).
 
 ### Enabling HTTPS (optional)
@@ -643,7 +638,7 @@ Each Command Center installation owns a single local LoRa gateway, so the serial
 3. Restart the backend (`pnpm --filter @command-center/backend dev` or your process manager). The server logs `"[https] HTTPS enabled using provided certificates."` when TLS is active.
 4. Update `APP_URL` and any reverse proxies to reference the `https://` scheme.
 5. When serving the frontend from a separate origin (e.g., static CDN or Vite dev server), set `VITE_BACKEND_URL=https://your-backend-host:port` before building so API calls and the Socket.IO client use HTTPS/WSS automatically.
-6. Verify the WebSocket upgrade in browser devtools under **Network ? WS**; the scheme should be `wss://`.
+6. Verify the WebSocket upgrade in browser devtools under **Network -> WS**; the scheme should be `wss://`.
 
 ### TAK / Cursor-on-Target Bridge
 
@@ -720,7 +715,7 @@ The script provides options to:
 5. Run `prisma migrate reset --force --skip-seed` (drops the schema; only use when you intend to rebuild).
 6. Drop and recreate the entire `public` schema (hard reset). Follow with option 4 to reapply migrations.
 
-Each action logs the exact `pnpm prisma …` command executed so you can reproduce it manually later. Use this helper any time a production upgrade leaves the `_prisma_migrations` table out of sync with the actual schema.
+Each action logs the exact `pnpm prisma ...` command executed so you can reproduce it manually later. Use this helper any time a production upgrade leaves the `_prisma_migrations` table out of sync with the actual schema.
 
 ## Running the Stack
 
@@ -1130,7 +1125,7 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 
 ### Drone simulator usage
 
-1. **Grab an ADMIN JWT** via `pnpm --filter @command-center/backend dev` ? login at `http://localhost:3000/api/auth/login` (or use the default seed credentials) and copy the `accessToken` from the response.
+1. **Grab an ADMIN JWT** via `pnpm --filter @command-center/backend dev` â€“ log in at `http://localhost:3000/api/auth/login` (or use the default seed credentials) and copy the `accessToken` from the response.
 2. **Run the simulator** from the repo root:
 
    ```bash
@@ -1144,7 +1139,7 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
      --iterations 60
    ```
 
-   Defaults: 5 s message interval, 50–70?km/h approach speed, operator ~450 m from the node, drone spawning ~1.1 km out. Override geometry with `--start-distance`, `--operator-radius`, or provide comma-separated `--drone-ids/--macs` for quick swaps. Every run seeds node bootstrap lines, emits the drone/operator telemetry, and exercises the parser, FAA enrichment, alarms, and inventory ingestion without any hardware.
+   Defaults: 5 s message interval, 50-70 km/h approach speed, operator ~450 m from the node, drone spawning ~1.1 km out. Override geometry with `--start-distance`, `--operator-radius`, or provide comma-separated `--drone-ids/--macs` for quick swaps. Every run seeds node bootstrap lines, emits the drone/operator telemetry, and exercises the parser, FAA enrichment, alarms, and inventory ingestion without any hardware.
 
 > **Docker note.** Production containers only install runtime dependencies, so the first time you seed from inside the backend container you must install the backend workspace dev deps and then run the seed:
 >
@@ -1195,7 +1190,7 @@ When preparing a gateway node, open the Meshtastic device settings and enable **
 
 ## Legal Disclaimer
 
-AntiHunter Command & Control PRO (?Software?) is distributed for **lawful, authorized defensive use only**. You may operate this project solely on infrastructure, networks, devices, radio spectrum, and datasets that you own or for which you hold explicit, written permission to assess. By downloading, compiling, or executing the Software you agree to the following conditions:
+AntiHunter Command & Control PRO ("Software") is distributed for **lawful, authorized defensive use only**. You may operate this project solely on infrastructure, networks, devices, radio spectrum, and datasets that you own or for which you hold explicit, written permission to assess. By downloading, compiling, or executing the Software you agree to the following conditions:
 
 - **Authorization & intent.** Use is limited to security research, blue-team training, regulatory-compliant monitoring, or other defensive activities. Offensive operations, targeted surveillance, harassment, or tracking of individuals without their informed consent are strictly prohibited.
 - **Telecommunications compliance.** You are responsible for abiding by every jurisdictional regulation governing radio frequency use (e.g., FCC/CE/Ofcom rules, LoRa/ISM duty-cycle limits, licensing conditions) and any import/export controls that apply to cryptography, telemetry, or spectrum-monitoring tools.
