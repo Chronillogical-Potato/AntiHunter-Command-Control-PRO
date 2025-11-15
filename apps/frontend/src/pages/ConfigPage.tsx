@@ -2058,7 +2058,7 @@ export function ConfigPage() {
                           {isSelected ? <span className="theme-preset-badge">Active</span> : null}
                         </div>
                         <div className="theme-preset-card__swatches">
-                          <div style={{ background: preset.palette.accent }} />
+                          <div style={{ background: preset.palette.accent.dark.background }} />
                           <div style={{ background: preset.palette.light.background }} />
                           <div style={{ background: preset.palette.dark.background }} />
                         </div>
