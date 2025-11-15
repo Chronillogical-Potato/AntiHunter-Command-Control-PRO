@@ -80,6 +80,9 @@ export default function App() {
       applyAlertColors(DEFAULT_ALERT_COLORS);
       const storedPreset = getStoredThemePreset();
       const fallbackPreset: ThemePresetId = storedPreset ?? 'classic';
+      if (typeof document !== 'undefined') {
+        document.body.setAttribute('data-theme-preset', fallbackPreset);
+      }
       const palette = resolveThemePalette(fallbackPreset);
       applyThemePalette(palette);
       return;
@@ -89,6 +92,9 @@ export default function App() {
       : { ...DEFAULT_ALERT_COLORS };
     const userAlertOverrides = user?.preferences?.alertColors ?? null;
     const presetId = user?.preferences?.themePreset ?? 'classic';
+    if (typeof document !== 'undefined') {
+      document.body.setAttribute('data-theme-preset', presetId);
+    }
     applyAlertColors(applyAlertOverrides(baseAlertColors, userAlertOverrides));
     const resolvedPalette = resolveThemePalette(presetId, appSettingsQuery.data);
     applyThemePalette(resolvedPalette);

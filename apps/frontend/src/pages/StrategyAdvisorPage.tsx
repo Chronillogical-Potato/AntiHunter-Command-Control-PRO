@@ -1643,7 +1643,7 @@ ${nodesKml}
   };
 
   return (
-    <section className="panel">
+    <section className="panel strategy-page">
       <header className="panel__header">
         <div>
           <h1 className="panel__title">Strategy Advisor (Experimental)</h1>
