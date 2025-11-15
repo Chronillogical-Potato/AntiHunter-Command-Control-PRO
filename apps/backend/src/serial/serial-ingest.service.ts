@@ -274,13 +274,14 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           const { temperatureC, temperatureF } = this.extractAlertTemperatures(event);
           const temperatureProvided = temperatureC !== undefined || temperatureF !== undefined;
           const temperatureUpdatedAt = temperatureProvided ? timestamp : undefined;
+          const sanitizedMessage = sanitizeMessage(event.message);
           this.gateway.emitEvent({
             type: 'event.alert',
             timestamp: timestamp.toISOString(),
             level: event.level,
             category: event.category,
             nodeId: event.nodeId,
-            message: event.message,
+            message: sanitizedMessage,
             lat,
             lon,
             data: event.data,
@@ -323,7 +324,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             nodeId: event.nodeId,
             lat,
             lon,
-            message: event.message,
+            message: sanitizedMessage,
             category: event.category,
             siteId,
             timestamp,
@@ -584,5 +585,12 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
       return withTs.ts;
     }
     return undefined;
+  }
+
+  private sanitizeMessage(value?: string | null): string | undefined {
+    if (!value) {
+      return value ?? undefined;
+    }
+    return value.replace(/\/?undefinedf\b/gi, '').trim();
   }
 }

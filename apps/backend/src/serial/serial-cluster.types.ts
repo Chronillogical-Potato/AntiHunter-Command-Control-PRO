@@ -3,7 +3,13 @@ import { SerialParseResult } from './serial.types';
 
 export type SerialClusterRole = 'leader' | 'replica' | 'standalone';
 
-export type SerialRpcAction = 'connect' | 'disconnect' | 'listPorts' | 'simulate' | 'getState';
+export type SerialRpcAction =
+  | 'connect'
+  | 'disconnect'
+  | 'listPorts'
+  | 'simulate'
+  | 'getState'
+  | 'queueCommand';
 
 export type SerializedSerialParseResult = Omit<
   SerialParseResult,

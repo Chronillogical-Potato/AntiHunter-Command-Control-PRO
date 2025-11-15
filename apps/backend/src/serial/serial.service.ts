@@ -508,6 +508,14 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   async queueCommand(request: QueueCommandRequest): Promise<void> {
+    if (this.shouldUseRpc()) {
+      await this.requestRpc('queueCommand', request);
+      return;
+    }
+    await this.queueCommandInternal(request);
+  }
+
+  private async queueCommandInternal(request: QueueCommandRequest): Promise<void> {
     const built = buildCommandPayload({
       target: request.target,
       name: request.name,
@@ -1067,6 +1075,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         case 'getState':
           result = this.buildState();
           break;
+        case 'queueCommand':
+          await this.queueCommandInternal(payload as QueueCommandRequest);
+          result = true;
+          break;
         default:
           throw new Error(`Unsupported serial RPC action: ${action}`);
       }
@@ -1151,23 +1163,32 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   private processIncomingLine(line: string, source: 'serial' | 'simulation'): void {
+    const sanitized = sanitizeLine(line);
+    if (!sanitized) {
+      return;
+    }
     this.logger.debug(
-      { line },
+      { line: sanitized },
       source === 'serial' ? 'Serial line received' : 'Simulated serial line',
     );
-    this.incoming$.next(line);
+    this.incoming$.next(sanitized);
     try {
-      const parsed = this.protocolParser.parseLine(line);
+      const parsed = this.protocolParser.parseLine(sanitized);
       this.logger.debug({ parsed }, 'Parsed serial events');
       parsed.forEach((event) => this.parsed$.next(event));
       this.broadcastParsedEvents(parsed);
     } catch (err) {
-      this.logger.error(`Failed to parse ${source} line: ${line}`, err as Error);
-      this.parsed$.next({ kind: 'raw', raw: line });
+      this.logger.error(`Failed to parse ${source} line: ${sanitized}`, err as Error);
+      this.parsed$.next({ kind: 'raw', raw: sanitized });
     }
   }
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sanitizeLine(value: string): string {
+  // Remove placeholder Fahrenheit fragments like "/undefinedF" or "undefinedF".
+  return value.replace(/\/?undefinedf\b/gi, '').trim();
 }
