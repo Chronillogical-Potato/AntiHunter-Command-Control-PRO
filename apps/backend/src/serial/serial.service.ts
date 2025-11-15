@@ -1178,6 +1178,13 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       parsed.forEach((event) => this.parsed$.next(event));
       this.broadcastParsedEvents(parsed);
     } catch (err) {
+      const fallback = parseFallbackTelemetry(sanitized);
+      if (fallback) {
+        this.logger.debug({ parsed: fallback }, 'Parsed serial events (fallback)');
+        fallback.forEach((event) => this.parsed$.next(event));
+        this.broadcastParsedEvents(fallback);
+        return;
+      }
       this.logger.error(`Failed to parse ${source} line: ${sanitized}`, err as Error);
       this.parsed$.next({ kind: 'raw', raw: sanitized });
     }
@@ -1191,4 +1198,28 @@ function delay(ms: number): Promise<void> {
 function sanitizeLine(value: string): string {
   // Remove placeholder Fahrenheit fragments like "/undefinedF" or "undefinedF".
   return value.replace(/\/?undefinedf\b/gi, '').trim();
+}
+
+function parseFallbackTelemetry(line: string): SerialParseResult[] | null {
+  const telemetryRegex =
+    /Node\s+(?<id>[A-Za-z0-9_.:-]+)\s+telemetry update.*\((?<lat>-?\d+(?:\.\d+)?),\s*(?<lon>-?\d+(?:\.\d+)?)\)/i;
+  const match = telemetryRegex.exec(line);
+  if (!match?.groups) {
+    return null;
+  }
+  const lat = Number(match.groups.lat);
+  const lon = Number(match.groups.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+  return [
+    {
+      kind: 'node-telemetry',
+      nodeId: match.groups.id,
+      lat,
+      lon,
+      lastMessage: line,
+      raw: line,
+    },
+  ];
 }
