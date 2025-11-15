@@ -1,3 +1,4 @@
+import classNames from 'clsx';
 import type { LatLngExpression, LatLngTuple, Map as LeafletMap, TileLayerOptions } from 'leaflet';
 import { DivIcon, divIcon } from 'leaflet';
 import * as L from 'leaflet';
@@ -16,9 +17,9 @@ import {
 } from 'react-leaflet';
 import 'leaflet.heat';
 
-import type { Geofence, GeofenceVertex } from '../../api/types';
+import type { Geofence, GeofenceVertex, DroneStatus } from '../../api/types';
 import type { AlertColorConfig } from '../../constants/alert-colors';
-import type { DroneMarker } from '../../stores/drone-store';
+import type { DroneMarker, DroneTrailPoint } from '../../stores/drone-store';
 import type { NodeHistoryPoint, NodeSummary } from '../../stores/node-store';
 import { canonicalNodeId } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
@@ -69,6 +70,20 @@ const BASE_LAYERS: BaseLayerDefinition[] = [
 
 export type IndicatorSeverity = 'idle' | 'info' | 'notice' | 'alert' | 'critical';
 
+const DRONE_STATUS_LABELS: Record<DroneStatus, string> = {
+  UNKNOWN: 'Unknown',
+  FRIENDLY: 'Friendly',
+  NEUTRAL: 'Neutral',
+  HOSTILE: 'Hostile',
+};
+
+const DRONE_STATUS_COLORS: Record<DroneStatus, string> = {
+  UNKNOWN: '#2563eb',
+  FRIENDLY: '#10b981',
+  NEUTRAL: '#facc15',
+  HOSTILE: '#ef4444',
+};
+
 function createNodeIcon(
   node: NodeSummary,
   severity: IndicatorSeverity,
@@ -109,20 +124,28 @@ function createTargetIcon(target: TargetMarker): DivIcon {
 
 function createDroneIcon(drone: DroneMarker): DivIcon {
   const label = drone.droneId ?? drone.id;
+  const statusKey = formatDroneStatusClass(drone.status);
+  const wrapperClasses = ['drone-marker-wrapper', `drone-marker-wrapper--${statusKey}`];
+  const markerClasses = ['drone-marker', `drone-marker--${statusKey}`];
   return divIcon({
-    html: `<div class="drone-marker"><span>${label}</span></div>`,
-    className: 'drone-marker-wrapper',
+    html: `<div class="${markerClasses.join(' ')}"><span>${label}</span></div>`,
+    className: wrapperClasses.join(' '),
     iconSize: [32, 32],
     iconAnchor: [16, 16],
   });
 }
 
-const DRONE_OPERATOR_ICON = divIcon({
-  html: '<div class="drone-operator-marker">OP</div>',
-  className: 'drone-operator-wrapper',
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-});
+function createOperatorIcon(drone: DroneMarker): DivIcon {
+  const statusKey = formatDroneStatusClass(drone.status);
+  const wrapperClasses = ['drone-operator-wrapper', `drone-operator-wrapper--${statusKey}`];
+  const markerClasses = ['drone-operator-marker', `drone-operator-marker--${statusKey}`];
+  return divIcon({
+    html: `<div class="${markerClasses.join(' ')}">OP</div>`,
+    className: wrapperClasses.join(' '),
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
 
 function formatNodeLabel(node: NodeSummary): string {
   const siteCode = deriveSiteCode(node.siteName, node.siteId);
@@ -250,6 +273,7 @@ interface CommandCenterMapProps {
   trails: Record<string, NodeHistoryPoint[]>;
   targets: TargetMarker[];
   drones: DroneMarker[];
+  droneTrails: Record<string, DroneTrailPoint[]>;
   alertIndicators: Map<string, IndicatorSeverity>;
   alertColors: AlertColorConfig;
   defaultRadius: number;
@@ -270,6 +294,7 @@ interface CommandCenterMapProps {
   };
   onReady?: (map: LeafletMap) => void;
   onMapStyleChange?: (style: string) => void;
+  onDroneSelect?: (droneId: string) => void;
 }
 
 export function CommandCenterMap({
@@ -277,6 +302,7 @@ export function CommandCenterMap({
   trails,
   targets,
   drones,
+  droneTrails,
   alertIndicators,
   alertColors,
   defaultRadius,
@@ -291,6 +317,7 @@ export function CommandCenterMap({
   drawing,
   onReady,
   onMapStyleChange,
+  onDroneSelect,
 }: CommandCenterMapProps) {
   const mapRef = useRef<LeafletMap | null>(null);
   const baseLayerKeys = useMemo(() => BASE_LAYERS.map((layer) => layer.key), []);
@@ -300,6 +327,16 @@ export function CommandCenterMap({
     }
     return BASE_LAYERS[0]?.key ?? 'osm';
   }, [baseLayerKeys, mapStyle]);
+
+  const geofenceHighlights = useMemo(() => {
+    const active = new Set<string>();
+    Object.entries(_geofenceHighlights ?? {}).forEach(([id, expires]) => {
+      if (typeof expires === 'number' && expires > Date.now()) {
+        active.add(id);
+      }
+    });
+    return active;
+  }, [_geofenceHighlights]);
 
   useEffect(() => {
     if (mapStyle !== activeBaseLayerKey && onMapStyleChange) {
@@ -392,14 +429,21 @@ export function CommandCenterMap({
           vertex.lat,
           vertex.lon,
         ]) as LatLngTuple[];
+        const highlighted = geofenceHighlights.has(geofence.id);
+        const polygonClass = classNames(
+          'geofence-polygon',
+          highlighted && 'geofence-polygon--breached',
+        );
         return (
           <Polygon
             key={geofence.id}
             positions={positions}
             pathOptions={{
+              className: polygonClass,
               color: geofence.color,
-              weight: 2,
-              fillOpacity: 0.15,
+              fillColor: geofence.color,
+              weight: highlighted ? 3 : 2,
+              fillOpacity: highlighted ? 0.25 : 0.15,
             }}
           >
             <Tooltip direction="center" opacity={0.85}>
@@ -536,6 +580,11 @@ export function CommandCenterMap({
 
       {drones.map((drone) => {
         const dronePosition: LatLngExpression = [drone.lat, drone.lon];
+        const trailPoints = droneTrails[drone.id] ?? [];
+        const trailPositions =
+          trailPoints.length > 1
+            ? (trailPoints.map((point) => [point.lat, point.lon]) as LatLngTuple[])
+            : null;
         const hasOperator =
           typeof drone.operatorLat === 'number' &&
           Number.isFinite(drone.operatorLat) &&
@@ -547,21 +596,59 @@ export function CommandCenterMap({
 
         return (
           <Fragment key={`drone-${drone.id}`}>
+            {trailPositions ? (
+              <Polyline
+                positions={trailPositions}
+                pathOptions={{
+                  color: getDroneStatusColor(drone.status),
+                  weight: 2,
+                  opacity: 0.5,
+                }}
+              />
+            ) : null}
             {hasOperator && operatorPosition ? (
               <>
                 <Polyline
                   positions={[dronePosition, operatorPosition]}
                   pathOptions={{
-                    color: '#f97316',
+                    color: getDroneStatusColor(drone.status),
                     weight: 2,
-                    opacity: 0.7,
+                    opacity: 0.75,
                     dashArray: '8, 12',
                   }}
                 />
-                <Marker position={operatorPosition} icon={DRONE_OPERATOR_ICON}>
+                <Marker
+                  position={operatorPosition}
+                  icon={createOperatorIcon(drone)}
+                  eventHandlers={{
+                    click: () => onDroneSelect?.(drone.id),
+                  }}
+                >
                   <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
                     <div className="drone-operator-tooltip">
                       <strong>Drone Operator</strong>
+                      {drone.faa?.makeName || drone.faa?.modelName ? (
+                        <div>
+                          Craft:{' '}
+                          {[drone.faa.makeName, drone.faa.modelName].filter(Boolean).join(' ')}
+                        </div>
+                      ) : null}
+                      {drone.faa?.registrantName ? (
+                        <div>Operator: {drone.faa.registrantName}</div>
+                      ) : null}
+                      {drone.faa?.fccIdentifier ? <div>FCC: {drone.faa.fccIdentifier}</div> : null}
+                      {drone.faa?.trackingNumber || drone.faa?.documentNumber ? (
+                        <div>
+                          RID:{' '}
+                          {drone.faa.documentUrl ? (
+                            <a href={drone.faa.documentUrl} target="_blank" rel="noreferrer">
+                              {drone.faa.trackingNumber ?? drone.faa.documentNumber}
+                            </a>
+                          ) : (
+                            (drone.faa.trackingNumber ?? drone.faa.documentNumber)
+                          )}
+                        </div>
+                      ) : null}
                       <div>Drone ID: {drone.droneId ?? drone.id}</div>
                       {drone.mac && <div>MAC: {drone.mac}</div>}
                       <div>
@@ -572,10 +659,29 @@ export function CommandCenterMap({
                 </Marker>
               </>
             ) : null}
-            <Marker position={dronePosition} icon={createDroneIcon(drone)}>
+            <Marker
+              position={dronePosition}
+              icon={createDroneIcon(drone)}
+              eventHandlers={{
+                click: () => onDroneSelect?.(drone.id),
+              }}
+            >
               <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
                 <div className="drone-tooltip">
                   <strong>Drone {drone.droneId ?? drone.id}</strong>
+                  {drone.faa?.makeName || drone.faa?.modelName ? (
+                    <div>
+                      Craft: {[drone.faa.makeName, drone.faa.modelName].filter(Boolean).join(' ')}
+                    </div>
+                  ) : null}
+                  <div className="drone-tooltip__status">
+                    Status:{' '}
+                    <span
+                      className={`drone-status-badge drone-status-badge--${formatDroneStatusClass(drone.status)}`}
+                    >
+                      {formatDroneStatusLabel(drone.status)}
+                    </span>
+                  </div>
                   {drone.mac && <div>MAC: {drone.mac}</div>}
                   {drone.nodeId && <div>Detected by: {drone.nodeId}</div>}
                   {drone.siteName || drone.siteId ? (
@@ -794,4 +900,17 @@ function buildCoveragePoints(nodes: NodeSummary[], baseRadius: number): HeatPoin
     }
   });
   return samples;
+}
+
+function formatDroneStatusLabel(status: DroneMarker['status']): string {
+  return DRONE_STATUS_LABELS[status] ?? 'Unknown';
+}
+
+function formatDroneStatusClass(status: DroneMarker['status']): string {
+  return String(status ?? 'UNKNOWN').toLowerCase();
+}
+
+function getDroneStatusColor(status: DroneMarker['status']): string {
+  const key = (status ?? 'UNKNOWN') as DroneStatus;
+  return DRONE_STATUS_COLORS[key] ?? DRONE_STATUS_COLORS.UNKNOWN;
 }

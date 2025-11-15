@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Map as LeafletMap, latLngBounds } from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -20,10 +20,12 @@ import type {
   AlarmLevel,
   AppSettings,
   Drone,
+  DroneStatus,
   GeofenceVertex,
   SiteSummary,
   Target,
 } from '../api/types';
+import { DroneFloatingCard } from '../components/DroneFloatingCard';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
 import { extractAlertColors } from '../constants/alert-colors';
 import type { AlertColorConfig } from '../constants/alert-colors';
@@ -39,8 +41,15 @@ import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
 
 const GEOFENCE_HIGHLIGHT_MS = 10_000;
+const DRONE_STATUS_OPTIONS: { value: DroneStatus; label: string }[] = [
+  { value: 'UNKNOWN', label: 'Unknown' },
+  { value: 'FRIENDLY', label: 'Friendly' },
+  { value: 'NEUTRAL', label: 'Neutral' },
+  { value: 'HOSTILE', label: 'Hostile' },
+];
 
 export function MapPage() {
+  const queryClient = useQueryClient();
   const { nodes, order, histories } = useNodeStore((state) => ({
     nodes: state.nodes,
     order: state.order,
@@ -71,7 +80,9 @@ export function MapPage() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
 
   const authStatus = useAuthStore((state) => state.status);
+  const currentUser = useAuthStore((state) => state.user);
   const isAuthenticated = authStatus === 'authenticated';
+  const canManageDrones = currentUser?.role === 'ADMIN' || currentUser?.role === 'OPERATOR';
 
   const appSettingsQuery = useQuery({
     queryKey: ['appSettings'],
@@ -81,19 +92,11 @@ export function MapPage() {
   });
 
   const drones = useDroneStore((state) => state.list);
-  const setDronesStore = useDroneStore((state) => state.setDrones);
-  const dronesQuery = useQuery({
-    queryKey: ['drones'],
-    queryFn: () => apiClient.get<Drone[]>('/drones'),
-    enabled: isAuthenticated,
-    staleTime: 30 * 1000,
-  });
-
-  useEffect(() => {
-    if (dronesQuery.data) {
-      setDronesStore(dronesQuery.data);
-    }
-  }, [dronesQuery.data, setDronesStore]);
+  const droneTrails = useDroneStore((state) => state.trails);
+  const upsertDroneStore = useDroneStore((state) => state.upsert);
+  const setDroneStatusStore = useDroneStore((state) => state.setStatus);
+  const setPendingDroneStatus = useDroneStore((state) => state.setPendingStatus);
+  const clearPendingDroneStatus = useDroneStore((state) => state.clearPendingStatus);
 
   const sitesQuery = useQuery({
     queryKey: ['sites'],
@@ -320,6 +323,106 @@ export function MapPage() {
     [geofenceHighlights],
   );
 
+  const [activeDroneId, setActiveDroneId] = useState<string | null>(null);
+  const [droneCardVisible, setDroneCardVisible] = useState(false);
+
+  useEffect(() => {
+    if (drones.length === 0) {
+      setActiveDroneId(null);
+      setDroneCardVisible(false);
+      return;
+    }
+    if (!activeDroneId || !drones.some((drone) => drone.id === activeDroneId)) {
+      setActiveDroneId(drones[0].id);
+      setDroneCardVisible(true);
+    }
+  }, [drones, activeDroneId]);
+
+  const droneStatusMutation = useMutation<
+    Drone,
+    Error,
+    {
+      id: string;
+      status: DroneStatus;
+    },
+    { previousStatus?: DroneStatus; id: string }
+  >({
+    mutationFn: async ({ id, status }) => {
+      const endpoint = `/drones/${encodeURIComponent(id)}/status`;
+      return apiClient.patch<Drone>(endpoint, { status });
+    },
+    onMutate: async ({ id, status }) => {
+      const current = useDroneStore.getState().map[id];
+      const previousStatus = current?.status;
+      setPendingDroneStatus(id, status);
+      setDroneStatusStore(id, status, { clearPending: false });
+      return { previousStatus, id };
+    },
+    onSuccess: (drone) => {
+      clearPendingDroneStatus(drone.id);
+      upsertDroneStore(drone);
+      queryClient.setQueryData<Drone[]>(['drones'], (previous) => {
+        if (!previous) {
+          return previous;
+        }
+        const index = previous.findIndex((item) => item.id === drone.id);
+        if (index === -1) {
+          return previous;
+        }
+        const next = previous.slice();
+        next[index] = drone;
+        return next;
+      });
+    },
+    onError: (error, _variables, context) => {
+      if (context?.previousStatus !== undefined) {
+        clearPendingDroneStatus(context.id);
+        setDroneStatusStore(context.id, context.previousStatus);
+      }
+      const message =
+        (error && typeof error.message === 'string' && error.message) || 'Unknown error';
+      window.alert(`Failed to update drone status: ${message}`);
+    },
+  });
+
+  const pendingDroneId = droneStatusMutation.variables?.id;
+  const isUpdatingDrone = useCallback(
+    (id: string) => Boolean(droneStatusMutation.isPending && pendingDroneId === id),
+    [droneStatusMutation.isPending, pendingDroneId],
+  );
+
+  const handleDroneStatusChange = useCallback(
+    (droneId: string, nextStatus: DroneStatus) => {
+      if (!canManageDrones) {
+        return;
+      }
+      const drone = drones.find((item) => item.id === droneId);
+      if (!drone || drone.status === nextStatus) {
+        return;
+      }
+      droneStatusMutation.mutate({ id: droneId, status: nextStatus });
+    },
+    [canManageDrones, drones, droneStatusMutation],
+  );
+
+  const handleDroneSelect = useCallback(
+    (droneId: string, options?: { focus?: boolean }) => {
+      setActiveDroneId(droneId);
+      setDroneCardVisible(true);
+      if (options?.focus && mapRef.current) {
+        const drone = drones.find((item) => item.id === droneId);
+        if (drone) {
+          mapRef.current.flyTo([drone.lat, drone.lon], Math.max(mapRef.current.getZoom(), 15), {
+            duration: 1,
+          });
+        }
+      }
+    },
+    [drones],
+  );
+
+  const handleDroneCardClose = useCallback(() => setDroneCardVisible(false), []);
+
   useEffect(() => {
     if (geofenceHighlightCount === 0) {
       return;
@@ -410,185 +513,200 @@ export function MapPage() {
   };
 
   return (
-    <section className="panel">
-      <header className="panel__header">
-        <div>
-          <h1 className="panel__title">Operational Map</h1>
-          <p className="panel__subtitle">
-            {onlineCount} nodes online | {nodeList.length} total tracked
-          </p>
-        </div>
-        <div className="controls-row map-controls-row">
-          <button
-            type="button"
-            className={`control-chip ${fitEnabled ? 'is-active' : ''}`}
-            onClick={handleFitClick}
-          >
-            <MdCenterFocusStrong /> Fit
-          </button>
-          <button
-            type="button"
-            className={`control-chip ${trailsEnabled ? 'is-active' : ''}`}
-            onClick={toggleTrails}
-          >
-            <MdTimeline /> Trails
-          </button>
-          <button
-            type="button"
-            className={`control-chip ${followEnabled ? 'is-active' : ''}`}
-            onClick={toggleFollow}
-          >
-            <MdMyLocation /> Follow
-          </button>
-          <button
-            type="button"
-            className={`control-chip ${radiusEnabled ? 'is-active' : ''}`}
-            onClick={toggleRadius}
-          >
-            <MdRadioButtonChecked /> Radius
-          </button>
-          <button
-            type="button"
-            className={`control-chip ${targetsEnabled ? 'is-active' : ''}`}
-            onClick={toggleTargets}
-          >
-            <MdVisibility /> Targets
-          </button>
-        </div>
-      </header>
-      <div className="map-canvas">
-        <CommandCenterMap
-          nodes={nodeList}
-          trails={histories}
-          targets={targetMarkers}
-          drones={drones}
-          alertIndicators={alertIndicatorMap}
-          alertColors={alertColors}
-          defaultRadius={mapDefaultRadius}
-          showRadius={radiusEnabled}
-          showTrails={trailsEnabled}
-          showTargets={targetsEnabled}
-          followEnabled={followEnabled}
-          showCoverage={coverageEnabled}
-          mapStyle={mapStyle}
-          onMapStyleChange={setMapStyle}
-          geofences={geofences}
-          geofenceHighlights={geofenceHighlights}
-          drawing={
-            drawingGeofence
-              ? {
-                  enabled: true,
-                  points: draftVertices,
-                  hover: hoverVertex,
-                  onPoint: handleMapPoint,
-                  onHover: handleHover,
-                }
-              : undefined
-          }
-          onReady={(map) => {
-            mapRef.current = map;
-            setMapReady(true);
-          }}
-        />
-      </div>
-      <footer className="map-footer">
-        <section className="map-footer__views">
-          <div className="map-footer__views-controls">
-            <input
-              type="text"
-              placeholder="View name"
-              value={newViewName}
-              className="control-input"
-              onChange={(event) => setNewViewName(event.target.value)}
-            />
+    <>
+      <section className="panel">
+        <header className="panel__header">
+          <div>
+            <h1 className="panel__title">Operational Map</h1>
+            <p className="panel__subtitle">
+              {onlineCount} nodes online | {nodeList.length} total tracked
+            </p>
+          </div>
+          <div className="controls-row map-controls-row">
             <button
               type="button"
-              className="control-chip"
-              onClick={handleSaveView}
-              disabled={!mapReady || !mapRef.current}
+              className={`control-chip ${fitEnabled ? 'is-active' : ''}`}
+              onClick={handleFitClick}
             >
-              <MdBookmarkAdd /> Save View
+              <MdCenterFocusStrong /> Fit
+            </button>
+            <button
+              type="button"
+              className={`control-chip ${trailsEnabled ? 'is-active' : ''}`}
+              onClick={toggleTrails}
+            >
+              <MdTimeline /> Trails
+            </button>
+            <button
+              type="button"
+              className={`control-chip ${followEnabled ? 'is-active' : ''}`}
+              onClick={toggleFollow}
+            >
+              <MdMyLocation /> Follow
+            </button>
+            <button
+              type="button"
+              className={`control-chip ${radiusEnabled ? 'is-active' : ''}`}
+              onClick={toggleRadius}
+            >
+              <MdRadioButtonChecked /> Radius
+            </button>
+            <button
+              type="button"
+              className={`control-chip ${targetsEnabled ? 'is-active' : ''}`}
+              onClick={toggleTargets}
+            >
+              <MdVisibility /> Targets
             </button>
           </div>
-          {savedViews.length > 0 ? (
-            <div className="map-footer__views-list">
-              {savedViews.map((view) => (
-                <div key={view.id} className="map-footer__view-item">
+        </header>
+        <div className="map-canvas">
+          <CommandCenterMap
+            nodes={nodeList}
+            trails={histories}
+            targets={targetMarkers}
+            drones={drones}
+            droneTrails={droneTrails}
+            alertIndicators={alertIndicatorMap}
+            alertColors={alertColors}
+            defaultRadius={mapDefaultRadius}
+            showRadius={radiusEnabled}
+            showTrails={trailsEnabled}
+            showTargets={targetsEnabled}
+            followEnabled={followEnabled}
+            showCoverage={coverageEnabled}
+            mapStyle={mapStyle}
+            onMapStyleChange={setMapStyle}
+            geofences={geofences}
+            geofenceHighlights={geofenceHighlights}
+            drawing={
+              drawingGeofence
+                ? {
+                    enabled: true,
+                    points: draftVertices,
+                    hover: hoverVertex,
+                    onPoint: handleMapPoint,
+                    onHover: handleHover,
+                  }
+                : undefined
+            }
+            onReady={(map) => {
+              mapRef.current = map;
+              setMapReady(true);
+            }}
+            onDroneSelect={handleDroneSelect}
+          />
+        </div>
+        <footer className="map-footer">
+          <section className="map-footer__views">
+            <div className="map-footer__views-controls">
+              <input
+                type="text"
+                placeholder="View name"
+                value={newViewName}
+                className="control-input"
+                onChange={(event) => setNewViewName(event.target.value)}
+              />
+              <button
+                type="button"
+                className="control-chip"
+                onClick={handleSaveView}
+                disabled={!mapReady || !mapRef.current}
+              >
+                <MdBookmarkAdd /> Save View
+              </button>
+            </div>
+            {savedViews.length > 0 ? (
+              <div className="map-footer__views-list">
+                {savedViews.map((view) => (
+                  <div key={view.id} className="map-footer__view-item">
+                    <button
+                      type="button"
+                      className="control-chip"
+                      onClick={() => handleApplyView(view)}
+                    >
+                      {view.name}
+                    </button>
+                    <button
+                      type="button"
+                      className="control-chip control-chip--danger"
+                      onClick={() => removeView(view.id)}
+                      aria-label={`Remove ${view.name}`}
+                    >
+                      <MdClose />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">Save map views for quick navigation.</p>
+            )}
+          </section>
+          <div className="map-footer__actions">
+            <label className="geofence-site-select">
+              <span className="geofence-site-select__label">Site</span>
+              <select
+                className="control-input"
+                value={selectedSiteId}
+                onChange={(event) => setSelectedSiteId(event.target.value)}
+                aria-label="Site"
+              >
+                <option value="">Local site</option>
+                {sitesQuery.data?.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name ?? site.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="submit-button"
+              onClick={startGeofenceDrawing}
+              disabled={drawingGeofence}
+            >
+              <MdCropFree /> Create Geofence
+            </button>
+            {drawingGeofence ? (
+              <div className="geofence-drawing-controls">
+                <span>{draftVertices.length} point(s) selected. Click map to add more.</span>
+                <div className="geofence-drawing-buttons">
                   <button
                     type="button"
-                    className="control-chip"
-                    onClick={() => handleApplyView(view)}
+                    onClick={undoGeofencePoint}
+                    disabled={draftVertices.length === 0}
                   >
-                    {view.name}
+                    <MdUndo /> Undo
+                  </button>
+                  <button type="button" onClick={cancelGeofenceDrawing}>
+                    <MdCancel /> Cancel
                   </button>
                   <button
                     type="button"
-                    className="control-chip control-chip--danger"
-                    onClick={() => removeView(view.id)}
-                    aria-label={`Remove ${view.name}`}
+                    className="submit-button"
+                    onClick={handleSaveGeofence}
+                    disabled={draftVertices.length < 3}
                   >
-                    <MdClose />
+                    <MdCheckCircle /> Save Geofence
                   </button>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="muted">Save map views for quick navigation.</p>
-          )}
-        </section>
-        <div className="map-footer__actions">
-          <label className="geofence-site-select">
-            <span className="geofence-site-select__label">Site</span>
-            <select
-              className="control-input"
-              value={selectedSiteId}
-              onChange={(event) => setSelectedSiteId(event.target.value)}
-              aria-label="Site"
-            >
-              <option value="">Local site</option>
-              {sitesQuery.data?.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name ?? site.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="submit-button"
-            onClick={startGeofenceDrawing}
-            disabled={drawingGeofence}
-          >
-            <MdCropFree /> Create Geofence
-          </button>
-          {drawingGeofence ? (
-            <div className="geofence-drawing-controls">
-              <span>{draftVertices.length} point(s) selected. Click map to add more.</span>
-              <div className="geofence-drawing-buttons">
-                <button
-                  type="button"
-                  onClick={undoGeofencePoint}
-                  disabled={draftVertices.length === 0}
-                >
-                  <MdUndo /> Undo
-                </button>
-                <button type="button" onClick={cancelGeofenceDrawing}>
-                  <MdCancel /> Cancel
-                </button>
-                <button
-                  type="button"
-                  className="submit-button"
-                  onClick={handleSaveGeofence}
-                  disabled={draftVertices.length < 3}
-                >
-                  <MdCheckCircle /> Save Geofence
-                </button>
               </div>
-            </div>
-          ) : null}
-        </div>
-      </footer>
-    </section>
+            ) : null}
+          </div>
+        </footer>
+      </section>
+      <DroneFloatingCard
+        drones={drones}
+        activeDroneId={activeDroneId}
+        visible={droneCardVisible && drones.length > 0}
+        onClose={handleDroneCardClose}
+        onSelect={handleDroneSelect}
+        onStatusChange={canManageDrones ? handleDroneStatusChange : undefined}
+        statusOptions={DRONE_STATUS_OPTIONS}
+        isStatusUpdating={isUpdatingDrone}
+        canManage={canManageDrones}
+      />
+    </>
   );
 }
 

@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { TerminalEntry, useTerminalStore } from '../stores/terminal-store';
 
@@ -13,6 +13,13 @@ export function TerminalDrawer() {
   const entries = useTerminalStore((state) => state.entries);
   const clearEntries = useTerminalStore((state) => state.clear);
   const [showRaw, setShowRaw] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.setProperty('--terminal-width', collapsed ? '0px' : '360px');
+    }
+  }, [collapsed]);
 
   const filteredEntries = useMemo(() => {
     if (showRaw) {
@@ -25,54 +32,67 @@ export function TerminalDrawer() {
   const displayEntries = filteredEntries;
 
   return (
-    <section className="terminal-drawer">
-      <header className="terminal-drawer__header">
-        <span>Terminal &amp; Events</span>
-        <div className="terminal-drawer__actions">
-          <button type="button" className="control-chip" onClick={clearEntries}>
-            Clear
-          </button>
-          <button
-            type="button"
-            className={`control-chip ${showRaw ? 'is-active' : ''}`}
-            onClick={() => setShowRaw((value) => !value)}
-          >
-            {showRaw ? 'Hide Raw' : 'Show Raw'}
-          </button>
-        </div>
-      </header>
-      <div
-        className={`terminal-drawer__list${isScrollable ? ' terminal-drawer__list--scroll' : ''}`}
+    <section className={`terminal-drawer${collapsed ? ' terminal-drawer--collapsed' : ''}`}>
+      <button
+        type="button"
+        className="terminal-drawer__edge-toggle"
+        onClick={() => setCollapsed((value) => !value)}
       >
-        {displayEntries.length === 0 ? (
-          <div className="empty-state">
-            <div>
-              {entries.length === 0
-                ? 'No events yet. Start a scan to see activity here.'
-                : 'Raw-only events filtered. Enable "Show Raw" to view them.'}
+        {collapsed ? 'Open Terminal & Events' : 'Hide Terminal & Events'}
+      </button>
+      {!collapsed && (
+        <>
+          <header className="terminal-drawer__header">
+            <span>Terminal &amp; Events</span>
+            <div className="terminal-drawer__actions">
+              <button type="button" className="control-chip" onClick={clearEntries}>
+                Clear
+              </button>
+              <button
+                type="button"
+                className={`control-chip ${showRaw ? 'is-active' : ''}`}
+                onClick={() => setShowRaw((value) => !value)}
+              >
+                {showRaw ? 'Hide Raw' : 'Show Raw'}
+              </button>
             </div>
-          </div>
-        ) : (
-          displayEntries.map((entry) => (
-            <article
-              key={entry.id}
-              className={`terminal-entry ${levelToClass[entry.level]}`}
-              aria-live="polite"
-            >
-              <div className="terminal-entry__meta">
-                <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
-                {entry.source && (
-                  <span className={`terminal-entry__tag terminal-entry__tag--${entry.source}`}>
-                    {entry.source}
-                  </span>
-                )}
-                {entry.siteId && <span>Site: {entry.siteId}</span>}
+          </header>
+          <div
+            className={`terminal-drawer__list${
+              isScrollable ? ' terminal-drawer__list--scroll' : ''
+            }`}
+          >
+            {displayEntries.length === 0 ? (
+              <div className="empty-state">
+                <div>
+                  {entries.length === 0
+                    ? 'No events yet. Start a scan to see activity here.'
+                    : 'Raw-only events filtered. Enable "Show Raw" to view them.'}
+                </div>
               </div>
-              <p className="terminal-entry__message">{entry.message}</p>
-            </article>
-          ))
-        )}
-      </div>
+            ) : (
+              displayEntries.map((entry) => (
+                <article
+                  key={entry.id}
+                  className={`terminal-entry ${levelToClass[entry.level]}`}
+                  aria-live="polite"
+                >
+                  <div className="terminal-entry__meta">
+                    <span>{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                    {entry.source && (
+                      <span className={`terminal-entry__tag terminal-entry__tag--${entry.source}`}>
+                        {entry.source}
+                      </span>
+                    )}
+                    {entry.siteId && <span>Site: {entry.siteId}</span>}
+                  </div>
+                  <p className="terminal-entry__message">{entry.message}</p>
+                </article>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </section>
   );
 }

@@ -1,7 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-import type { AlarmLevel, Drone, Geofence, Target } from '../api/types';
+import type {
+  AlarmLevel,
+  Drone,
+  DroneStatus,
+  FaaAircraftSummary,
+  Geofence,
+  Target,
+} from '../api/types';
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
@@ -21,14 +28,16 @@ type TerminalEntryInput = Omit<TerminalEntry, 'id' | 'timestamp'> & { timestamp?
 export function SocketBridge() {
   const socket = useSocket();
   const queryClient = useQueryClient();
-  const { play } = useAlarm();
+  const { play, playDroneGeofence } = useAlarm();
   const setInitialNodes = useNodeStore((state) => state.setInitialNodes);
   const applyDiff = useNodeStore((state) => state.applyDiff);
   const addEntry = useTerminalStore((state) => state.addEntry);
   const triggerAlert = useAlertStore((state) => state.triggerAlert);
   const setDrones = useDroneStore((state) => state.setDrones);
   const upsertDrone = useDroneStore((state) => state.upsert);
+  const appendDroneTrail = useDroneStore((state) => state.appendTrailPoint);
   const removeDrone = useDroneStore((state) => state.remove);
+  const setDroneStatus = useDroneStore((state) => state.setStatus);
 
   useEffect(() => {
     if (!socket) {
@@ -65,7 +74,11 @@ export function SocketBridge() {
           lon: event.lon,
           timestamp: new Date().toISOString(),
         });
-        play(event.level);
+        if (event.entityType === 'drone') {
+          playDroneGeofence();
+        } else {
+          play(event.level);
+        }
       });
     };
 
@@ -93,6 +106,7 @@ export function SocketBridge() {
           mac: payload.mac ?? null,
           nodeId: payload.nodeId ?? null,
           siteId: payload.siteId ?? null,
+          originSiteId: payload.originSiteId ?? payload.siteId ?? null,
           siteName: payload.siteName ?? null,
           siteColor: payload.siteColor ?? null,
           siteCountry: payload.siteCountry ?? null,
@@ -104,7 +118,24 @@ export function SocketBridge() {
           operatorLat: payload.operatorLat ?? null,
           operatorLon: payload.operatorLon ?? null,
           rssi: payload.rssi ?? null,
+          status: normalizeDroneStatus(payload.status),
+          faa: payload.faa ?? null,
           lastSeen: timestamp,
+        });
+
+        const geofenceEvents = useGeofenceStore.getState().processCoordinateEvent({
+          entityId: payload.droneId,
+          entityLabel: payload.droneId,
+          entityType: 'drone',
+          lat: payload.lat,
+          lon: payload.lon,
+        });
+        emitGeofenceEvents(geofenceEvents, payload.siteId ?? undefined);
+
+        appendDroneTrail(payload.droneId, {
+          lat: payload.lat,
+          lon: payload.lon,
+          ts: timestamp,
         });
 
         const macSegment = payload.mac ? ` MAC:${payload.mac}` : '';
@@ -140,6 +171,37 @@ export function SocketBridge() {
         });
 
         play('ALERT');
+        return;
+      }
+
+      if (isDroneStatusEvent(payload)) {
+        setDroneStatus(payload.droneId, payload.status);
+        const state = useDroneStore.getState();
+        const existing = state.map[payload.droneId] ?? null;
+        if (payload.faa || existing) {
+          upsertDrone({
+            id: payload.id ?? payload.droneId,
+            droneId: payload.droneId,
+            lat: payload.lat ?? existing?.lat ?? 0,
+            lon: payload.lon ?? existing?.lon ?? 0,
+            lastSeen: payload.timestamp ?? existing?.lastSeen ?? new Date().toISOString(),
+            status: payload.status,
+            faa: payload.faa ?? existing?.faa ?? null,
+            mac: existing?.mac ?? null,
+            nodeId: existing?.nodeId ?? null,
+            siteId: payload.siteId ?? existing?.siteId ?? null,
+            originSiteId: payload.originSiteId ?? existing?.originSiteId ?? null,
+            siteName: existing?.siteName ?? null,
+            siteColor: existing?.siteColor ?? null,
+            siteCountry: existing?.siteCountry ?? null,
+            siteCity: existing?.siteCity ?? null,
+            altitude: existing?.altitude ?? null,
+            speed: existing?.speed ?? null,
+            operatorLat: existing?.operatorLat ?? null,
+            operatorLon: existing?.operatorLon ?? null,
+            rssi: existing?.rssi ?? null,
+          });
+        }
         return;
       }
 
@@ -317,11 +379,14 @@ export function SocketBridge() {
     applyDiff,
     addEntry,
     play,
+    playDroneGeofence,
     triggerAlert,
     queryClient,
     setDrones,
     upsertDrone,
+    appendDroneTrail,
     removeDrone,
+    setDroneStatus,
   ]);
 
   useEffect(() => {
@@ -362,6 +427,7 @@ type DroneTelemetryEventPayload = {
   mac?: string | null;
   nodeId?: string | null;
   siteId?: string | null;
+  originSiteId?: string | null;
   siteName?: string | null;
   siteColor?: string | null;
   siteCountry?: string | null;
@@ -374,11 +440,26 @@ type DroneTelemetryEventPayload = {
   operatorLon?: number | null;
   rssi?: number | null;
   timestamp?: string;
+  status?: DroneStatus;
+  faa?: FaaAircraftSummary | null;
 };
 
 type DroneRemoveEventPayload = {
   type: 'drone.remove';
   droneId: string;
+};
+
+type DroneStatusEventPayload = {
+  type: 'drone.status';
+  id?: string;
+  droneId: string;
+  status: DroneStatus;
+  lat?: number;
+  lon?: number;
+  timestamp?: string;
+  siteId?: string | null;
+  originSiteId?: string | null;
+  faa?: FaaAircraftSummary | null;
 };
 
 function isDroneTelemetryEvent(payload: unknown): payload is DroneTelemetryEventPayload {
@@ -400,6 +481,26 @@ function isDroneRemovalEvent(payload: unknown): payload is DroneRemoveEventPaylo
   }
   const candidate = payload as Partial<DroneRemoveEventPayload>;
   return candidate.type === 'drone.remove' && typeof candidate.droneId === 'string';
+}
+
+function isDroneStatusEvent(payload: unknown): payload is DroneStatusEventPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Partial<DroneStatusEventPayload>;
+  return (
+    candidate.type === 'drone.status' &&
+    typeof candidate.droneId === 'string' &&
+    isDroneStatus(candidate.status)
+  );
+}
+
+function isDroneStatus(value: unknown): value is DroneStatus {
+  return value === 'UNKNOWN' || value === 'FRIENDLY' || value === 'NEUTRAL' || value === 'HOSTILE';
+}
+
+function normalizeDroneStatus(value: unknown): DroneStatus {
+  return isDroneStatus(value) ? value : 'UNKNOWN';
 }
 
 function parseEventPayload(payload: unknown): TerminalEntryInput {

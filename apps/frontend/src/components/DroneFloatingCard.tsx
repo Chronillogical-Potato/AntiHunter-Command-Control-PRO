@@ -1,4 +1,4 @@
-import clsx from 'clsx';
+import classNames from 'clsx';
 
 import type { DroneStatus, FaaAircraftSummary } from '../api/types';
 import type { DroneMarker } from '../stores/drone-store';
@@ -56,7 +56,7 @@ export function DroneFloatingCard({
 
   return (
     <section
-      className={clsx('drone-floating-card', { 'drone-floating-card--visible': visible })}
+      className={classNames('drone-floating-card', { 'drone-floating-card--visible': visible })}
       aria-live="polite"
     >
       <header className="drone-floating-card__header">
@@ -109,7 +109,7 @@ export function DroneFloatingCard({
                   return (
                     <tr
                       key={drone.id}
-                      className={clsx({
+                      className={classNames({
                         'is-active': isActive,
                         'is-hostile': drone.status === 'HOSTILE',
                       })}
@@ -238,12 +238,7 @@ function formatHeading(drone: DroneMarker): string {
   ) {
     return 'Unknown';
   }
-  const bearing = calculateBearing(
-    drone.operatorLat,
-    drone.operatorLon,
-    drone.lat,
-    drone.lon,
-  );
+  const bearing = calculateBearing(drone.operatorLat, drone.operatorLon, drone.lat, drone.lon);
   if (bearing == null) {
     return 'Unknown';
   }
@@ -252,12 +247,7 @@ function formatHeading(drone: DroneMarker): string {
   return `${directions[index]} (${bearing.toFixed(0)}°)`;
 }
 
-function calculateBearing(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number | null {
+function calculateBearing(lat1: number, lon1: number, lat2: number, lon2: number): number | null {
   if ([lat1, lon1, lat2, lon2].some((value) => Number.isNaN(value))) {
     return null;
   }
@@ -269,8 +259,7 @@ function calculateBearing(
 
   const y = Math.sin(deltaLambda) * Math.cos(phi2);
   const x =
-    Math.cos(phi1) * Math.sin(phi2) -
-    Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+    Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
   const theta = Math.atan2(y, x);
   const bearing = (toDegrees(theta) + 360) % 360;
   return bearing;
@@ -283,11 +272,11 @@ function renderRidInfo(summary?: FaaAircraftSummary | null) {
   const primary =
     summary.makeName || summary.modelName
       ? [summary.makeName, summary.modelName].filter(Boolean).join(' ')
-      : summary.registrantName ??
+      : (summary.registrantName ??
         summary.nNumber ??
         summary.serialNumber ??
         summary.trackingNumber ??
-        'Match';
+        'Match');
   const fccLabel = summary.fccIdentifier ?? summary.series ?? null;
   const ridLabel = summary.trackingNumber ?? summary.documentNumber ?? summary.serialNumber ?? null;
   return (

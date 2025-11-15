@@ -5,6 +5,7 @@ import { apiClient } from '../api/client';
 import type {
   AlarmConfig,
   AlarmLevel,
+  AlarmSoundKey,
   AppSettings,
   SerialConfig,
   SerialPortInfo,
@@ -22,6 +23,8 @@ import type {
   FirewallGeoMode,
   FirewallLog,
   FirewallRule,
+  FaaRegistryStatusResponse,
+  StartFaaSyncResponse,
 } from '../api/types';
 import { DEFAULT_ALERT_COLORS, extractAlertColors } from '../constants/alert-colors';
 import { useAlarm } from '../providers/alarm-provider';
@@ -36,6 +39,8 @@ const LEVEL_METADATA: Record<AlarmLevel, { label: string; description: string }>
   ALERT: { label: 'Alert', description: 'Actionable events requiring attention.' },
   CRITICAL: { label: 'Critical', description: 'Safety or erase events that must be acknowledged.' },
 };
+
+const DRONE_GEOFENCE_SOUND_KEY: AlarmSoundKey = 'DRONE_GEOFENCE';
 
 const GAPS: Array<{ key: keyof AlarmConfig; label: string }> = [
   { key: 'gapInfoMs', label: 'Info gap (ms)' },
@@ -56,6 +61,8 @@ const DEFAULT_RADIUS_LIMITS = {
   min: 50,
   max: 2000,
 };
+
+const FAA_DATASET_URL = 'https://registry.faa.gov/database/ReleasableAircraft.zip';
 
 type SerialConnectPayload = {
   path?: string;
@@ -170,7 +177,8 @@ type ConfigSectionId =
   | 'detection'
   | 'map'
   | 'oui'
-  | 'firewall';
+  | 'firewall'
+  | 'faa';
 
 const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: string }> = [
   { id: 'alarms', label: 'Alarms', description: 'Audio profiles & cooldowns' },
@@ -185,6 +193,7 @@ const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: 
   { id: 'detection', label: 'Detection Defaults', description: 'Scan and alert presets' },
   { id: 'map', label: 'Map & Coverage', description: 'Map viewport and coverage rings' },
   { id: 'oui', label: 'OUI Resolver', description: 'Vendor cache imports & exports' },
+  { id: 'faa', label: 'FAA Registry', description: 'Aircraft registry enrichment' },
 ];
 
 export function ConfigPage() {
@@ -198,6 +207,7 @@ export function ConfigPage() {
     uploadSound,
     removeSound,
     play,
+    playDroneGeofence,
   } = useAlarm();
 
   const appSettingsQuery = useQuery({
@@ -253,6 +263,12 @@ export function ConfigPage() {
     staleTime: 60_000,
   });
 
+  const faaStatusQuery = useQuery<FaaRegistryStatusResponse>({
+    queryKey: ['faaStatus'],
+    queryFn: () => apiClient.get<FaaRegistryStatusResponse>('/config/faa/status'),
+    refetchInterval: (query) => (query.state.data?.inProgress ? 5000 : false),
+  });
+
   const ouiStatsQuery = useQuery({
     queryKey: ['ouiStats'],
     queryFn: () => apiClient.get<{ total: number; lastUpdated?: string | null }>('/oui/stats'),
@@ -272,6 +288,7 @@ export function ConfigPage() {
     null,
   );
   const [takConfig, setTakConfig] = useState<TakConfig | null>(null);
+  const [faaUrl, setFaaUrl] = useState(FAA_DATASET_URL);
   const [mailPasswordInput, setMailPasswordInput] = useState('');
   const [mailPasswordMessage, setMailPasswordMessage] = useState<{
     type: 'success' | 'error';
@@ -313,6 +330,11 @@ export function ConfigPage() {
       : '';
   const firewallStats = firewallOverviewQuery.data?.stats ?? null;
   const firewallConfig = firewallOverviewQuery.data?.config ?? null;
+  const faaOnline = faaStatusQuery.data?.online ?? { enabled: false, cacheEntries: 0 };
+  const faaRegistry = faaStatusQuery.data?.registry ?? null;
+  const faaInProgress = faaStatusQuery.data?.inProgress ?? false;
+  const faaProgressCount = faaStatusQuery.data?.progress?.processed ?? 0;
+  const faaLastError = faaStatusQuery.data?.lastError ?? null;
   const [firewallSaving, setFirewallSaving] = useState(false);
   const [firewallLogsOpen, setFirewallLogsOpen] = useState(false);
   const [firewallJailOpen, setFirewallJailOpen] = useState(false);
@@ -513,13 +535,14 @@ export function ConfigPage() {
     return () => clearTimeout(timer);
   }, [takNotice]);
 
-  const sounds = useMemo<Record<AlarmLevel, string | null>>(
+  const sounds = useMemo<Record<AlarmSoundKey, string | null>>(
     () =>
       alarmSettings?.sounds ?? {
         INFO: null,
         NOTICE: null,
         ALERT: null,
         CRITICAL: null,
+        DRONE_GEOFENCE: null,
       },
     [alarmSettings?.sounds],
   );
@@ -529,10 +552,29 @@ export function ConfigPage() {
     onSuccess: (data) => {
       queryClient.setQueryData(['appSettings'], data);
       setAppSettings(data);
+      setConfigNotice({ type: 'success', text: 'Application settings saved.' });
     },
     onError: (error) => {
       const message =
         error instanceof Error ? error.message : 'Unable to update application settings.';
+      setConfigNotice({ type: 'error', text: message });
+    },
+  });
+
+  const faaSyncMutation = useMutation({
+    mutationFn: () =>
+      apiClient.post<StartFaaSyncResponse>('/config/faa/sync', {
+        url: faaUrl && faaUrl !== FAA_DATASET_URL ? faaUrl : undefined,
+      }),
+    onSuccess: () => {
+      setConfigNotice({
+        type: 'info',
+        text: 'FAA registry sync started. This may take several minutes.',
+      });
+      void faaStatusQuery.refetch();
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'Unable to start FAA sync.';
       setConfigNotice({ type: 'error', text: message });
     },
   });
@@ -1384,6 +1426,53 @@ export function ConfigPage() {
                     </div>
                   );
                 })}
+                <div className="alarm-level-card">
+                  <div className="alarm-header">
+                    <h3>Drone Geofence</h3>
+                    <span>Sound used when a drone breaches any perimeter.</span>
+                  </div>
+                  <div className="alarm-controls">
+                    <div className="alarm-sound-row">
+                      <div className="sound-file">
+                        {sounds[DRONE_GEOFENCE_SOUND_KEY]
+                          ? 'Custom sound uploaded'
+                          : 'Using default alert tone'}
+                      </div>
+                      <div className="sound-actions">
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => playDroneGeofence()}
+                        >
+                          Preview
+                        </button>
+                        <label className="control-chip">
+                          Upload
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (file) {
+                                uploadSound(DRONE_GEOFENCE_SOUND_KEY, file);
+                                event.target.value = '';
+                              }
+                            }}
+                            hidden
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          disabled={!sounds[DRONE_GEOFENCE_SOUND_KEY]}
+                          onClick={() => removeSound(DRONE_GEOFENCE_SOUND_KEY)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -3301,6 +3390,72 @@ export function ConfigPage() {
                     }}
                   />
                 </div>
+              </div>
+            </section>
+
+            <section className={cardClass('faa')}>
+              <header>
+                <h2>FAA Registry</h2>
+                <p>Download and parse the FAA aircraft registry to enrich drone cards.</p>
+              </header>
+              <div className="config-card__body">
+                <div className="config-row">
+                  <span className="config-label">Last sync</span>
+                  <span>{formatDateTime(faaRegistry?.lastSyncedAt ?? null)}</span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Records</span>
+                  <span>{(faaRegistry?.totalRecords ?? 0).toLocaleString()}</span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Online lookup</span>
+                  <span>
+                    {faaOnline.enabled ? 'Enabled' : 'Disabled'} · Cache {faaOnline.cacheEntries}
+                  </span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Dataset version</span>
+                  <span>{faaRegistry?.datasetVersion ?? 'Unknown'}</span>
+                </div>
+                <div className="config-row">
+                  <span className="config-label">Status</span>
+                  <span>
+                    {faaInProgress
+                      ? `Syncing (${faaProgressCount.toLocaleString()} rows processed)`
+                      : 'Idle'}
+                  </span>
+                </div>
+                {faaLastError ? <div className="form-error">Last error: {faaLastError}</div> : null}
+                <div className="config-row">
+                  <span className="config-label">Dataset URL</span>
+                  <input
+                    type="url"
+                    value={faaUrl}
+                    onChange={(event) => setFaaUrl(event.target.value)}
+                    placeholder={FAA_DATASET_URL}
+                  />
+                </div>
+                <div className="controls-row">
+                  <button
+                    type="button"
+                    className="submit-button"
+                    disabled={faaInProgress || faaSyncMutation.isPending}
+                    onClick={() => faaSyncMutation.mutate()}
+                  >
+                    {faaInProgress ? 'Sync in progress…' : 'Download & Parse'}
+                  </button>
+                  <button
+                    type="button"
+                    className="control-chip"
+                    onClick={() => faaStatusQuery.refetch()}
+                    disabled={faaStatusQuery.isFetching}
+                  >
+                    Refresh Status
+                  </button>
+                </div>
+                <p className="config-hint">
+                  The FAA releases updates daily. Parsing the dataset may take several minutes.
+                </p>
               </div>
             </section>
 

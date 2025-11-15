@@ -10,20 +10,24 @@ import {
 } from 'react';
 
 import { apiClient } from '../api/client';
-import type { AlarmConfig, AlarmLevel, AlarmSettingsResponse } from '../api/types';
+import type { AlarmConfig, AlarmLevel, AlarmSettingsResponse, AlarmSoundKey } from '../api/types';
 
 type AlarmContextValue = {
   settings?: AlarmSettingsResponse;
   isLoading: boolean;
   play: (level: AlarmLevel) => void;
+  playDroneGeofence: () => void;
   updateConfig: (config: AlarmConfig) => void;
-  uploadSound: (level: AlarmLevel, file: File) => void;
-  removeSound: (level: AlarmLevel) => void;
+  uploadSound: (level: AlarmSoundKey, file: File) => void;
+  removeSound: (level: AlarmSoundKey) => void;
 };
 
 const AlarmContext = createContext<AlarmContextValue | undefined>(undefined);
 
 const LEVELS: AlarmLevel[] = ['INFO', 'NOTICE', 'ALERT', 'CRITICAL'];
+const EXTRA_SOUND_KEYS: AlarmSoundKey[] = ['DRONE_GEOFENCE'];
+const SOUND_KEYS: AlarmSoundKey[] = [...LEVELS, ...EXTRA_SOUND_KEYS];
+const DRONE_GEOFENCE_GAP_MS = 2000;
 
 const MEDIA_PROTOCOL_REGEX = /^https?:\/\//i;
 const BLOB_PROTOCOL_REGEX = /^blob:/i;
@@ -68,24 +72,27 @@ function createFallbackTone(level: AlarmLevel, volumePercent: number) {
 
 export function AlarmProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
-  const audioRefs = useRef<Record<AlarmLevel, HTMLAudioElement | null>>({
+  const audioRefs = useRef<Record<AlarmSoundKey, HTMLAudioElement | null>>({
     INFO: null,
     NOTICE: null,
     ALERT: null,
     CRITICAL: null,
+    DRONE_GEOFENCE: null,
   });
-  const objectUrlsRef = useRef<Record<AlarmLevel, string | undefined>>({
+  const objectUrlsRef = useRef<Record<AlarmSoundKey, string | undefined>>({
     INFO: undefined,
     NOTICE: undefined,
     ALERT: undefined,
     CRITICAL: undefined,
+    DRONE_GEOFENCE: undefined,
   });
   const configRef = useRef<AlarmConfig | undefined>(undefined);
-  const lastPlayedRef = useRef<Record<AlarmLevel, number>>({
+  const lastPlayedRef = useRef<Record<AlarmSoundKey, number>>({
     INFO: 0,
     NOTICE: 0,
     ALERT: 0,
     CRITICAL: 0,
+    DRONE_GEOFENCE: 0,
   });
 
   const applyAudioVolumes = (config: AlarmConfig | undefined) => {
@@ -109,7 +116,7 @@ export function AlarmProvider({ children }: PropsWithChildren) {
 
     const { config, sounds } = settingsQuery.data;
     configRef.current = config;
-    LEVELS.forEach((level) => {
+    SOUND_KEYS.forEach((level) => {
       const existing = audioRefs.current[level];
       if (existing) {
         existing.pause();
@@ -122,7 +129,7 @@ export function AlarmProvider({ children }: PropsWithChildren) {
       }
       const audio = new Audio(src);
       audio.preload = 'auto';
-      audio.volume = (configToVolume(config, level) ?? 60) / 100;
+      audio.volume = (volumeForSoundKey(config, level) ?? 60) / 100;
       audio.crossOrigin = 'anonymous';
       audio.load();
       audioRefs.current[level] = audio;
@@ -164,10 +171,10 @@ export function AlarmProvider({ children }: PropsWithChildren) {
   const uploadSoundMutation = useMutation<
     AlarmSettingsResponse,
     Error,
-    { level: AlarmLevel; file: File },
-    { previous?: AlarmSettingsResponse; level: AlarmLevel }
+    { level: AlarmSoundKey; file: File },
+    { previous?: AlarmSettingsResponse; level: AlarmSoundKey }
   >({
-    mutationFn: ({ level, file }: { level: AlarmLevel; file: File }) => {
+    mutationFn: ({ level, file }: { level: AlarmSoundKey; file: File }) => {
       const formData = new FormData();
       formData.append('file', file);
       return apiClient.upload<AlarmSettingsResponse>(`/alarms/sounds/${level}`, formData);
@@ -184,7 +191,7 @@ export function AlarmProvider({ children }: PropsWithChildren) {
       const tempAudio = new Audio(objectUrl);
       tempAudio.preload = 'auto';
       tempAudio.volume =
-        ((previous ? configToVolume(previous.config, level) : undefined) ?? 60) / 100;
+        ((previous ? volumeForSoundKey(previous.config, level) : undefined) ?? 60) / 100;
       tempAudio.load();
       audioRefs.current[level]?.pause();
       audioRefs.current[level] = tempAudio;
@@ -224,7 +231,7 @@ export function AlarmProvider({ children }: PropsWithChildren) {
   });
 
   const removeSoundMutation = useMutation({
-    mutationFn: (level: AlarmLevel) =>
+    mutationFn: (level: AlarmSoundKey) =>
       apiClient.delete<AlarmSettingsResponse>(`/alarms/sounds/${level}`),
     onSuccess: (data) => queryClient.setQueryData(['alarms'], data),
   });
@@ -275,11 +282,37 @@ export function AlarmProvider({ children }: PropsWithChildren) {
     [settingsQuery.data],
   );
 
+  const playDroneGeofence = useCallback(() => {
+    const config = configRef.current ?? settingsQuery.data?.config;
+    const now = Date.now();
+    if (now - lastPlayedRef.current.DRONE_GEOFENCE < DRONE_GEOFENCE_GAP_MS) {
+      return;
+    }
+
+    const audio = audioRefs.current.DRONE_GEOFENCE;
+    const volume = volumeForSoundKey(config, 'DRONE_GEOFENCE');
+    if (audio) {
+      audio.volume = volume / 100;
+      audio.currentTime = 0;
+      void audio.play().catch((error) => {
+        if (typeof window !== 'undefined') {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to play drone geofence alarm:', error);
+        }
+        createFallbackTone('ALERT', volume);
+      });
+    } else {
+      createFallbackTone('ALERT', volume);
+    }
+    lastPlayedRef.current.DRONE_GEOFENCE = now;
+  }, [settingsQuery.data]);
+
   const value = useMemo<AlarmContextValue>(
     () => ({
       settings: settingsQuery.data,
       isLoading: settingsQuery.isLoading,
       play,
+      playDroneGeofence,
       updateConfig: (config) => updateConfigMutation.mutate(config),
       uploadSound: (level, file) => uploadSoundMutation.mutate({ level, file }),
       removeSound: (level) => removeSoundMutation.mutate(level),
@@ -288,6 +321,7 @@ export function AlarmProvider({ children }: PropsWithChildren) {
       settingsQuery.data,
       settingsQuery.isLoading,
       play,
+      playDroneGeofence,
       updateConfigMutation,
       uploadSoundMutation,
       removeSoundMutation,
@@ -303,6 +337,13 @@ export function useAlarm() {
     throw new Error('useAlarm must be used within AlarmProvider');
   }
   return ctx;
+}
+
+function volumeForSoundKey(config: AlarmConfig | undefined, key: AlarmSoundKey): number {
+  if (key === 'DRONE_GEOFENCE') {
+    return config?.volumeAlert ?? 70;
+  }
+  return configToVolume(config, key as AlarmLevel) ?? 60;
 }
 
 function configToVolume(config: AlarmConfig | undefined, level: AlarmLevel): number | undefined {

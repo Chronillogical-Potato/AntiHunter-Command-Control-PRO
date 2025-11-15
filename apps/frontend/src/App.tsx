@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { apiClient } from './api/client';
-import type { AppSettings } from './api/types';
+import type { AppSettings, Drone } from './api/types';
 import { AppHeader } from './components/app-header';
 import { AuthOverlay } from './components/auth-overlay';
 import { SidebarNav } from './components/sidebar-nav';
@@ -25,12 +25,14 @@ import { TerminalEventsPage } from './pages/TerminalEventsPage';
 import { UserPage } from './pages/UserPage';
 import { useTheme } from './providers/theme-provider';
 import { useAuthStore } from './stores/auth-store';
+import { useDroneStore } from './stores/drone-store';
 
 export default function App() {
   const status = useAuthStore((state) => state.status);
   const isAuthenticated = status === 'authenticated';
   const user = useAuthStore((state) => state.user);
   const { setTheme } = useTheme();
+  const setDrones = useDroneStore((state) => state.setDrones);
 
   const appSettingsQuery = useQuery({
     queryKey: ['appSettings'],
@@ -38,6 +40,20 @@ export default function App() {
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000,
   });
+
+  const dronesQuery = useQuery({
+    queryKey: ['drones'],
+    queryFn: () => apiClient.get<Drone[]>('/drones'),
+    enabled: isAuthenticated,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    if (dronesQuery.data) {
+      setDrones(dronesQuery.data);
+    }
+  }, [dronesQuery.data, setDrones]);
 
   useEffect(() => {
     const preference = user?.preferences.theme;
