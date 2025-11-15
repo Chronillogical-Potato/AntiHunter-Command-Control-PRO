@@ -1,4 +1,5 @@
 import { create, toBinary } from '@bufbuild/protobuf';
+import { randomUUID } from 'crypto';
 import {
   BadRequestException,
   Injectable,
@@ -17,6 +18,14 @@ import { createParser, ensureMeshtasticProtobufs, ProtocolKey } from './protocol
 import { SerialConfigService } from './serial-config.service';
 import { SERIAL_DELIMITER_CANDIDATES } from './serial.config.defaults';
 import { SerialParseResult, SerialProtocolParser } from './serial.types';
+import { SerialConnectionOptions, SerialState } from './serial.interfaces';
+import {
+  deserializeSerialParseResult,
+  serializeSerialParseResult,
+  SerialClusterMessage,
+  SerialClusterRole,
+  SerialRpcAction,
+} from './serial-cluster.types';
 import { buildCommandPayload } from '../commands/command-builder';
 
 const Binding = resolveBinding();
@@ -202,24 +211,6 @@ export interface QueueCommandRequest {
   line?: string;
 }
 
-export interface SerialConnectionOptions {
-  path?: string;
-  baudRate: number;
-  delimiter: string;
-  protocol: ProtocolKey;
-  rawDelimiter?: string;
-  autoDetectDelimiter?: boolean;
-  writeDelimiters: string[];
-}
-
-export interface SerialState {
-  connected: boolean;
-  path?: string;
-  baudRate?: number;
-  lastError?: string;
-  protocol?: ProtocolKey;
-}
-
 @Injectable()
 export class SerialService implements OnModuleInit, OnModuleDestroy {
   private port?: SerialPortStream;
@@ -246,6 +237,15 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   private reconnectAttempts = 0;
   private reconnectTimer?: NodeJS.Timeout;
   private manualDisconnect = false;
+  private readonly clusterRole: SerialClusterRole;
+  private readonly clusterMessagingEnabled: boolean;
+  private readonly rpcTimeoutMs: number;
+  private readonly pendingRpc = new Map<
+    string,
+    { resolve: (value: unknown) => void; reject: (reason?: unknown) => void; timeout: NodeJS.Timeout }
+  >();
+  private clusterMessageListener?: (message: unknown) => void;
+  private replicaState: SerialState = { connected: false };
 
   constructor(
     private readonly configService: ConfigService,
@@ -259,16 +259,46 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.reconnectJitter = this.configService.get<number>('serial.reconnectJitter', 0.2);
     this.reconnectMaxAttempts =
       this.configService.get<number>('serial.reconnectMaxAttempts', 0) ?? 0;
+    const configuredRole =
+      (this.configService.get<string>('serial.clusterRole') as SerialClusterRole | undefined) ??
+      'standalone';
+    this.clusterRole =
+      configuredRole === 'leader' || configuredRole === 'replica' ? configuredRole : 'standalone';
+    this.clusterMessagingEnabled = this.clusterRole !== 'standalone' && typeof process.send === 'function';
+    this.rpcTimeoutMs = this.configService.get<number>('serial.rpcTimeoutMs', 8000) ?? 8000;
   }
 
   async onModuleInit(): Promise<void> {
+    this.setupClusterMessaging();
+    if (this.clusterRole === 'replica') {
+      this.logger.log(
+        'Serial runtime running in replica mode; awaiting leader stream for parsed events.',
+      );
+      if (this.clusterMessagingEnabled) {
+        await this.syncReplicaStateFromLeader().catch((error) => {
+          this.logger.warn(
+            `Initial serial state sync failed: ${error instanceof Error ? error.message : error}`,
+          );
+        });
+      } else {
+        this.logger.warn(
+          'Replica role configured but cluster messaging unavailable; serial control endpoints will reject requests.',
+        );
+      }
+      return;
+    }
+
     await this.autoConnect().catch((error) => {
       this.handleAutoConnectFailure(error);
     });
+    this.broadcastState();
   }
 
   onModuleDestroy(): void {
-    void this.disconnect();
+    if (this.clusterRole !== 'replica') {
+      void this.disconnect();
+    }
+    this.teardownClusterMessaging();
   }
 
   private async autoConnect(): Promise<void> {
@@ -277,7 +307,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('Serial auto-connect disabled via configuration');
       return;
     }
-    await this.connect({
+    await this.connectInternal({
       path: storedConfig.devicePath ?? this.configService.get<string>('serial.device'),
       baudRate: storedConfig.baud ?? this.configService.get<number>('serial.baudRate', 115200),
       delimiter: storedConfig.delimiter ?? this.configService.get<string>('serial.delimiter', '\n'),
@@ -293,6 +323,8 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     } else {
       this.logger.error(`Serial auto-connect failed: ${message}`);
     }
+    this.lastError = message;
+    this.broadcastState();
     this.scheduleReconnect(message);
   }
 
@@ -305,6 +337,13 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   getState(): SerialState {
+    if (this.clusterRole === 'replica') {
+      return { ...this.replicaState };
+    }
+    return this.buildState();
+  }
+
+  private buildState(): SerialState {
     return {
       connected: Boolean(this.port),
       path: this.connectionOptions?.path ?? this.port?.path,
@@ -319,10 +358,42 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   async listPorts(): Promise<SerialPortInfo[]> {
+    if (this.shouldUseRpc()) {
+      const ports = await this.requestRpc('listPorts');
+      return (ports as SerialPortInfo[]) ?? [];
+    }
     return getAvailablePorts();
   }
 
   async connect(options?: Partial<SerialConnectionOptions>): Promise<void> {
+    if (this.shouldUseRpc()) {
+      const state = (await this.requestRpc('connect', options)) as SerialState | undefined;
+      this.updateReplicaState(state);
+      return;
+    }
+    await this.connectInternal(options);
+    this.broadcastState();
+  }
+
+  async disconnect(): Promise<void> {
+    if (this.shouldUseRpc()) {
+      const state = (await this.requestRpc('disconnect')) as SerialState | undefined;
+      this.updateReplicaState(state);
+      return;
+    }
+    await this.performDisconnect();
+    this.broadcastState();
+  }
+
+  async simulateLines(lines: string[]): Promise<void> {
+    if (this.shouldUseRpc()) {
+      await this.requestRpc('simulate', lines);
+      return;
+    }
+    await this.simulateLinesInternal(lines);
+  }
+
+  private async connectInternal(options?: Partial<SerialConnectionOptions>): Promise<void> {
     if (this.port) {
       this.logger.warn('Serial port already connected');
       return;
@@ -378,6 +449,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           enabled: true,
         });
         this.logger.log(`Connected to serial port ${candidatePath}`);
+        this.lastError = undefined;
         this.reconnectAttempts = 0;
         return;
       } catch (error) {
@@ -396,7 +468,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     throw new BadRequestException('Unable to open any serial ports');
   }
 
-  async disconnect(): Promise<void> {
+  private async performDisconnect(): Promise<void> {
     const port = this.port;
     if (!port) {
       return;
@@ -469,6 +541,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.globalRate.resetAt = 0;
     this.targetRates.clear();
     this.packetIdCounter = Math.floor(Math.random() * 0xffff);
+    this.broadcastState();
   }
 
   private clearReconnectTimer(): void {
@@ -783,16 +856,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       if (!line) {
         return;
       }
-      this.logger.debug({ line }, 'Serial line received');
-      this.incoming$.next(line);
-      try {
-        const parsed = this.protocolParser.parseLine(line);
-        this.logger.debug({ parsed }, 'Parsed serial events');
-        parsed.forEach((event) => this.parsed$.next(event));
-      } catch (err) {
-        this.logger.error(`Failed to parse serial line: ${line}`, err as Error);
-        this.parsed$.next({ kind: 'raw', raw: line });
-      }
+      this.processIncomingLine(line, 'serial');
     });
 
     this.lineParser.on('error', (err) => {
@@ -812,4 +876,293 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       }
     });
   }
+
+  private async simulateLinesInternal(lines: string[]): Promise<void> {
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/[\r\n]+$/g, '').trim();
+      if (line) {
+        this.processIncomingLine(line, 'simulation');
+      }
+      await delay(50);
+    }
+  }
+
+  private shouldUseRpc(): boolean {
+    return this.clusterRole === 'replica' && this.clusterMessagingEnabled;
+  }
+
+  private setupClusterMessaging(): void {
+    if (!this.clusterMessagingEnabled || this.clusterMessageListener) {
+      return;
+    }
+    const listener = (raw: unknown) => {
+      if (!raw || typeof raw !== 'object') {
+        return;
+      }
+      const envelope = raw as SerialClusterMessage;
+      if (envelope.channel !== 'serial') {
+        return;
+      }
+      this.handleClusterMessage(envelope);
+    };
+
+    process.on('message', listener as (message: unknown) => void);
+    this.clusterMessageListener = listener as (message: unknown) => void;
+    if (this.clusterRole === 'leader') {
+      this.broadcastState();
+    }
+  }
+
+  private teardownClusterMessaging(): void {
+    if (this.clusterMessageListener) {
+      const remover = (process.off ?? process.removeListener).bind(process);
+      remover('message', this.clusterMessageListener);
+      this.clusterMessageListener = undefined;
+    }
+    for (const [requestId, pending] of this.pendingRpc.entries()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Serial service shutting down'));
+      this.pendingRpc.delete(requestId);
+    }
+  }
+
+  private async syncReplicaStateFromLeader(): Promise<void> {
+    if (!this.shouldUseRpc()) {
+      this.replicaState = { connected: false };
+      return;
+    }
+    const state = (await this.requestRpc('getState')) as SerialState | undefined;
+    this.updateReplicaState(state);
+  }
+
+  private updateReplicaState(state?: SerialState): void {
+    if (!state) {
+      return;
+    }
+    this.replicaState = { ...state };
+    this.lastError = state.lastError;
+  }
+
+  private handleClusterMessage(message: SerialClusterMessage): void {
+    switch (message.type) {
+      case 'event':
+        if (this.clusterRole !== 'replica' || !Array.isArray(message.events)) {
+          return;
+        }
+        message.events.forEach((payload) => {
+          const event = deserializeSerialParseResult(payload);
+          this.parsed$.next(event);
+        });
+        break;
+      case 'state':
+        if (this.clusterRole !== 'replica' || !message.state) {
+          return;
+        }
+        this.updateReplicaState(message.state);
+        break;
+      case 'rpc-response': {
+        const requestId = message.requestId;
+        if (!requestId) {
+          return;
+        }
+        const pending = this.pendingRpc.get(requestId);
+        if (!pending) {
+          return;
+        }
+        clearTimeout(pending.timeout);
+        this.pendingRpc.delete(requestId);
+        if (message.success === false) {
+          pending.reject(new Error(message.error ?? 'Serial RPC failed'));
+        } else {
+          pending.resolve(message.payload);
+        }
+        break;
+      }
+      case 'rpc-request':
+        if (
+          this.clusterRole !== 'leader' ||
+          !message.requestId ||
+          !message.action ||
+          typeof message.sourceId !== 'number'
+        ) {
+          return;
+        }
+        void this.handleRpcRequest(
+          message.requestId,
+          message.action,
+          message.payload,
+          message.sourceId,
+        );
+        break;
+      default:
+        break;
+    }
+  }
+
+  private async requestRpc<T = unknown>(action: SerialRpcAction, payload?: unknown): Promise<T> {
+    if (!this.clusterMessagingEnabled || typeof process.send !== 'function') {
+      throw new Error('Serial RPC is not available in this process');
+    }
+    const requestId = randomUUID();
+    return await new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRpc.delete(requestId);
+        reject(new Error(`Serial RPC "${action}" timed out`));
+      }, this.rpcTimeoutMs);
+      const wrappedResolve = (value: unknown) => resolve(value as T);
+      const wrappedReject = (reason?: unknown) => reject(reason);
+      this.pendingRpc.set(requestId, {
+        resolve: wrappedResolve,
+        reject: wrappedReject,
+        timeout,
+      });
+      const envelope: SerialClusterMessage = {
+        channel: 'serial',
+        type: 'rpc-request',
+        requestId,
+        action,
+        payload,
+      };
+      try {
+        process.send?.(envelope);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.pendingRpc.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private async handleRpcRequest(
+    requestId: string,
+    action: SerialRpcAction,
+    payload: unknown,
+    sourceId: number,
+  ): Promise<void> {
+    try {
+      let result: unknown;
+      switch (action) {
+        case 'connect':
+          await this.connectInternal(payload as Partial<SerialConnectionOptions>);
+          this.broadcastState();
+          result = this.buildState();
+          break;
+        case 'disconnect':
+          await this.performDisconnect();
+          this.broadcastState();
+          result = this.buildState();
+          break;
+        case 'listPorts':
+          result = await getAvailablePorts();
+          break;
+        case 'simulate':
+          await this.simulateLinesInternal((payload as string[]) ?? []);
+          result = true;
+          break;
+        case 'getState':
+          result = this.buildState();
+          break;
+        default:
+          throw new Error(`Unsupported serial RPC action: ${action}`);
+      }
+      this.sendRpcResponse(requestId, sourceId, true, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.sendRpcResponse(requestId, sourceId, false, undefined, message);
+    }
+  }
+
+  private sendRpcResponse(
+    requestId: string,
+    targetId: number,
+    success: boolean,
+    payload?: unknown,
+    error?: string,
+  ): void {
+    if (!this.clusterMessagingEnabled || typeof process.send !== 'function') {
+      return;
+    }
+    const envelope: SerialClusterMessage = {
+      channel: 'serial',
+      type: 'rpc-response',
+      requestId,
+      success,
+      payload,
+      error,
+      targetId,
+    };
+    try {
+      process.send?.(envelope);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to send serial RPC response: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  private broadcastParsedEvents(events: SerialParseResult[]): void {
+    if (
+      !events.length ||
+      this.clusterRole !== 'leader' ||
+      !this.clusterMessagingEnabled ||
+      typeof process.send !== 'function'
+    ) {
+      return;
+    }
+    const envelope: SerialClusterMessage = {
+      channel: 'serial',
+      type: 'event',
+      events: events.map((event) => serializeSerialParseResult(event)),
+    };
+    try {
+      process.send?.(envelope);
+    } catch (error) {
+      this.logger.debug(
+        `Failed to broadcast serial events: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  private broadcastState(): void {
+    if (
+      this.clusterRole !== 'leader' ||
+      !this.clusterMessagingEnabled ||
+      typeof process.send !== 'function'
+    ) {
+      return;
+    }
+    const envelope: SerialClusterMessage = {
+      channel: 'serial',
+      type: 'state',
+      state: this.buildState(),
+    };
+    try {
+      process.send?.(envelope);
+    } catch (error) {
+      this.logger.debug(
+        `Failed to broadcast serial state: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  private processIncomingLine(line: string, source: 'serial' | 'simulation'): void {
+    this.logger.debug(
+      { line },
+      source === 'serial' ? 'Serial line received' : 'Simulated serial line',
+    );
+    this.incoming$.next(line);
+    try {
+      const parsed = this.protocolParser.parseLine(line);
+      this.logger.debug({ parsed }, 'Parsed serial events');
+      parsed.forEach((event) => this.parsed$.next(event));
+      this.broadcastParsedEvents(parsed);
+    } catch (err) {
+      this.logger.error(`Failed to parse ${source} line: ${line}`, err as Error);
+      this.parsed$.next({ kind: 'raw', raw: line });
+    }
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

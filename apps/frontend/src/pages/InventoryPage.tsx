@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { apiClient } from '../api/client';
 import { InventoryDevice } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
+import { useDroneStore } from '../stores/drone-store';
+import { useMapCommandStore } from '../stores/map-command-store';
 
 type InventorySortKey =
   | 'mac'
@@ -26,6 +29,9 @@ export function InventoryPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const queryClient = useQueryClient();
   const role = useAuthStore((state) => state.user?.role ?? null);
+  const gotoOnMap = useMapCommandStore((state) => state.goto);
+  const resetDrones = useDroneStore((state) => state.setDrones);
+  const navigate = useNavigate();
 
   const canPromote = role === 'ADMIN' || role === 'OPERATOR';
   const canClear = role === 'ADMIN';
@@ -69,8 +75,10 @@ export function InventoryPage() {
   const clearMutation = useMutation({
     mutationFn: async () => apiClient.post('/inventory/clear', {}),
     onSuccess: async () => {
+      resetDrones([]);
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
       await queryClient.invalidateQueries({ queryKey: ['targets'] });
+      await queryClient.invalidateQueries({ queryKey: ['drones'] });
     },
     onError: (error: unknown) => {
       const message =
@@ -120,6 +128,22 @@ export function InventoryPage() {
 
   const ariaSort = (key: InventorySortKey): 'none' | 'ascending' | 'descending' =>
     sortKey === key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
+
+  const handleGoToMap = useCallback(
+    (device: InventoryDevice) => {
+      if (typeof device.lastLat !== 'number' || typeof device.lastLon !== 'number') {
+        return;
+      }
+      gotoOnMap({
+        lat: device.lastLat,
+        lon: device.lastLon,
+        zoom: 15,
+        nodeId: device.lastNodeId ?? undefined,
+      });
+      navigate('/map');
+    },
+    [gotoOnMap, navigate],
+  );
 
   return (
     <section className="panel">
@@ -265,6 +289,8 @@ export function InventoryPage() {
               {sortedData.map((device) => {
                 const locationKnown =
                   typeof device.lastLat === 'number' && typeof device.lastLon === 'number';
+                const isDrone =
+                  (device.type ?? '').trim().toLowerCase() === 'drone' && locationKnown;
                 return (
                   <tr key={device.mac}>
                     <td>{device.mac}</td>
@@ -290,27 +316,38 @@ export function InventoryPage() {
                         : 'N/A'}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="control-chip"
-                        onClick={() => {
-                          if (!canPromote) {
-                            window.alert(
-                              'You need OPERATOR or ADMIN privileges to promote devices.',
-                            );
-                            return;
+                      {isDrone ? (
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => handleGoToMap(device)}
+                          disabled={!locationKnown}
+                        >
+                          Go to Map
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => {
+                            if (!canPromote) {
+                              window.alert(
+                                'You need OPERATOR or ADMIN privileges to promote devices.',
+                              );
+                              return;
+                            }
+                            promoteMutation.mutate(device);
+                          }}
+                          disabled={promoteMutation.isPending || !locationKnown || !canPromote}
+                          title={
+                            locationKnown
+                              ? 'Promote device to targets list'
+                              : 'Awaiting coordinate fix before promotion'
                           }
-                          promoteMutation.mutate(device);
-                        }}
-                        disabled={promoteMutation.isPending || !locationKnown || !canPromote}
-                        title={
-                          locationKnown
-                            ? 'Promote device to targets list'
-                            : 'Awaiting coordinate fix before promotion'
-                        }
-                      >
-                        {promoteMutation.isPending ? 'Promoting...' : 'Promote to Target'}
-                      </button>
+                        >
+                          {promoteMutation.isPending ? 'Promoting...' : 'Promote to Target'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

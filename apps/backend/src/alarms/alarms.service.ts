@@ -7,8 +7,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpdateAlarmConfigDto } from './dto/update-alarm-config.dto';
 
 export type AlarmLevel = 'INFO' | 'NOTICE' | 'ALERT' | 'CRITICAL';
+export type AlarmSoundKey = AlarmLevel | 'DRONE_GEOFENCE' | 'DRONE_TELEMETRY';
 
 const ALARM_LEVELS: AlarmLevel[] = ['INFO', 'NOTICE', 'ALERT', 'CRITICAL'];
+const SOUND_KEYS: AlarmSoundKey[] = [...ALARM_LEVELS, 'DRONE_GEOFENCE', 'DRONE_TELEMETRY'];
 
 @Injectable()
 export class AlarmsService {
@@ -33,16 +35,18 @@ export class AlarmsService {
     });
 
     const soundRecords = await this.prisma.alarmSound.findMany();
-    const soundMap: Record<AlarmLevel, string | null> = {
+    const soundMap: Record<AlarmSoundKey, string | null> = {
       INFO: null,
       NOTICE: null,
       ALERT: null,
       CRITICAL: null,
+      DRONE_GEOFENCE: null,
+      DRONE_TELEMETRY: null,
     };
 
     soundRecords.forEach((sound) => {
-      const level = sound.level.toUpperCase() as AlarmLevel;
-      if (ALARM_LEVELS.includes(level)) {
+      const level = sound.level.toUpperCase() as AlarmSoundKey;
+      if (SOUND_KEYS.includes(level)) {
         const version = sound.updatedAt instanceof Date ? sound.updatedAt.getTime() : Date.now();
         soundMap[level] = `/media/alarms/${sound.filename}?v=${version}`;
       }
@@ -59,8 +63,8 @@ export class AlarmsService {
     });
   }
 
-  async saveSound(level: AlarmLevel, originalName: string, buffer: Buffer): Promise<void> {
-    if (!ALARM_LEVELS.includes(level)) {
+  async saveSound(level: AlarmSoundKey, originalName: string, buffer: Buffer): Promise<void> {
+    if (!SOUND_KEYS.includes(level)) {
       throw new NotFoundException(`Unsupported alarm level ${level}`);
     }
 
@@ -92,7 +96,7 @@ export class AlarmsService {
     });
   }
 
-  async removeSound(level: AlarmLevel): Promise<void> {
+  async removeSound(level: AlarmSoundKey): Promise<void> {
     const existing = await this.prisma.alarmSound.findUnique({ where: { level } });
     if (!existing) {
       throw new NotFoundException(`No sound registered for ${level}`);
@@ -110,9 +114,9 @@ export class AlarmsService {
     }
   }
 
-  validateLevel(level: string): AlarmLevel {
-    const normalized = level.toUpperCase() as AlarmLevel;
-    if (!ALARM_LEVELS.includes(normalized)) {
+  validateLevel(level: string): AlarmSoundKey {
+    const normalized = level.toUpperCase() as AlarmSoundKey;
+    if (!SOUND_KEYS.includes(normalized)) {
       throw new NotFoundException(`Unsupported alarm level ${level}`);
     }
     return normalized;

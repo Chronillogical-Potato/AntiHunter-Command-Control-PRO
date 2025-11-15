@@ -26,6 +26,16 @@ export class UpdateAlarmConfigDto {
 
   @IsInt()
   @Min(0)
+  @Max(100)
+  volumeDroneGeofence!: number;
+
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  volumeDroneTelemetry!: number;
+
+  @IsInt()
+  @Min(0)
   gapInfoMs!: number;
 
   @IsInt()

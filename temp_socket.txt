@@ -1,0 +1,883 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+
+import type {
+  AlarmLevel,
+  Drone,
+  DroneStatus,
+  FaaAircraftSummary,
+  Geofence,
+  Target,
+} from '../api/types';
+import { useAlarm } from '../providers/alarm-provider';
+import { useSocket } from '../providers/socket-provider';
+import { useAlertStore } from '../stores/alert-store';
+import { useDroneStore } from '../stores/drone-store';
+import { useGeofenceStore } from '../stores/geofence-store';
+import type { GeofenceEvent } from '../stores/geofence-store';
+import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
+import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
+
+const NOTIFICATION_CATEGORIES = new Set(['gps', 'status', 'console']);
+const DEVICE_LINE_REGEX =
+  /^(?:[A-Za-z0-9_-]+):?\s*DEVICE:(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}(?:\s+[A-Za-z0-9]+)?\s+-?\d+/i;
+const DEVICE_FALLBACK_REGEX = /^[A-Za-z0-9_-]+\s+DEVICE:?$/i;
+
+type TerminalEntryInput = Omit<TerminalEntry, 'id' | 'timestamp'> & { timestamp?: string };
+
+export function SocketBridge() {
+  const socket = useSocket();
+  const queryClient = useQueryClient();
+  const { play, playDroneGeofence } = useAlarm();
+  const setInitialNodes = useNodeStore((state) => state.setInitialNodes);
+  const applyDiff = useNodeStore((state) => state.applyDiff);
+  const addEntry = useTerminalStore((state) => state.addEntry);
+  const triggerAlert = useAlertStore((state) => state.triggerAlert);
+  const setDrones = useDroneStore((state) => state.setDrones);
+  const upsertDrone = useDroneStore((state) => state.upsert);
+  const appendDroneTrail = useDroneStore((state) => state.appendTrailPoint);
+  const removeDrone = useDroneStore((state) => state.remove);
+  const setDroneStatus = useDroneStore((state) => state.setStatus);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const handleInit = (payload: unknown) => {
+      if (isInitPayload(payload)) {
+        setInitialNodes(payload.nodes);
+        if (Array.isArray(payload.geofences)) {
+          useGeofenceStore.getState().setGeofences(payload.geofences);
+        }
+        if (Array.isArray(payload.drones)) {
+          setDrones(payload.drones);
+        }
+      }
+    };
+
+    const emitGeofenceEvents = (events: GeofenceEvent[], siteId?: string | null) => {
+      events.forEach((event) => {
+        const entry: TerminalEntryInput = {
+          message: `Geofence ${event.geofenceName} (${event.transition.toUpperCase()}): ${event.message}`,
+          level: alarmLevelToTerminal(event.level),
+          source: 'geofence',
+        };
+        addEntry(entry);
+        triggerAlert({
+          nodeId: event.entityId,
+          siteId: siteId ?? undefined,
+          category: 'geofence',
+          level: event.level,
+          message: event.message,
+          lat: event.lat,
+          lon: event.lon,
+          timestamp: new Date().toISOString(),
+        });
+        if (event.entityType === 'drone') {
+          playDroneGeofence();
+        } else {
+          play(event.level);
+        }
+      });
+    };
+
+    const handleNodeDiff = (payload: unknown) => {
+      if (isNodeDiffPayload(payload)) {
+        applyDiff(payload);
+
+        if (payload.type === 'upsert') {
+          const state = useNodeStore.getState();
+          const node = state.nodes[canonicalNodeId(payload.node.id)];
+          if (node) {
+            const geofenceEvents = useGeofenceStore.getState().processNodePosition(node);
+            emitGeofenceEvents(geofenceEvents, node.siteId ?? undefined);
+          }
+        }
+      }
+    };
+
+    const handleEvent = (payload: unknown) => {
+      if (isDroneTelemetryEvent(payload)) {
+        const timestamp = payload.timestamp ?? new Date().toISOString();
+        upsertDrone({
+          id: payload.droneId,
+          droneId: payload.droneId,
+          mac: payload.mac ?? null,
+          nodeId: payload.nodeId ?? null,
+          siteId: payload.siteId ?? null,
+          originSiteId: payload.originSiteId ?? payload.siteId ?? null,
+          siteName: payload.siteName ?? null,
+          siteColor: payload.siteColor ?? null,
+          siteCountry: payload.siteCountry ?? null,
+          siteCity: payload.siteCity ?? null,
+          lat: payload.lat,
+          lon: payload.lon,
+          altitude: payload.altitude ?? null,
+          speed: payload.speed ?? null,
+          operatorLat: payload.operatorLat ?? null,
+          operatorLon: payload.operatorLon ?? null,
+          rssi: payload.rssi ?? null,
+          status: normalizeDroneStatus(payload.status),
+          faa: payload.faa ?? null,
+          lastSeen: timestamp,
+        });
+
+        const geofenceEvents = useGeofenceStore.getState().processCoordinateEvent({
+          entityId: payload.droneId,
+          entityLabel: payload.droneId,
+          entityType: 'drone',
+          lat: payload.lat,
+          lon: payload.lon,
+        });
+        emitGeofenceEvents(geofenceEvents, payload.siteId ?? undefined);
+
+        appendDroneTrail(payload.droneId, {
+          lat: payload.lat,
+          lon: payload.lon,
+          ts: timestamp,
+        });
+
+        const macSegment = payload.mac ? ` MAC:${payload.mac}` : '';
+        const rssiSegment = payload.rssi != null ? ` RSSI:${payload.rssi}dBm` : '';
+        const altitudeSegment = payload.altitude != null ? ` ALT:${payload.altitude}m` : '';
+        const speedSegment = payload.speed != null ? ` SPD:${payload.speed}m/s` : '';
+        const operatorSegment =
+          payload.operatorLat != null && payload.operatorLon != null
+            ? ` OP:${payload.operatorLat.toFixed(6)},${payload.operatorLon.toFixed(6)}`
+            : '';
+        const viaSegment = payload.nodeId ? ` via ${payload.nodeId}` : '';
+        const message = `Drone ${payload.droneId}${viaSegment} GPS:${payload.lat.toFixed(6)},${payload.lon.toFixed(
+          6,
+        )}${altitudeSegment}${speedSegment}${rssiSegment}${operatorSegment}${macSegment}`;
+
+        addEntry({
+          message,
+          level: 'alert',
+          source: 'drone',
+          timestamp,
+          siteId: payload.siteId ?? undefined,
+        });
+
+        triggerAlert({
+          nodeId: payload.nodeId ?? payload.droneId,
+          siteId: payload.siteId ?? undefined,
+          category: 'drone',
+          level: 'ALERT',
+          message,
+          lat: payload.lat,
+          lon: payload.lon,
+          timestamp,
+        });
+
+        play('ALERT');
+        return;
+      }
+
+      if (isDroneStatusEvent(payload)) {
+        setDroneStatus(payload.droneId, payload.status);
+        const state = useDroneStore.getState();
+        const existing = state.map[payload.droneId] ?? null;
+        if (payload.faa || existing) {
+          upsertDrone({
+            id: payload.id ?? payload.droneId,
+            droneId: payload.droneId,
+            lat: payload.lat ?? existing?.lat ?? 0,
+            lon: payload.lon ?? existing?.lon ?? 0,
+            lastSeen: payload.timestamp ?? existing?.lastSeen ?? new Date().toISOString(),
+            status: payload.status,
+            faa: payload.faa ?? existing?.faa ?? null,
+            mac: existing?.mac ?? null,
+            nodeId: existing?.nodeId ?? null,
+            siteId: existing?.siteId ?? null,
+            siteName: existing?.siteName ?? null,
+            siteColor: existing?.siteColor ?? null,
+            siteCountry: existing?.siteCountry ?? null,
+            siteCity: existing?.siteCity ?? null,
+            altitude: existing?.altitude ?? null,
+            speed: existing?.speed ?? null,
+            operatorLat: existing?.operatorLat ?? null,
+            operatorLon: existing?.operatorLon ?? null,
+            rssi: existing?.rssi ?? null,
+          });
+        }
+        return;
+      }
+
+      if (isDroneRemovalEvent(payload)) {
+        removeDrone(payload.droneId);
+        return;
+      }
+
+      const entry = parseEventPayload(payload);
+      addEntry(entry);
+      const alarmLevel = extractAlarmLevel(payload);
+      if (alarmLevel) {
+        const playbackLevel: AlarmLevel = alarmLevel === 'CRITICAL' ? 'ALERT' : alarmLevel;
+        play(playbackLevel);
+      }
+
+      const targetDetails = extractTargetDetails(payload);
+      if (targetDetails) {
+        if (
+          targetDetails.mac &&
+          typeof targetDetails.lat === 'number' &&
+          typeof targetDetails.lon === 'number' &&
+          Number.isFinite(targetDetails.lat) &&
+          Number.isFinite(targetDetails.lon)
+        ) {
+          const normalizedMac = normalizeMacKey(targetDetails.mac);
+          queryClient.setQueryData(['targets'], (previous: Target[] | undefined) => {
+            if (!previous) {
+              return previous;
+            }
+            let changed = false;
+            const next = previous.map((target) => {
+              if (!target.mac) {
+                return target;
+              }
+              const macKey = normalizeMacKey(target.mac);
+              if (macKey !== normalizedMac) {
+                return target;
+              }
+              const lat = targetDetails.lat ?? target.lat;
+              const lon = targetDetails.lon ?? target.lon;
+              const confidence =
+                typeof targetDetails.confidence === 'number'
+                  ? targetDetails.confidence
+                  : (target.trackingConfidence ?? null);
+              const updatedAt = targetDetails.detectedAt ?? target.updatedAt;
+              if (
+                Math.abs(target.lat - lat) > 1e-6 ||
+                Math.abs(target.lon - lon) > 1e-6 ||
+                (confidence ?? null) !== (target.trackingConfidence ?? null) ||
+                updatedAt !== target.updatedAt
+              ) {
+                changed = true;
+                return {
+                  ...target,
+                  lat,
+                  lon,
+                  updatedAt,
+                  trackingConfidence: confidence,
+                };
+              }
+              return target;
+            });
+            return changed ? next : previous;
+          });
+        }
+
+        const nodeState = useNodeStore.getState();
+        const node = targetDetails.nodeId
+          ? nodeState.nodes[canonicalNodeId(targetDetails.nodeId)]
+          : undefined;
+        const lat = targetDetails.lat ?? node?.lat;
+        const lon = targetDetails.lon ?? node?.lon;
+        if (
+          typeof lat === 'number' &&
+          Number.isFinite(lat) &&
+          typeof lon === 'number' &&
+          Number.isFinite(lon)
+        ) {
+          const entityId =
+            targetDetails.mac ??
+            targetDetails.nodeId ??
+            `target-${targetDetails.detectedAt ?? Date.now()}`;
+          const entityType = targetDetails.deviceType ?? 'target';
+          const entityLabel =
+            [targetDetails.deviceType, targetDetails.mac ?? targetDetails.nodeId]
+              .filter(Boolean)
+              .join(' ')
+              .trim() || entityId;
+          const geofenceEvents = useGeofenceStore.getState().processCoordinateEvent({
+            entityId,
+            entityLabel,
+            entityType,
+            lat,
+            lon,
+          });
+          emitGeofenceEvents(geofenceEvents, node?.siteId ?? undefined);
+        }
+      }
+
+      const alertDetails = extractAlertDetails(payload);
+      if (alertDetails && alertDetails.nodeId) {
+        const level = (alertDetails.level ?? 'NOTICE').toUpperCase() as AlarmLevel;
+        triggerAlert({
+          nodeId: alertDetails.nodeId,
+          siteId: alertDetails.siteId,
+          category: alertDetails.category ?? 'status',
+          level,
+          message: alertDetails.message ?? 'Alert triggered',
+          lat: alertDetails.lat,
+          lon: alertDetails.lon,
+          timestamp: alertDetails.timestamp,
+        });
+      }
+    };
+
+    const handleCommandUpdate = (payload: unknown) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+
+      const command = payload as { id?: string; name?: string; status?: string };
+      const status = String(command.status ?? 'UNKNOWN').toUpperCase();
+      const level: TerminalLevel =
+        status === 'ERROR' ? 'critical' : status === 'OK' ? 'notice' : 'info';
+      const name = command.name ?? command.id ?? 'command';
+
+      const entry: TerminalEntryInput = {
+        message: `Command ${name} -> ${status}`,
+        level,
+        source: 'command',
+      };
+
+      addEntry(entry);
+      if (status === 'ERROR') {
+        play('ALERT');
+      }
+    };
+
+    const handleGeofenceUpsert = (payload: unknown) => {
+      if (payload && typeof payload === 'object' && 'id' in payload) {
+        useGeofenceStore.getState().upsertGeofence(payload as Geofence);
+      }
+    };
+
+    const handleGeofenceDelete = (payload: unknown) => {
+      if (payload && typeof payload === 'object' && 'id' in payload) {
+        const geofence = payload as { id?: string };
+        if (typeof geofence.id === 'string') {
+          const store = useGeofenceStore.getState();
+          store.removeGeofence(geofence.id);
+          store.resetStates(geofence.id);
+        }
+      }
+    };
+
+    socket.on('init', handleInit);
+    socket.on('nodes', handleNodeDiff);
+    socket.on('event', handleEvent);
+    socket.on('command.update', handleCommandUpdate);
+    socket.on('geofences.upsert', handleGeofenceUpsert);
+    socket.on('geofences.delete', handleGeofenceDelete);
+
+    return () => {
+      socket.off('init', handleInit);
+      socket.off('nodes', handleNodeDiff);
+      socket.off('event', handleEvent);
+      socket.off('command.update', handleCommandUpdate);
+      socket.off('geofences.upsert', handleGeofenceUpsert);
+      socket.off('geofences.delete', handleGeofenceDelete);
+    };
+  }, [
+    socket,
+    setInitialNodes,
+    applyDiff,
+    addEntry,
+    play,
+    triggerAlert,
+    queryClient,
+    setDrones,
+    upsertDrone,
+    removeDrone,
+    setDroneStatus,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      useAlertStore.getState().purgeExpired();
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return null;
+}
+
+interface InitPayload {
+  nodes: NodeSummary[];
+  geofences?: Geofence[];
+  drones?: Drone[];
+}
+
+function isInitPayload(payload: unknown): payload is InitPayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'nodes' in payload &&
+    Array.isArray((payload as { nodes: unknown[] }).nodes)
+  );
+}
+
+function isNodeDiffPayload(payload: unknown): payload is NodeDiffPayload {
+  return typeof payload === 'object' && payload !== null && 'type' in payload && 'node' in payload;
+}
+
+type DroneTelemetryEventPayload = {
+  type: 'drone.telemetry';
+  droneId: string;
+  mac?: string | null;
+  nodeId?: string | null;
+  siteId?: string | null;
+  originSiteId?: string | null;
+  siteName?: string | null;
+  siteColor?: string | null;
+  siteCountry?: string | null;
+  siteCity?: string | null;
+  lat: number;
+  lon: number;
+  altitude?: number | null;
+  speed?: number | null;
+  operatorLat?: number | null;
+  operatorLon?: number | null;
+  rssi?: number | null;
+  timestamp?: string;
+  status?: DroneStatus;
+  faa?: FaaAircraftSummary | null;
+};
+
+type DroneRemoveEventPayload = {
+  type: 'drone.remove';
+  droneId: string;
+};
+
+type DroneStatusEventPayload = {
+  type: 'drone.status';
+  id?: string;
+  droneId: string;
+  status: DroneStatus;
+  lat?: number;
+  lon?: number;
+  timestamp?: string;
+  originSiteId?: string | null;
+  faa?: FaaAircraftSummary | null;
+};
+
+function isDroneTelemetryEvent(payload: unknown): payload is DroneTelemetryEventPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Partial<DroneTelemetryEventPayload>;
+  return (
+    candidate.type === 'drone.telemetry' &&
+    typeof candidate.droneId === 'string' &&
+    typeof candidate.lat === 'number' &&
+    typeof candidate.lon === 'number'
+  );
+}
+
+function isDroneRemovalEvent(payload: unknown): payload is DroneRemoveEventPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Partial<DroneRemoveEventPayload>;
+  return candidate.type === 'drone.remove' && typeof candidate.droneId === 'string';
+}
+
+function isDroneStatusEvent(payload: unknown): payload is DroneStatusEventPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const candidate = payload as Partial<DroneStatusEventPayload>;
+  return candidate.type === 'drone.status' && typeof candidate.droneId === 'string' && isDroneStatus(candidate.status);
+}
+
+function isDroneStatus(value: unknown): value is DroneStatus {
+  return (
+    value === 'UNKNOWN' ||
+    value === 'FRIENDLY' ||
+    value === 'NEUTRAL' ||
+    value === 'HOSTILE'
+  );
+}
+
+function normalizeDroneStatus(value: unknown): DroneStatus {
+  return isDroneStatus(value) ? value : 'UNKNOWN';
+}
+
+function parseEventPayload(payload: unknown): TerminalEntryInput {
+  if (typeof payload === 'string') {
+    return { message: payload, level: 'info', source: 'ws' };
+  }
+
+  if (payload && typeof payload === 'object') {
+    const base = payload as {
+      type?: string;
+      message?: string;
+      line?: string;
+      level?: string;
+      raw?: string;
+      nodeId?: string;
+      timestamp?: string;
+      siteId?: string;
+      category?: string;
+    };
+
+    if (base.type === 'event.alert') {
+      const levelRaw = typeof base.level === 'string' ? base.level.toUpperCase() : undefined;
+      const category = typeof base.category === 'string' ? base.category.toLowerCase() : undefined;
+
+      const message = base.message ?? `Alert from ${base.nodeId ?? 'unknown node'}`;
+      const messageUpper = message.toUpperCase();
+
+      let terminalLevel = alarmLevelToTerminal(levelRaw as AlarmLevel | undefined);
+      let isNotification =
+        !levelRaw ||
+        levelRaw === 'INFO' ||
+        levelRaw === 'NOTICE' ||
+        (category ? NOTIFICATION_CATEGORIES.has(category) : false);
+
+      const isVibration = category === 'vibration' || messageUpper.includes('VIBRATION');
+      if (isVibration) {
+        terminalLevel = 'alert';
+        isNotification = false;
+      } else if (isNotification && terminalLevel === 'info') {
+        terminalLevel = 'notice';
+      }
+
+      const deviceTextCandidate =
+        (typeof base.raw === 'string' && base.raw) ||
+        (typeof base.line === 'string' && base.line) ||
+        message;
+      const looksLikeDeviceNotification =
+        isNotification &&
+        deviceTextCandidate &&
+        (DEVICE_LINE_REGEX.test(deviceTextCandidate) ||
+          DEVICE_FALLBACK_REGEX.test(deviceTextCandidate)) &&
+        (!category || category === 'status' || category === 'console');
+      if (looksLikeDeviceNotification) {
+        return {
+          message: message ?? deviceTextCandidate ?? 'Device event',
+          level: 'info',
+          source: 'raw',
+          timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+          siteId: base.siteId,
+        };
+      }
+
+      const source = isNotification ? 'notification' : 'alert';
+      return {
+        message,
+        level: terminalLevel,
+        source,
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
+    if (base.type === 'raw') {
+      const rawValue = (base as { raw?: unknown }).raw;
+      const message =
+        typeof rawValue === 'string'
+          ? rawValue
+          : rawValue != null
+            ? JSON.stringify(rawValue)
+            : JSON.stringify(payload);
+      return {
+        message,
+        level: 'info',
+        source: 'raw',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
+    if (base.type === 'event.target') {
+      return {
+        message: base.message ?? `Device discovered by ${base.nodeId ?? 'unknown node'}`,
+        level: 'notice',
+        source: 'inventory',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
+    if (base.type === 'command.ack') {
+      return {
+        message: base.message ?? `Command acknowledgement from ${base.nodeId ?? 'node'}`,
+        level: 'info',
+        source: 'command',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
+    if (base.type === 'command.result') {
+      return {
+        message: base.message ?? `Command result from ${base.nodeId ?? 'node'}`,
+        level: 'notice',
+        source: 'command',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
+    if (base.type === 'node.telemetry') {
+      const telemetry = payload as {
+        nodeId?: string;
+        lat?: number | string;
+        lon?: number | string;
+        lastMessage?: string | null;
+        raw?: string;
+        timestamp?: string;
+        siteId?: string;
+      };
+      const lat = toNumber(telemetry.lat);
+      const lon = toNumber(telemetry.lon);
+      const parts: string[] = [`Node ${telemetry.nodeId ?? 'unknown'} telemetry update`];
+      if (typeof lat === 'number' && typeof lon === 'number') {
+        parts.push(`(${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+      }
+      const summary = summarizeTelemetryMessage(
+        typeof telemetry.lastMessage === 'string' ? telemetry.lastMessage : undefined,
+        typeof telemetry.raw === 'string' ? telemetry.raw : undefined,
+      );
+      if (summary) {
+        parts.push(summary);
+      }
+      return {
+        message: parts.join(' '),
+        level: 'info',
+        source: 'raw',
+        timestamp: typeof telemetry.timestamp === 'string' ? telemetry.timestamp : undefined,
+        siteId: telemetry.siteId ?? base.siteId,
+      };
+    }
+
+    if (base.type === 'node.upsert') {
+      const upsert = payload as {
+        originSiteId?: string;
+        payload?: {
+          id?: string;
+          name?: string | null;
+          siteId?: string | null;
+          siteName?: string | null;
+          lat?: number | string;
+          lon?: number | string;
+        };
+        siteId?: string;
+      };
+      const nodeId = upsert.payload?.id ?? base.nodeId ?? 'unknown node';
+      const siteLabel =
+        upsert.payload?.siteName ??
+        upsert.payload?.siteId ??
+        upsert.originSiteId ??
+        base.siteId ??
+        'remote site';
+      const lat = toNumber(upsert.payload?.lat);
+      const lon = toNumber(upsert.payload?.lon);
+      const parts = [`Remote node ${nodeId} update from ${siteLabel}`];
+      if (typeof lat === 'number' && typeof lon === 'number') {
+        parts.push(`(${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+      }
+      return {
+        message: parts.join(' '),
+        level: 'info',
+        source: 'raw',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: upsert.payload?.siteId ?? upsert.originSiteId ?? base.siteId,
+      };
+    }
+
+    if (base.type && (base.type.startsWith('node.') || base.type === 'nodes.diff')) {
+      return {
+        message: JSON.stringify(payload),
+        level: 'info',
+        source: 'raw',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
+    if ('line' in base) {
+      const { line, type } = base as { line: string; type?: string };
+      const level: TerminalLevel =
+        type === 'critical' ? 'critical' : type === 'alert' ? 'alert' : 'info';
+      return { message: line, level, source: type ?? 'raw' };
+    }
+
+    return {
+      message: JSON.stringify(payload),
+      level: 'info',
+      source: 'ws',
+    };
+  }
+
+  return {
+    message: String(payload),
+    level: 'info',
+    source: 'ws',
+  };
+}
+
+function extractAlarmLevel(payload: unknown): AlarmLevel | null {
+  if (payload && typeof payload === 'object' && 'type' in payload) {
+    const base = payload as { type?: string; level?: string };
+    if (base.type === 'event.alert' && base.level) {
+      return base.level.toUpperCase() as AlarmLevel;
+    }
+    if (base.type === 'event.target') {
+      return 'NOTICE';
+    }
+  }
+  return null;
+}
+
+function summarizeTelemetryMessage(message?: string, raw?: string): string | undefined {
+  const candidate = (message ?? raw ?? '').trim();
+  if (!candidate) {
+    return undefined;
+  }
+  const bracket = candidate.match(/\[[^\]]+\]/);
+  if (bracket?.[0]) {
+    return bracket[0];
+  }
+  const beforeColon = candidate.split(':', 1)[0];
+  if (beforeColon && beforeColon.length > 0 && beforeColon.length <= 40) {
+    return beforeColon;
+  }
+  return candidate.length > 40 ? `${candidate.slice(0, 37)}…` : candidate;
+}
+
+interface TargetEventDetails {
+  mac?: string;
+  nodeId?: string;
+  rssi?: number;
+  deviceType?: string;
+  channel?: number;
+  lat?: number;
+  lon?: number;
+  detectedAt?: string;
+  confidence?: number;
+}
+
+function extractTargetDetails(payload: unknown): TargetEventDetails | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const base = payload as {
+    type?: string;
+    mac?: string;
+    nodeId?: string;
+    rssi?: number | string;
+    deviceType?: string;
+    lat?: number | string;
+    lon?: number | string;
+    timestamp?: string;
+    ts?: string;
+    confidence?: number;
+    tracking?: { confidence?: number };
+    channel?: number | string | null;
+  };
+
+  if (base.type !== 'event.target') {
+    return null;
+  }
+
+  const trackingConfidence =
+    typeof base.confidence === 'number'
+      ? base.confidence
+      : typeof base.tracking?.confidence === 'number'
+        ? base.tracking.confidence
+        : undefined;
+
+  return {
+    mac: base.mac,
+    nodeId: base.nodeId,
+    rssi: toNumber(base.rssi),
+    deviceType: base.deviceType,
+    channel: toNumber(base.channel),
+    lat: toNumber(base.lat),
+    lon: toNumber(base.lon),
+    detectedAt:
+      typeof base.timestamp === 'string'
+        ? base.timestamp
+        : typeof base.ts === 'string'
+          ? base.ts
+          : undefined,
+    confidence: typeof trackingConfidence === 'number' ? trackingConfidence : undefined,
+  };
+}
+
+interface AlertDetails {
+  nodeId?: string;
+  siteId?: string;
+  category?: string;
+  level?: AlarmLevel;
+  message?: string;
+  lat?: number;
+  lon?: number;
+  timestamp?: string;
+}
+
+function extractAlertDetails(payload: unknown): AlertDetails | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const base = payload as {
+    type?: string;
+    category?: string;
+    nodeId?: string;
+    level?: string;
+    message?: string;
+    lat?: number | string;
+    lon?: number | string;
+    timestamp?: string;
+    data?: Record<string, unknown>;
+    siteId?: string;
+  };
+
+  if (base.type !== 'event.alert') {
+    return null;
+  }
+
+  const data = base.data ?? {};
+
+  return {
+    nodeId: base.nodeId,
+    siteId: base.siteId,
+    category: base.category,
+    level: base.level ? (base.level.toUpperCase() as AlarmLevel) : undefined,
+    message: base.message,
+    lat: toNumber(base.lat ?? (data as Record<string, unknown>).lat),
+    lon: toNumber(base.lon ?? (data as Record<string, unknown>).lon),
+    timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+  };
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function normalizeMacKey(value: string): string {
+  return value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+}
+
+function alarmLevelToTerminal(level: AlarmLevel | undefined): TerminalLevel {
+  switch (level) {
+    case 'CRITICAL':
+      return 'critical';
+    case 'ALERT':
+      return 'alert';
+    case 'NOTICE':
+      return 'notice';
+    case 'INFO':
+    default:
+      return 'info';
+  }
+}
+

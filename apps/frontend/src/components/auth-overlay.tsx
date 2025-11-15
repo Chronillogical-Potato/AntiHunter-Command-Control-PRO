@@ -1,15 +1,20 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { ThemePresetId } from '../constants/theme';
 import { useAuthStore } from '../stores/auth-store';
 
+const LAST_THEME_PRESET_STORAGE_KEY = 'ahcc:lastThemePreset';
+
 export function AuthOverlay() {
-  const { status, isSubmitting, error, disclaimer, postLoginNotice } = useAuthStore((state) => ({
-    status: state.status,
-    isSubmitting: state.isSubmitting,
-    error: state.error,
-    disclaimer: state.disclaimer,
-    postLoginNotice: state.postLoginNotice,
-  }));
+  const { status, isSubmitting, error, disclaimer, postLoginNotice, userThemePreset } =
+    useAuthStore((state) => ({
+      status: state.status,
+      isSubmitting: state.isSubmitting,
+      error: state.error,
+      disclaimer: state.disclaimer,
+      postLoginNotice: state.postLoginNotice,
+      userThemePreset: state.user?.preferences?.themePreset ?? null,
+    }));
   const login = useAuthStore((state) => state.login);
   const acceptLegal = useAuthStore((state) => state.acceptLegal);
   const verifyTwoFactor = useAuthStore((state) => state.verifyTwoFactor);
@@ -23,6 +28,7 @@ export function AuthOverlay() {
   const [ackChecked, setAckChecked] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [honeypotValue, setHoneypotValue] = useState('');
+  const [preferredPreset, setPreferredPreset] = useState<ThemePresetId>('classic');
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const formStartRef = useRef<number>(Date.now());
@@ -30,6 +36,21 @@ export function AuthOverlay() {
   const overlayVisible = status !== 'authenticated';
   const showLegalStep = status === 'legal';
   const showTwoFactorStep = status === 'twoFactor';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (userThemePreset === 'classic' || userThemePreset === 'tactical_ops') {
+      setPreferredPreset(userThemePreset);
+      window.localStorage.setItem(LAST_THEME_PRESET_STORAGE_KEY, userThemePreset);
+      return;
+    }
+    const stored = window.localStorage.getItem(LAST_THEME_PRESET_STORAGE_KEY);
+    if (stored === 'classic' || stored === 'tactical_ops') {
+      setPreferredPreset(stored);
+    }
+  }, [status, userThemePreset]);
 
   useEffect(() => {
     if (status === 'login') {
@@ -92,8 +113,11 @@ export function AuthOverlay() {
     return null;
   }
 
+  const overlayClassName =
+    preferredPreset === 'tactical_ops' ? 'auth-overlay auth-overlay--tactical' : 'auth-overlay';
+
   return (
-    <div className="auth-overlay" role="dialog" aria-modal="true">
+    <div className={overlayClassName} role="dialog" aria-modal="true">
       <div className="auth-overlay__panel">
         <header className="auth-overlay__header">
           <img

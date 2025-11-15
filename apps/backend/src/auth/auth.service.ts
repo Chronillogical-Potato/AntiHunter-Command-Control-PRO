@@ -19,6 +19,7 @@ interface PreferencesResponse {
   density: string;
   language: string;
   timeFormat: string;
+  themePreset: string;
   notifications: Record<string, unknown> | null;
 }
 
@@ -609,6 +610,7 @@ export class AuthService {
       preferences: {
         theme: user.preferences?.theme ?? 'auto',
         density: user.preferences?.density ?? 'compact',
+        themePreset: user.preferences?.themePreset ?? 'classic',
         language: user.preferences?.language ?? 'en',
         timeFormat: user.preferences?.timeFormat ?? '24h',
         notifications: (user.preferences?.notifications as Record<string, unknown> | null) ?? null,

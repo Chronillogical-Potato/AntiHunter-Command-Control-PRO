@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Prisma } from '@prisma/client';
 import AdmZip from 'adm-zip';
 import { parse } from 'csv-parse';
 import { createReadStream, createWriteStream, promises as fs } from 'node:fs';
@@ -10,8 +11,8 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { PrismaService } from '../prisma/prisma.service';
 import { FaaAircraftSummary } from './faa.types';
+import { PrismaService } from '../prisma/prisma.service';
 
 const FAA_DATASET_URL = 'https://registry.faa.gov/database/ReleasableAircraft.zip';
 const MASTER_FILE_NAME = 'MASTER.txt';
@@ -39,7 +40,10 @@ export class FaaRegistryService {
 
   private readonly onlineLookupEnabled: boolean;
   private readonly onlineCacheTtlMs: number;
-  private readonly onlineCache = new Map<string, { summary: FaaAircraftSummary | null; expiresAt: number }>();
+  private readonly onlineCache = new Map<
+    string,
+    { summary: FaaAircraftSummary | null; expiresAt: number }
+  >();
   private onlineCookie?: string;
   private onlineCookieFetchedAt = 0;
   private readonly onlineCookieTtlMs = 10 * 60 * 1000; // 10 minutes
@@ -55,11 +59,15 @@ export class FaaRegistryService {
     client: 'external',
   };
 
-  constructor(private readonly prisma: PrismaService, private readonly configService: ConfigService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {
     this.onlineLookupEnabled = this.configService.get<boolean>('faa.onlineLookupEnabled', true);
     const ttlMinutes = this.configService.get<number>('faa.onlineCacheTtlMinutes', 60) ?? 60;
     this.onlineCacheTtlMs = ttlMinutes * 60 * 1000;
-    const cooldownMinutes = this.configService.get<number>('faa.onlineLookupCooldownMinutes', 10) ?? 10;
+    const cooldownMinutes =
+      this.configService.get<number>('faa.onlineLookupCooldownMinutes', 10) ?? 10;
     this.onlineLookupCooldownMs = Math.max(1, cooldownMinutes) * 60 * 1000;
   }
 
@@ -155,7 +163,10 @@ export class FaaRegistryService {
     return null;
   }
 
-  private async lookupOnline(droneId: string, cacheKey: string): Promise<FaaAircraftSummary | null> {
+  private async lookupOnline(
+    droneId: string,
+    cacheKey: string,
+  ): Promise<FaaAircraftSummary | null> {
     this.onlineCooldowns.set(cacheKey, Date.now());
 
     const maxAttempts = 3;
@@ -222,7 +233,10 @@ export class FaaRegistryService {
       throw new Error(`FAA cookie refresh failed with status ${response.status}`);
     }
     const cookies =
-      response.headers.getSetCookie?.().map((entry) => entry.split(';')[0]).filter(Boolean) ?? [];
+      response.headers
+        .getSetCookie?.()
+        .map((entry) => entry.split(';')[0])
+        .filter(Boolean) ?? [];
     if (!cookies.length) {
       throw new Error('FAA cookie refresh returned no cookies');
     }
@@ -273,7 +287,9 @@ export class FaaRegistryService {
       nNumber: nNumber.toUpperCase(),
       serialNumber: serialNumber?.toUpperCase() ?? null,
       documentNumber: normalizedDocument,
-      documentUrl: normalizedDocument ? `${FAA_ONLINE_BASE_URL}/listDocs/${normalizedDocument}` : null,
+      documentUrl: normalizedDocument
+        ? `${FAA_ONLINE_BASE_URL}/listDocs/${normalizedDocument}`
+        : null,
       trackingNumber: trackingNumber ?? null,
       makeName: this.extractString(record, ['makeName', 'make']),
       modelName: this.extractString(record, ['modelName', 'model']),
@@ -448,8 +464,7 @@ export class FaaRegistryService {
     fileStream.pipe(parser);
 
     await this.prisma.$transaction(async (tx) => {
-      const client = tx as unknown as Record<string, any>;
-      await client.faaAircraft.deleteMany();
+      await tx.faaAircraft.deleteMany();
       for await (const record of parser) {
         const mapped = this.mapRecord(record);
         if (!mapped) {
@@ -457,19 +472,19 @@ export class FaaRegistryService {
         }
         batch.push(mapped);
         if (batch.length >= batchingSize) {
-          await client.faaAircraft.createMany({ data: batch });
+          await tx.faaAircraft.createMany({ data: batch as Prisma.FaaAircraftCreateManyInput[] });
           total += batch.length;
           batch = [];
           this.progress = this.progress ? { ...this.progress, processed: total } : null;
         }
       }
       if (batch.length > 0) {
-        await client.faaAircraft.createMany({ data: batch });
+        await tx.faaAircraft.createMany({ data: batch as Prisma.FaaAircraftCreateManyInput[] });
         total += batch.length;
         this.progress = this.progress ? { ...this.progress, processed: total } : null;
       }
 
-      await client.faaRegistrySync.upsert({
+      await tx.faaRegistrySync.upsert({
         where: { id: 1 },
         create: {
           id: 1,
@@ -488,7 +503,7 @@ export class FaaRegistryService {
     });
   }
 
-  private mapRecord(record: Record<string, string>): Record<string, unknown> | null {
+  private mapRecord(record: Record<string, string>): Prisma.FaaAircraftCreateManyInput | null {
     const nNumber = (record['N-NUMBER'] ?? '').trim().toUpperCase();
     if (!nNumber) {
       return null;
@@ -555,7 +570,7 @@ export class FaaRegistryService {
     };
   }
 
-  private mapSummary(record: Record<string, any>): FaaAircraftSummary {
+  private mapSummary(record: Prisma.FaaAircraftCreateManyInput): FaaAircraftSummary {
     return {
       nNumber: String(record.nNumber),
       serialNumber: null,
@@ -566,19 +581,19 @@ export class FaaRegistryService {
       modelName: null,
       series: null,
       fccIdentifier: null,
-      registrantName: (record.registrantName as string) ?? null,
-      street1: (record.street1 as string) ?? null,
-      street2: (record.street2 as string) ?? null,
-      city: (record.city as string) ?? null,
-      state: (record.state as string) ?? null,
-      country: (record.country as string) ?? null,
-      aircraftType: (record.aircraftType as string) ?? null,
-      engineType: (record.engineType as string) ?? null,
-      statusCode: (record.statusCode as string) ?? null,
-      modeSCodeHex: (record.modeSCodeHex as string) ?? null,
-      yearManufactured: (record.yearManufactured as number) ?? null,
-      lastActionDate: (record.lastActionDate as Date) ?? null,
-      expirationDate: (record.expirationDate as Date) ?? null,
+      registrantName: record.registrantName ?? null,
+      street1: record.street1 ?? null,
+      street2: record.street2 ?? null,
+      city: record.city ?? null,
+      state: record.state ?? null,
+      country: record.country ?? null,
+      aircraftType: record.aircraftType ?? null,
+      engineType: record.engineType ?? null,
+      statusCode: record.statusCode ?? null,
+      modeSCodeHex: record.modeSCodeHex ?? null,
+      yearManufactured: record.yearManufactured ?? null,
+      lastActionDate: record.lastActionDate instanceof Date ? record.lastActionDate : null,
+      expirationDate: record.expirationDate instanceof Date ? record.expirationDate : null,
     };
   }
 
@@ -593,10 +608,10 @@ export class FaaRegistryService {
   }
 
   private faaModel() {
-    return (this.prisma as unknown as Record<string, any>).faaAircraft;
+    return this.prisma.faaAircraft;
   }
 
   private faaRegistryModel() {
-    return (this.prisma as unknown as Record<string, any>).faaRegistrySync;
+    return this.prisma.faaRegistrySync;
   }
 }

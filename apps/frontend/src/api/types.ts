@@ -37,6 +37,8 @@ export interface AlarmConfig {
   volumeNotice: number;
   volumeAlert: number;
   volumeCritical: number;
+  volumeDroneGeofence: number;
+  volumeDroneTelemetry: number;
   gapInfoMs: number;
   gapNoticeMs: number;
   gapAlertMs: number;
@@ -46,9 +48,11 @@ export interface AlarmConfig {
   backgroundAllowed: boolean;
 }
 
+export type AlarmSoundKey = AlarmLevel | 'DRONE_GEOFENCE' | 'DRONE_TELEMETRY';
+
 export interface AlarmSettingsResponse {
   config: AlarmConfig;
-  sounds: Record<AlarmLevel, string | null>;
+  sounds: Record<AlarmSoundKey, string | null>;
 }
 
 export type TargetStatus = 'ACTIVE' | 'TRIANGULATING' | 'RESOLVED';
@@ -189,12 +193,40 @@ export interface UpdateGeofenceRequest {
   alarm?: Partial<GeofenceAlarmConfig>;
 }
 
+export interface FaaAircraftSummary {
+  nNumber: string;
+  serialNumber?: string | null;
+  documentNumber?: string | null;
+  documentUrl?: string | null;
+  trackingNumber?: string | null;
+  makeName?: string | null;
+  modelName?: string | null;
+  series?: string | null;
+  fccIdentifier?: string | null;
+  registrantName?: string | null;
+  street1?: string | null;
+  street2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  aircraftType?: string | null;
+  engineType?: string | null;
+  statusCode?: string | null;
+  modeSCodeHex?: string | null;
+  yearManufactured?: number | null;
+  lastActionDate?: string | null;
+  expirationDate?: string | null;
+}
+
+export type DroneStatus = 'UNKNOWN' | 'FRIENDLY' | 'NEUTRAL' | 'HOSTILE';
+
 export interface Drone {
   id: string;
   droneId?: string | null;
   mac?: string | null;
   nodeId?: string | null;
   siteId?: string | null;
+  originSiteId?: string | null;
   siteName?: string | null;
   siteColor?: string | null;
   siteCountry?: string | null;
@@ -206,7 +238,35 @@ export interface Drone {
   operatorLat?: number | null;
   operatorLon?: number | null;
   rssi?: number | null;
+  status: DroneStatus;
   lastSeen: string;
+  faa?: FaaAircraftSummary | null;
+}
+
+export interface FaaRegistryStatusResponse {
+  registry: {
+    id: number;
+    datasetUrl?: string | null;
+    datasetVersion?: string | null;
+    lastSyncedAt?: string | null;
+    totalRecords: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  inProgress: boolean;
+  progress?: {
+    processed: number;
+    startedAt: string;
+  } | null;
+  lastError?: string | null;
+  online: {
+    enabled: boolean;
+    cacheEntries: number;
+  };
+}
+
+export interface StartFaaSyncResponse {
+  started: boolean;
 }
 
 export interface AppSettings {
@@ -229,6 +289,13 @@ export interface AppSettings {
   mapAttribution: string;
   minZoom: number;
   maxZoom: number;
+  themeLightBackground: string;
+  themeLightSurface: string;
+  themeLightText: string;
+  themeDarkBackground: string;
+  themeDarkSurface: string;
+  themeDarkText: string;
+  themeAccentPrimary: string;
   alertColorIdle: string;
   alertColorInfo: string;
   alertColorNotice: string;
@@ -413,9 +480,19 @@ export type UserRole = 'ADMIN' | 'OPERATOR' | 'ANALYST' | 'VIEWER';
 export interface UserPreferences {
   theme: string;
   density: string;
+  themePreset?: 'classic' | 'tactical_ops';
   language: string;
   timeFormat: '12h' | '24h';
   notifications?: Record<string, unknown> | null;
+  alertColors?: UserAlertColors | null;
+}
+
+export interface UserAlertColors {
+  idle?: string | null;
+  info?: string | null;
+  notice?: string | null;
+  alert?: string | null;
+  critical?: string | null;
 }
 
 export interface AuthUser {

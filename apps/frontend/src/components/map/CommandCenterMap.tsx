@@ -18,10 +18,11 @@ import {
 import 'leaflet.heat';
 
 import type { Geofence, GeofenceVertex, DroneStatus } from '../../api/types';
+import controllerMarkerIcon from '../../assets/drone-controller.svg';
+import droneMarkerIcon from '../../assets/drone-marker.svg';
 import type { AlertColorConfig } from '../../constants/alert-colors';
 import type { DroneMarker, DroneTrailPoint } from '../../stores/drone-store';
-import type { NodeHistoryPoint, NodeSummary } from '../../stores/node-store';
-import { canonicalNodeId } from '../../stores/node-store';
+import { canonicalNodeId, type NodeHistoryPoint, type NodeSummary } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
 
 const FALLBACK_CENTER: LatLngExpression = [0, 0];
@@ -84,6 +85,41 @@ const DRONE_STATUS_COLORS: Record<DroneStatus, string> = {
   HOSTILE: '#ef4444',
 };
 
+function escapeHtml(input: string): string {
+  return input.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return char;
+    }
+  });
+}
+
+function hexToRgb(hex: string): string {
+  const normalized = hex.replace('#', '');
+  const expanded =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : normalized.padEnd(6, '0');
+  const value = Number.parseInt(expanded, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `${r}, ${g}, ${b}`;
+}
+
 function createNodeIcon(
   node: NodeSummary,
   severity: IndicatorSeverity,
@@ -127,11 +163,17 @@ function createDroneIcon(drone: DroneMarker): DivIcon {
   const statusKey = formatDroneStatusClass(drone.status);
   const wrapperClasses = ['drone-marker-wrapper', `drone-marker-wrapper--${statusKey}`];
   const markerClasses = ['drone-marker', `drone-marker--${statusKey}`];
+  const accent = getDroneStatusColor(drone.status);
+  const safeLabel = escapeHtml(label);
+  const accentRgb = hexToRgb(drone.status ? accent : '#69F0AE');
+  const html = `<div class="${markerClasses.join(
+    ' ',
+  )}" style="--drone-marker-accent:${accent};--drone-marker-accent-rgb:${accentRgb};"><img src="${droneMarkerIcon}" alt="" class="drone-marker__icon" /><span class="drone-marker__label">${safeLabel}</span></div>`;
   return divIcon({
-    html: `<div class="${markerClasses.join(' ')}"><span>${label}</span></div>`,
+    html,
     className: wrapperClasses.join(' '),
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    iconSize: [64, 78],
+    iconAnchor: [32, 32],
   });
 }
 
@@ -139,11 +181,15 @@ function createOperatorIcon(drone: DroneMarker): DivIcon {
   const statusKey = formatDroneStatusClass(drone.status);
   const wrapperClasses = ['drone-operator-wrapper', `drone-operator-wrapper--${statusKey}`];
   const markerClasses = ['drone-operator-marker', `drone-operator-marker--${statusKey}`];
+  const accent = getDroneStatusColor(drone.status);
+  const accentRgb = hexToRgb(accent);
   return divIcon({
-    html: `<div class="${markerClasses.join(' ')}">OP</div>`,
+    html: `<div class="${markerClasses.join(
+      ' ',
+    )}" style="--drone-operator-accent:${accent};--drone-operator-accent-rgb:${accentRgb};"><img src="${controllerMarkerIcon}" alt="" class="drone-operator-marker__icon" /><span class="drone-operator-marker__label">OP</span></div>`,
     className: wrapperClasses.join(' '),
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    iconSize: [52, 64],
+    iconAnchor: [26, 30],
   });
 }
 
@@ -624,7 +670,12 @@ export function CommandCenterMap({
                     click: () => onDroneSelect?.(drone.id),
                   }}
                 >
-                  <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+                  <Tooltip
+                    direction="top"
+                    offset={[0, -10]}
+                    opacity={0.95}
+                    className="tooltip--drone tooltip--drone-operator"
+                  >
                     <div className="drone-operator-tooltip">
                       <strong>Drone Operator</strong>
                       {drone.faa?.makeName || drone.faa?.modelName ? (
@@ -666,7 +717,7 @@ export function CommandCenterMap({
                 click: () => onDroneSelect?.(drone.id),
               }}
             >
-              <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+              <Tooltip direction="top" offset={[0, -10]} opacity={0.95} className="tooltip--drone">
                 <div className="drone-tooltip">
                   <strong>Drone {drone.droneId ?? drone.id}</strong>
                   {drone.faa?.makeName || drone.faa?.modelName ? (

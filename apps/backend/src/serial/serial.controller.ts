@@ -1,9 +1,12 @@
 import { Body, Controller, Get, Post, Put } from '@nestjs/common';
+import { Role } from '@prisma/client';
 
 import { ConnectSerialDto } from './dto/connect-serial.dto';
+import { SimulateSerialDto } from './dto/simulate-serial.dto';
 import { UpdateSerialConfigDto } from './dto/update-serial-config.dto';
 import { SerialConfigService } from './serial-config.service';
 import { SerialService } from './serial.service';
+import { Roles } from '../auth/auth.decorators';
 
 @Controller('serial')
 export class SerialController {
@@ -56,5 +59,12 @@ export class SerialController {
   async disconnect() {
     await this.serialService.disconnect();
     return this.serialService.getState();
+  }
+
+  @Post('simulate')
+  @Roles(Role.ADMIN)
+  async simulate(@Body() dto: SimulateSerialDto) {
+    await this.serialService.simulateLines(dto.lines);
+    return { accepted: dto.lines.length };
   }
 }

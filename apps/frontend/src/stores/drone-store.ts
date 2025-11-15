@@ -57,16 +57,14 @@ export const useDroneStore = create<DroneStoreState>()((set) => ({
   setDrones: (drones) =>
     set((state) => {
       const nextMap: Record<string, DroneMarker> = {};
-      const nextTrails: Record<string, DroneTrailPoint[]> = { ...state.trails };
+      const nextTrails: Record<string, DroneTrailPoint[]> = {};
       drones.forEach((drone) => {
         const normalized = normalizeDrone(drone);
         const pending = state.pendingStatus[drone.id];
         nextMap[drone.id] = pending ? { ...normalized, status: pending } : normalized;
-        if (!nextTrails[drone.id]) {
-          nextTrails[drone.id] = [
-            { lat: normalized.lat, lon: normalized.lon, ts: normalized.lastSeen },
-          ];
-        }
+        nextTrails[drone.id] = [
+          { lat: normalized.lat, lon: normalized.lon, ts: normalized.lastSeen },
+        ];
       });
       return { map: nextMap, list: sortDrones(nextMap), trails: nextTrails };
     }),

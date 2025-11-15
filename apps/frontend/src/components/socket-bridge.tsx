@@ -28,7 +28,7 @@ type TerminalEntryInput = Omit<TerminalEntry, 'id' | 'timestamp'> & { timestamp?
 export function SocketBridge() {
   const socket = useSocket();
   const queryClient = useQueryClient();
-  const { play, playDroneGeofence } = useAlarm();
+  const { play, playDroneGeofence, playDroneTelemetry } = useAlarm();
   const setInitialNodes = useNodeStore((state) => state.setInitialNodes);
   const applyDiff = useNodeStore((state) => state.applyDiff);
   const addEntry = useTerminalStore((state) => state.addEntry);
@@ -170,7 +170,7 @@ export function SocketBridge() {
           timestamp,
         });
 
-        play('ALERT');
+        playDroneTelemetry();
         return;
       }
 
@@ -380,6 +380,7 @@ export function SocketBridge() {
     addEntry,
     play,
     playDroneGeofence,
+    playDroneTelemetry,
     triggerAlert,
     queryClient,
     setDrones,

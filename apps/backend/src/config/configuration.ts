@@ -59,6 +59,12 @@ export default () => ({
     reconnectMaxAttempts: process.env.SERIAL_RECONNECT_MAX_ATTEMPTS
       ? Number(process.env.SERIAL_RECONNECT_MAX_ATTEMPTS)
       : 0,
+    clusterRole:
+      (process.env.SERIAL_CLUSTER_ROLE as 'leader' | 'replica' | 'standalone' | undefined) ??
+      'standalone',
+    rpcTimeoutMs: process.env.SERIAL_RPC_TIMEOUT_MS
+      ? Number(process.env.SERIAL_RPC_TIMEOUT_MS)
+      : 8000,
   },
   websocket: {
     maxClients: process.env.WS_MAX_CLIENTS ? Number(process.env.WS_MAX_CLIENTS) : 200,
@@ -151,5 +157,13 @@ export default () => ({
     username: process.env.TAK_USERNAME,
     password: process.env.TAK_PASSWORD,
     apiKey: process.env.TAK_API_KEY,
+  },
+  faa: {
+    onlineLookupEnabled: process.env.FAA_ONLINE_LOOKUP_ENABLED !== 'false',
+    onlineCacheTtlMinutes: parseNumberEnv(process.env.FAA_ONLINE_CACHE_TTL_MINUTES, 60),
+    onlineLookupCooldownMinutes: parseNumberEnv(process.env.FAA_ONLINE_LOOKUP_COOLDOWN_MINUTES, 10),
+  },
+  drones: {
+    recordInventory: process.env.DRONES_RECORD_INVENTORY === 'true',
   },
 });

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { apiClient } from '../api/client';
 import type {
@@ -7,6 +7,8 @@ import type {
   AlarmLevel,
   AlarmSoundKey,
   AppSettings,
+  AuthUser,
+  UserAlertColors,
   SerialConfig,
   SerialPortInfo,
   SerialState,
@@ -26,8 +28,15 @@ import type {
   FaaRegistryStatusResponse,
   StartFaaSyncResponse,
 } from '../api/types';
-import { DEFAULT_ALERT_COLORS, extractAlertColors } from '../constants/alert-colors';
+import { applyAlertOverrides, extractAlertColors } from '../constants/alert-colors';
+import {
+  THEME_PRESETS,
+  resolveThemePalette,
+  type ThemePresetId,
+  type ThemePalette,
+} from '../constants/theme';
 import { useAlarm } from '../providers/alarm-provider';
+import { useAuthStore } from '../stores/auth-store';
 import { useNodeStore } from '../stores/node-store';
 
 type AppSettingsUpdate = Partial<AppSettings> & { mailPassword?: string };
@@ -41,6 +50,7 @@ const LEVEL_METADATA: Record<AlarmLevel, { label: string; description: string }>
 };
 
 const DRONE_GEOFENCE_SOUND_KEY: AlarmSoundKey = 'DRONE_GEOFENCE';
+const DRONE_TELEMETRY_SOUND_KEY: AlarmSoundKey = 'DRONE_TELEMETRY';
 
 const GAPS: Array<{ key: keyof AlarmConfig; label: string }> = [
   { key: 'gapInfoMs', label: 'Info gap (ms)' },
@@ -111,7 +121,30 @@ const ALERT_COLOR_FIELDS = [
 ] as const;
 
 type AlertColorFieldKey = (typeof ALERT_COLOR_FIELDS)[number]['key'];
-type AlertColorPreviewKey = (typeof ALERT_COLOR_FIELDS)[number]['previewKey'];
+type AlertColorUpdate = Partial<Record<AlertColorFieldKey, string | null>>;
+
+const alertOverrideValueForKey = (
+  overrides: UserAlertColors | null,
+  key: AlertColorFieldKey,
+): string | null => {
+  if (!overrides) {
+    return null;
+  }
+  switch (key) {
+    case 'alertColorIdle':
+      return overrides.idle ?? null;
+    case 'alertColorInfo':
+      return overrides.info ?? null;
+    case 'alertColorNotice':
+      return overrides.notice ?? null;
+    case 'alertColorAlert':
+      return overrides.alert ?? null;
+    case 'alertColorCritical':
+      return overrides.critical ?? null;
+    default:
+      return null;
+  }
+};
 
 const PARITY_OPTIONS = [
   { value: 'none', label: 'None' },
@@ -130,6 +163,8 @@ const DEFAULT_ALARM_CONFIG: AlarmConfig = {
   volumeNotice: 70,
   volumeAlert: 80,
   volumeCritical: 90,
+  volumeDroneGeofence: 80,
+  volumeDroneTelemetry: 80,
   gapInfoMs: 1000,
   gapNoticeMs: 1500,
   gapAlertMs: 2000,
@@ -184,7 +219,11 @@ const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: 
   { id: 'alarms', label: 'Alarms', description: 'Audio profiles & cooldowns' },
   { id: 'mail', label: 'Mail Server', description: 'Outbound email delivery' },
   { id: 'security', label: 'Security Defaults', description: 'Authentication requirements' },
-  { id: 'appearance', label: 'Alert Colors', description: 'Marker and alert styling' },
+  {
+    id: 'appearance',
+    label: 'Theme & Colors',
+    description: 'Interface palette and marker styling',
+  },
   { id: 'firewall', label: 'Firewall', description: 'Geo/IP policies & lockouts' },
   { id: 'sites', label: 'Sites', description: 'Site names, regions, and colors' },
   { id: 'serial', label: 'Serial Connection', description: 'Device path and protocol' },
@@ -208,7 +247,12 @@ export function ConfigPage() {
     removeSound,
     play,
     playDroneGeofence,
+    playDroneTelemetry,
   } = useAlarm();
+
+  const authUser = useAuthStore((state) => state.user);
+  const setAuthUser = useAuthStore((state) => state.setUser);
+  const themePreset: ThemePresetId = authUser?.preferences?.themePreset ?? 'classic';
 
   const appSettingsQuery = useQuery({
     queryKey: ['appSettings'],
@@ -278,8 +322,8 @@ export function ConfigPage() {
   const [ouiError, setOuiError] = useState<string | null>(null);
 
   const [localAlarm, setLocalAlarm] = useState<AlarmConfig>(DEFAULT_ALARM_CONFIG);
-  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
-  const [serialConfig, setSerialConfig] = useState<SerialConfig | null>(null);
+  const [appSettingsState, setAppSettings] = useState<AppSettings | null>(null);
+  const [serialConfigState, setSerialConfig] = useState<SerialConfig | null>(null);
   const [siteSettings, setSiteSettings] = useState<SiteSummary[]>([]);
   const [mqttConfigs, setMqttConfigs] = useState<MqttSiteConfig[]>([]);
   const [mqttPasswords, setMqttPasswords] = useState<Record<string, string>>({});
@@ -313,6 +357,9 @@ export function ConfigPage() {
   const [firewallError, setFirewallError] = useState<string | null>(null);
   const [firewallDirty, setFirewallDirty] = useState(false);
   const [activeSection, setActiveSection] = useState<ConfigSectionId>('alarms');
+
+  const appSettings = appSettingsState ?? appSettingsQuery.data ?? null;
+  const serialConfig = serialConfigState ?? serialConfigQuery.data ?? null;
 
   const cardClass = (...sections: ConfigSectionId[]) =>
     sections.includes(activeSection) ? 'config-card' : 'config-card config-card--hidden';
@@ -543,6 +590,7 @@ export function ConfigPage() {
         ALERT: null,
         CRITICAL: null,
         DRONE_GEOFENCE: null,
+        DRONE_TELEMETRY: null,
       },
     [alarmSettings?.sounds],
   );
@@ -558,6 +606,83 @@ export function ConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Unable to update application settings.';
       setConfigNotice({ type: 'error', text: message });
+    },
+  });
+
+  const updateAlertColorsMutation = useMutation<
+    AuthUser,
+    Error,
+    AlertColorUpdate,
+    { previousUser: AuthUser | null }
+  >({
+    mutationFn: (body: AlertColorUpdate) => apiClient.put<AuthUser>('/users/me', body),
+    onMutate: async (patch) => {
+      const current = useAuthStore.getState().user;
+      if (!current) {
+        return { previousUser: null };
+      }
+      const optimistic = applyAlertPreferencePatch(current, patch);
+      setAuthUser(optimistic);
+      queryClient.setQueryData(['users', 'me'], optimistic);
+      return { previousUser: current };
+    },
+    onSuccess: (data) => {
+      setAuthUser(data);
+      queryClient.setQueryData(['users', 'me'], data);
+      setConfigNotice({ type: 'success', text: 'Appearance preferences updated.' });
+    },
+    onError: (error, _patch, context) => {
+      if (context?.previousUser) {
+        setAuthUser(context.previousUser);
+        queryClient.setQueryData(['users', 'me'], context.previousUser);
+      }
+      setConfigNotice({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Unable to save appearance preferences.',
+      });
+    },
+  });
+
+  const updateAlertColors = (patch: AlertColorUpdate) => {
+    const current = useAuthStore.getState().user;
+    if (!current) {
+      setConfigNotice({ type: 'error', text: 'User profile not loaded yet.' });
+      return;
+    }
+    updateAlertColorsMutation.mutate(patch);
+  };
+
+  const updateThemePresetMutation = useMutation<
+    AuthUser,
+    Error,
+    ThemePresetId,
+    { previousUser: AuthUser | null }
+  >({
+    mutationFn: (presetId) => apiClient.put<AuthUser>('/users/me', { themePreset: presetId }),
+    onMutate: async (presetId) => {
+      const current = useAuthStore.getState().user;
+      if (!current) {
+        return { previousUser: null };
+      }
+      const optimistic = applyThemePresetOptimistic(current, presetId);
+      setAuthUser(optimistic);
+      queryClient.setQueryData(['users', 'me'], optimistic);
+      return { previousUser: current };
+    },
+    onSuccess: (data) => {
+      setAuthUser(data);
+      queryClient.setQueryData(['users', 'me'], data);
+      setConfigNotice({ type: 'success', text: 'Theme preset updated.' });
+    },
+    onError: (error, _presetId, context) => {
+      if (context?.previousUser) {
+        setAuthUser(context.previousUser);
+        queryClient.setQueryData(['users', 'me'], context.previousUser);
+      }
+      setConfigNotice({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Unable to update theme preset.',
+      });
     },
   });
 
@@ -607,6 +732,21 @@ export function ConfigPage() {
       setConfigNotice({ type: 'error', text: message });
     },
   });
+
+  const updateSerialSetting = (patch: Partial<SerialConfig>) => {
+    setSerialConfig((previous) => {
+      if (!previous) {
+        return previous;
+      }
+      const optimistic = { ...previous, ...patch };
+      updateSerialConfigMutation.mutate(patch, {
+        onError: () => {
+          setSerialConfig(previous);
+        },
+      });
+      return optimistic;
+    });
+  };
 
   const updateTakConfigMutation = useMutation({
     mutationFn: (body: Partial<TakConfig>) => apiClient.put<TakConfig>('/tak/config', body),
@@ -915,35 +1055,62 @@ export function ConfigPage() {
     updateAppSettingsMutation.mutate(patch);
   };
 
-  const handleAlertColorChange =
-    (key: AlertColorFieldKey) => (event: ChangeEvent<HTMLInputElement>) => {
-      updateAppSetting({ [key]: event.target.value } as Partial<AppSettings>);
-    };
-
-  const handleAlertColorReset = (key: AlertColorFieldKey, previewKey: AlertColorPreviewKey) => {
-    updateAppSetting({
-      [key]: DEFAULT_ALERT_COLORS[previewKey],
-    } as Partial<AppSettings>);
-  };
-
-  const updateSerialSetting = (patch: Partial<SerialConfig>) => {
-    if (!serialConfig) return;
-    const next = { ...serialConfig, ...patch };
-    setSerialConfig(next);
-    updateSerialConfigMutation.mutate(patch);
-  };
-
   const handleDefaultRadiusChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (!appSettings) return;
-    const parsed = Number(event.target.value);
-    if (!Number.isFinite(parsed)) {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value)) {
       return;
     }
-    const next = { ...appSettings, defaultRadiusM: parsed };
-    setAppSettings(next);
-    if (parsed >= DEFAULT_RADIUS_LIMITS.min && parsed <= DEFAULT_RADIUS_LIMITS.max) {
-      updateAppSettingsMutation.mutate({ defaultRadiusM: parsed });
+    const clamped = Math.max(DEFAULT_RADIUS_LIMITS.min, Math.min(DEFAULT_RADIUS_LIMITS.max, value));
+    updateAppSetting({ defaultRadiusM: clamped });
+  };
+
+  const handleAlertColorChange =
+    (key: AlertColorFieldKey) => (event: ChangeEvent<HTMLInputElement>) => {
+      updateAlertColors({ [key]: event.target.value });
+    };
+
+  const handleAlertColorReset = (key: AlertColorFieldKey) => {
+    updateAlertColors({ [key]: null });
+  };
+
+  const handleThemePresetSelect = (presetId: ThemePresetId) => {
+    const current = useAuthStore.getState().user;
+    if (!current) {
+      setConfigNotice({ type: 'error', text: 'User profile not loaded yet.' });
+      return;
     }
+    updateThemePresetMutation.mutate(presetId);
+  };
+
+  const renderAlertColorRow = (field: (typeof ALERT_COLOR_FIELDS)[number]) => {
+    const previewColor = effectiveAlertColors[field.previewKey];
+    const overrideValue = alertOverrideValueForKey(userAlertOverrides, field.key);
+    const isOverride = overrideValue !== null;
+    return (
+      <div key={field.key} className="color-row alert-color-row">
+        <div className="color-row-details">
+          <span className="config-label">{field.label}</span>
+          <p className="field-hint">{field.description}</p>
+        </div>
+        <div className="color-row-controls">
+          <input
+            type="color"
+            value={previewColor}
+            onChange={handleAlertColorChange(field.key)}
+            aria-label={`${field.label} Color`}
+          />
+          <div className="alert-color-code">{previewColor}</div>
+          <button
+            type="button"
+            className="control-chip"
+            onClick={() => handleAlertColorReset(field.key)}
+            disabled={!isOverride}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+    );
   };
 
   const handleSerialPortSelect = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -1193,6 +1360,16 @@ export function ConfigPage() {
       updateAlarmConfig(next);
     };
 
+  const handleDroneVolumeChange =
+    (key: 'volumeDroneGeofence' | 'volumeDroneTelemetry') =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      if (!localAlarm) return;
+      const value = Number(event.target.value);
+      const next = { ...localAlarm, [key]: value } as AlarmConfig;
+      setLocalAlarm(next);
+      updateAlarmConfig(next);
+    };
+
   const handleGapChange = (key: keyof AlarmConfig) => (event: ChangeEvent<HTMLInputElement>) => {
     if (!localAlarm) return;
     const value = Number(event.target.value);
@@ -1224,46 +1401,141 @@ export function ConfigPage() {
     updateAlarmConfig(next);
   };
 
-  const isLoading =
-    alarmLoading ||
-    appSettingsQuery.isLoading ||
-    serialConfigQuery.isLoading ||
-    !appSettings ||
-    !serialConfig;
+  const userAlertOverrides = authUser?.preferences?.alertColors ?? null;
+
+  const baseAlertColors = useMemo(
+    () => extractAlertColors(appSettings ?? undefined),
+    [appSettings],
+  );
+
+  const effectiveAlertColors = useMemo(
+    () => applyAlertOverrides(baseAlertColors, userAlertOverrides),
+    [baseAlertColors, userAlertOverrides],
+  );
+  const themePresetOptions = useMemo<
+    Array<(typeof THEME_PRESETS)[number] & { palette: ThemePalette }>
+  >(
+    () =>
+      THEME_PRESETS.map((preset) => ({
+        ...preset,
+        palette: resolveThemePalette(preset.id, appSettings ?? undefined),
+      })),
+    [appSettings],
+  );
+
+  const isLoading = alarmLoading || appSettingsQuery.isLoading || serialConfigQuery.isLoading;
+
+  const renderScaffold = (panelContent: ReactNode) => (
+    <div className="config-shell">
+      <aside className="config-rail">
+        <div className="config-rail__title">
+          <h1 className="config-rail__heading">Configuration</h1>
+          <p className="config-rail__copy">
+            Manage appearance, alarms, serial transport, detection defaults, federation, and
+            retention.
+          </p>
+        </div>
+        <nav className="config-menu" aria-label="Configuration sections">
+          {CONFIG_SECTIONS.map((section) => {
+            const isActive = section.id === activeSection;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                className={`config-menu__item${isActive ? ' config-menu__item--active' : ''}`}
+                onClick={() => setActiveSection(section.id)}
+                aria-pressed={isActive}
+              >
+                <span className="config-menu__label">{section.label}</span>
+                <span className="config-menu__description">{section.description}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+      <section className="panel config-page">{panelContent}</section>
+    </div>
+  );
 
   if (isLoading) {
-    return (
-      <section className="panel">
+    return renderScaffold(
+      <>
         <header className="panel__header">
           <div>
-            <h1 className="panel__title">Configuration</h1>
-            <p className="panel__subtitle">Loading configuration.</p>
+            <h2 className="panel__title">Loading configuration</h2>
+            <p className="panel__subtitle">Please wait while we fetch the latest settings.</p>
           </div>
         </header>
         <div className="empty-state">
           <div>Loading configuration.</div>
         </div>
-      </section>
+      </>,
     );
   }
 
-  const effectiveAlertColors = extractAlertColors(appSettings!);
+  if (!authUser) {
+    return renderScaffold(
+      <>
+        <header className="panel__header">
+          <div>
+            <h2 className="panel__title">Configuration</h2>
+            <p className="panel__subtitle">User profile not loaded.</p>
+          </div>
+        </header>
+        <div className="empty-state">
+          <div>We could not load your profile. Please refresh and try again.</div>
+        </div>
+      </>,
+    );
+  }
+
+  if (!appSettings || !serialConfig) {
+    const appSettingsError =
+      appSettingsQuery.error instanceof Error ? appSettingsQuery.error.message : null;
+    const serialConfigError =
+      serialConfigQuery.error instanceof Error ? serialConfigQuery.error.message : null;
+    return renderScaffold(
+      <>
+        <header className="panel__header">
+          <div>
+            <h2 className="panel__title">Configuration</h2>
+            <p className="panel__subtitle">Unable to load configuration data.</p>
+          </div>
+          <div className="controls-row">
+            <button
+              type="button"
+              className="control-chip"
+              onClick={() => {
+                void appSettingsQuery.refetch();
+                void serialConfigQuery.refetch();
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        </header>
+        <div className="empty-state">
+          {appSettingsError || serialConfigError ? (
+            <div>
+              {appSettingsError ? <p>App settings: {appSettingsError}</p> : null}
+              {serialConfigError ? <p>Serial config: {serialConfigError}</p> : null}
+            </div>
+          ) : (
+            <div>No configuration data returned from the server.</div>
+          )}
+        </div>
+      </>,
+    );
+  }
   const mailInputsDisabled = !appSettings.mailEnabled;
   const trimmedMailPassword = mailPasswordInput.trim();
   const mailPasswordReady =
     trimmedMailPassword.length > 0 ||
     (appSettings.mailPasswordSet && mailPasswordInput.length === 0);
 
-  return (
-    <section className="panel config-page">
-      <header className="panel__header">
-        <div>
-          <h1 className="panel__title">Configuration</h1>
-          <p className="panel__subtitle">
-            Manage appearance, alarms, serial transport, detection defaults, federation, and
-            retention.
-          </p>
-        </div>
+  return renderScaffold(
+    <>
+      <header className="panel__header panel__header--stacked">
         <div className="controls-row config-header-controls">
           <button
             type="button"
@@ -1319,836 +1591,1688 @@ export function ConfigPage() {
         ) : null}
       </header>
 
-      <div className="config-layout">
-        <nav className="config-menu" aria-label="Configuration sections">
-          {CONFIG_SECTIONS.map((section) => {
-            const isActive = section.id === activeSection;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                className={`config-menu__item${isActive ? ' config-menu__item--active' : ''}`}
-                onClick={() => setActiveSection(section.id)}
-                aria-pressed={isActive}
-              >
-                <span className="config-menu__label">{section.label}</span>
-                <span className="config-menu__description">{section.description}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="config-content">
-          <div className="config-grid">
-            <section className={cardClass('alarms')}>
-              <header>
-                <h2>Alarm Profiles</h2>
-                <p>Adjust volume, rate limit, and audio tone for each alarm level.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="config-row">
-                  <span className="config-label">Sound Pack</span>
-                  <select value={localAlarm.audioPack} onChange={handleAudioPackChange}>
-                    <option value="default">Default</option>
-                    <option value="quiet">Quiet</option>
-                    <option value="ops">Operations</option>
-                  </select>
-                </div>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={localAlarm.backgroundAllowed}
-                    onChange={handleBackgroundToggle}
-                  />
-                  Allow audio playback when the console tab is in the background
-                </label>
+      <div className="config-content">
+        <div className="config-grid">
+          <section className={cardClass('alarms')}>
+            <header>
+              <h2>Alarm Profiles</h2>
+              <p>Adjust volume, rate limit, and audio tone for each alarm level.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="config-row">
+                <span className="config-label">Sound Pack</span>
+                <select value={localAlarm.audioPack} onChange={handleAudioPackChange}>
+                  <option value="default">Default</option>
+                  <option value="quiet">Quiet</option>
+                  <option value="ops">Operations</option>
+                </select>
               </div>
-              <div className="config-card__body alarm-grid">
-                {Object.entries(LEVEL_METADATA).map(([level, meta]) => {
-                  const alarmLevel = level as AlarmLevel;
-                  const volumeKey = volumeKeyForLevel(alarmLevel);
-                  const volumeValue = (localAlarm[volumeKey] ?? 0) as number;
-                  return (
-                    <div key={alarmLevel} className="alarm-level-card">
-                      <div className="alarm-header">
-                        <h3>{meta.label}</h3>
-                        <span>{meta.description}</span>
-                      </div>
-                      <div className="alarm-controls">
-                        <label>
-                          Volume: {volumeValue}%
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={volumeValue}
-                            onChange={handleVolumeChange(alarmLevel, volumeKey)}
-                          />
-                        </label>
-                        <div className="alarm-sound-row">
-                          <div className="sound-file">
-                            {sounds[alarmLevel] ? 'Custom sound uploaded' : 'Using default tone'}
-                          </div>
-                          <div className="sound-actions">
-                            <button
-                              type="button"
-                              className="control-chip"
-                              onClick={() => play(alarmLevel)}
-                            >
-                              Preview
-                            </button>
-                            <label className="control-chip">
-                              Upload
-                              <input
-                                type="file"
-                                accept="audio/*"
-                                onChange={(event) => {
-                                  const file = event.target.files?.[0];
-                                  if (file) {
-                                    uploadSound(alarmLevel, file);
-                                    event.target.value = '';
-                                  }
-                                }}
-                                hidden
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className="control-chip"
-                              disabled={!sounds[alarmLevel]}
-                              onClick={() => removeSound(alarmLevel)}
-                            >
-                              Remove
-                            </button>
-                          </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={localAlarm.backgroundAllowed}
+                  onChange={handleBackgroundToggle}
+                />
+                Allow audio playback when the console tab is in the background
+              </label>
+            </div>
+            <div className="config-card__body alarm-grid">
+              {Object.entries(LEVEL_METADATA).map(([level, meta]) => {
+                const alarmLevel = level as AlarmLevel;
+                const volumeKey = volumeKeyForLevel(alarmLevel);
+                const volumeValue = (localAlarm[volumeKey] ?? 0) as number;
+                return (
+                  <div key={alarmLevel} className="alarm-level-card">
+                    <div className="alarm-header">
+                      <h3>{meta.label}</h3>
+                      <span>{meta.description}</span>
+                    </div>
+                    <div className="alarm-controls">
+                      <label>
+                        Volume: {volumeValue}%
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={volumeValue}
+                          onChange={handleVolumeChange(alarmLevel, volumeKey)}
+                        />
+                      </label>
+                      <div className="alarm-sound-row">
+                        <div className="sound-file">
+                          {sounds[alarmLevel] ? 'Custom sound uploaded' : 'Using default tone'}
+                        </div>
+                        <div className="sound-actions">
+                          <button
+                            type="button"
+                            className="control-chip"
+                            onClick={() => play(alarmLevel)}
+                          >
+                            Preview
+                          </button>
+                          <label className="control-chip">
+                            Upload
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (file) {
+                                  uploadSound(alarmLevel, file);
+                                  event.target.value = '';
+                                }
+                              }}
+                              hidden
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="control-chip"
+                            disabled={!sounds[alarmLevel]}
+                            onClick={() => removeSound(alarmLevel)}
+                          >
+                            Remove
+                          </button>
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-                <div className="alarm-level-card">
-                  <div className="alarm-header">
-                    <h3>Drone Geofence</h3>
-                    <span>Sound used when a drone breaches any perimeter.</span>
                   </div>
-                  <div className="alarm-controls">
-                    <div className="alarm-sound-row">
-                      <div className="sound-file">
-                        {sounds[DRONE_GEOFENCE_SOUND_KEY]
-                          ? 'Custom sound uploaded'
-                          : 'Using default alert tone'}
-                      </div>
-                      <div className="sound-actions">
-                        <button
-                          type="button"
-                          className="control-chip"
-                          onClick={() => playDroneGeofence()}
-                        >
-                          Preview
-                        </button>
-                        <label className="control-chip">
-                          Upload
-                          <input
-                            type="file"
-                            accept="audio/*"
-                            onChange={(event) => {
-                              const file = event.target.files?.[0];
-                              if (file) {
-                                uploadSound(DRONE_GEOFENCE_SOUND_KEY, file);
-                                event.target.value = '';
-                              }
-                            }}
-                            hidden
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="control-chip"
-                          disabled={!sounds[DRONE_GEOFENCE_SOUND_KEY]}
-                          onClick={() => removeSound(DRONE_GEOFENCE_SOUND_KEY)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                );
+              })}
+              <div className="alarm-level-card">
+                <div className="alarm-header">
+                  <h3>Drone Geofence</h3>
+                  <span>Sound used when a drone breaches any perimeter.</span>
                 </div>
-              </div>
-            </section>
-
-            <section className={cardClass('alarms')}>
-              <header>
-                <h2>Alarm Cooldowns</h2>
-                <p>Define the minimum interval between repeated alarms of the same level.</p>
-              </header>
-              <div className="config-card__body">
-                {GAPS.map(({ key, label }) => {
-                  const gapValue = (localAlarm[key] ?? 0) as number;
-                  return (
-                    <div className="config-row" key={key}>
-                      <span className="config-label">{label}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={100}
-                        value={gapValue}
-                        onChange={handleGapChange(key)}
-                      />
-                    </div>
-                  );
-                })}
-                <div className="config-row">
-                  <span className="config-label">Do-not-disturb start</span>
-                  <input
-                    type="time"
-                    value={localAlarm.dndStart ?? ''}
-                    onChange={handleDndChange('dndStart')}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Do-not-disturb end</span>
-                  <input
-                    type="time"
-                    value={localAlarm.dndEnd ?? ''}
-                    onChange={handleDndChange('dndEnd')}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className={cardClass('mail')}>
-              <header>
-                <h2>Mail Server</h2>
-                <p>Configure SMTP delivery for invitations and alert notifications.</p>
-              </header>
-              <div className="config-card__body">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.mailEnabled}
-                    onChange={(event) => updateAppSetting({ mailEnabled: event.target.checked })}
-                  />
-                  Enable outbound email
-                </label>
-                <div className="config-row">
-                  <span className="config-label">SMTP Host</span>
-                  <input
-                    placeholder="smtp.example.com"
-                    value={appSettings.mailHost ?? ''}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      updateAppSetting({ mailHost: value.trim().length > 0 ? value.trim() : null });
-                    }}
-                    disabled={mailInputsDisabled}
-                  />
-                  <span className="config-hint">
-                    Fully qualified domain or IP that the backend can reach, e.g.
-                    smtp.yourdomain.com.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">SMTP Port</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={appSettings.mailPort ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw.trim().length === 0) {
-                        updateAppSetting({ mailPort: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) {
-                        return;
-                      }
-                      updateAppSetting({ mailPort: value });
-                    }}
-                    disabled={mailInputsDisabled}
-                  />
-                  <span className="config-hint">
-                    Common ports: 587 for STARTTLS, 465 for SMTPS, 25 for unencrypted relays.
-                  </span>
-                </div>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.mailSecure}
-                    onChange={(event) => updateAppSetting({ mailSecure: event.target.checked })}
-                    disabled={mailInputsDisabled}
-                  />
-                  Use TLS (secure connection)
-                </label>
-                <span className="config-hint">
-                  Enable for STARTTLS/SMTPS. Disable only if your relay explicitly requires
-                  plain-text connections.
-                </span>
-                <div className="config-row">
-                  <span className="config-label">Username</span>
-                  <input
-                    value={appSettings.mailUser ?? ''}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      updateAppSetting({ mailUser: value.trim().length > 0 ? value.trim() : null });
-                    }}
-                    disabled={mailInputsDisabled}
-                  />
-                  <span className="config-hint">
-                    Optional login for authenticated SMTP. Leave blank for IP/hostname based relays.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">From Address</span>
-                  <input
-                    value={appSettings.mailFrom}
-                    onChange={(event) => updateAppSetting({ mailFrom: event.target.value })}
-                    disabled={mailInputsDisabled}
-                  />
-                  <span className="field-hint">Shown as the sender on outbound messages.</span>
-                </div>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.mailPreview}
-                    onChange={(event) => updateAppSetting({ mailPreview: event.target.checked })}
-                    disabled={mailInputsDisabled}
-                  />
-                  Capture mail in local preview instead of sending
-                </label>
-                <span className="config-hint">
-                  When enabled, emails are written to disk for inspection and never delivered to
-                  external servers.
-                </span>
-                <div className="config-row">
-                  <span className="config-label">Password</span>
-                  <div className="mail-password-row">
+                <div className="alarm-controls">
+                  <label>
+                    Volume: {localAlarm.volumeDroneGeofence}%
                     <input
-                      type="password"
-                      value={mailPasswordInput}
-                      placeholder={appSettings.mailPasswordSet ? '********' : 'Enter SMTP password'}
-                      onChange={(event) => setMailPasswordInput(event.target.value)}
-                      disabled={mailInputsDisabled}
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={localAlarm.volumeDroneGeofence}
+                      onChange={handleDroneVolumeChange('volumeDroneGeofence')}
                     />
-                    <button
-                      type="button"
-                      className="control-chip"
-                      onClick={handleMailPasswordSave}
-                      disabled={
-                        mailInputsDisabled ||
-                        !mailPasswordReady ||
-                        updateAppSettingsMutation.isPending
-                      }
-                    >
-                      Save Password
-                    </button>
-                  </div>
-                  <span className="field-hint">
-                    {appSettings.mailPasswordSet
-                      ? 'A password is stored securely on the server.'
-                      : 'No password stored yet.'}
-                  </span>
-                  {mailPasswordMessage ? (
-                    <div
-                      className={
-                        mailPasswordMessage.type === 'error' ? 'form-error' : 'form-success'
-                      }
-                      role={mailPasswordMessage.type === 'error' ? 'alert' : 'status'}
-                    >
-                      {mailPasswordMessage.text}
+                  </label>
+                  <div className="alarm-sound-row">
+                    <div className="sound-file">
+                      {sounds[DRONE_GEOFENCE_SOUND_KEY]
+                        ? 'Custom sound uploaded'
+                        : 'Using default alert tone'}
                     </div>
-                  ) : null}
+                    <div className="sound-actions">
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => playDroneGeofence()}
+                      >
+                        Preview
+                      </button>
+                      <label className="control-chip">
+                        Upload
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) {
+                              uploadSound(DRONE_GEOFENCE_SOUND_KEY, file);
+                              event.target.value = '';
+                            }
+                          }}
+                          hidden
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="control-chip"
+                        disabled={!sounds[DRONE_GEOFENCE_SOUND_KEY]}
+                        onClick={() => removeSound(DRONE_GEOFENCE_SOUND_KEY)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </section>
-
-            <section className={cardClass('security')}>
-              <header>
-                <h2>Security Defaults</h2>
-                <p>Set application URLs and token expiry policies.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="config-row">
-                  <span className="config-label">Application URL</span>
-                  <input
-                    type="url"
-                    placeholder="https://command-center.example.com"
-                    value={appSettings.securityAppUrl}
-                    onChange={(event) => updateAppSetting({ securityAppUrl: event.target.value })}
-                  />
-                  <span className="field-hint">Used in email templates and deep links.</span>
+              <div className="alarm-level-card">
+                <div className="alarm-header">
+                  <h3>Drone Telemetry</h3>
+                  <span>Audible cue for new drone telemetry events.</span>
                 </div>
-                <div className="config-row">
-                  <span className="config-label">Invitation expiry (hours)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={appSettings.invitationExpiryHours}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ invitationExpiryHours: value });
-                    }}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Password reset expiry (hours)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={appSettings.passwordResetExpiryHours}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ passwordResetExpiryHours: value });
-                    }}
-                  />
+                <div className="alarm-controls">
+                  <label>
+                    Volume: {localAlarm.volumeDroneTelemetry}%
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={localAlarm.volumeDroneTelemetry}
+                      onChange={handleDroneVolumeChange('volumeDroneTelemetry')}
+                    />
+                  </label>
+                  <div className="alarm-sound-row">
+                    <div className="sound-file">
+                      {sounds[DRONE_TELEMETRY_SOUND_KEY]
+                        ? 'Custom sound uploaded'
+                        : 'Using default notice tone'}
+                    </div>
+                    <div className="sound-actions">
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => playDroneTelemetry()}
+                      >
+                        Preview
+                      </button>
+                      <label className="control-chip">
+                        Upload
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) {
+                              uploadSound(DRONE_TELEMETRY_SOUND_KEY, file);
+                              event.target.value = '';
+                            }
+                          }}
+                          hidden
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="control-chip"
+                        disabled={!sounds[DRONE_TELEMETRY_SOUND_KEY]}
+                        onClick={() => removeSound(DRONE_TELEMETRY_SOUND_KEY)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </section>
+            </div>
+          </section>
 
-            <section className={cardClass('appearance')}>
-              <header>
-                <h2>Alert Colors</h2>
-                <p>Customize map marker and radius colors for each alarm level.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="alert-color-grid">
-                  {ALERT_COLOR_FIELDS.map((field) => {
-                    const previewColor = effectiveAlertColors[field.previewKey];
-                    const isDefault =
-                      previewColor.toUpperCase() === DEFAULT_ALERT_COLORS[field.previewKey];
+          <section className={cardClass('alarms')}>
+            <header>
+              <h2>Alarm Cooldowns</h2>
+              <p>Define the minimum interval between repeated alarms of the same level.</p>
+            </header>
+            <div className="config-card__body">
+              {GAPS.map(({ key, label }) => {
+                const gapValue = (localAlarm[key] ?? 0) as number;
+                return (
+                  <div className="config-row" key={key}>
+                    <span className="config-label">{label}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={gapValue}
+                      onChange={handleGapChange(key)}
+                    />
+                  </div>
+                );
+              })}
+              <div className="config-row">
+                <span className="config-label">Do-not-disturb start</span>
+                <input
+                  type="time"
+                  value={localAlarm.dndStart ?? ''}
+                  onChange={handleDndChange('dndStart')}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Do-not-disturb end</span>
+                <input
+                  type="time"
+                  value={localAlarm.dndEnd ?? ''}
+                  onChange={handleDndChange('dndEnd')}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className={cardClass('mail')}>
+            <header>
+              <h2>Mail Server</h2>
+              <p>Configure SMTP delivery for invitations and alert notifications.</p>
+            </header>
+            <div className="config-card__body">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={appSettings.mailEnabled}
+                  onChange={(event) => updateAppSetting({ mailEnabled: event.target.checked })}
+                />
+                Enable outbound email
+              </label>
+              <div className="config-row">
+                <span className="config-label">SMTP Host</span>
+                <input
+                  placeholder="smtp.example.com"
+                  value={appSettings.mailHost ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    updateAppSetting({ mailHost: value.trim().length > 0 ? value.trim() : null });
+                  }}
+                  disabled={mailInputsDisabled}
+                />
+                <span className="config-hint">
+                  Fully qualified domain or IP that the backend can reach, e.g. smtp.yourdomain.com.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">SMTP Port</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={appSettings.mailPort ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw.trim().length === 0) {
+                      updateAppSetting({ mailPort: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) {
+                      return;
+                    }
+                    updateAppSetting({ mailPort: value });
+                  }}
+                  disabled={mailInputsDisabled}
+                />
+                <span className="config-hint">
+                  Common ports: 587 for STARTTLS, 465 for SMTPS, 25 for unencrypted relays.
+                </span>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={appSettings.mailSecure}
+                  onChange={(event) => updateAppSetting({ mailSecure: event.target.checked })}
+                  disabled={mailInputsDisabled}
+                />
+                Use TLS (secure connection)
+              </label>
+              <span className="config-hint">
+                Enable for STARTTLS/SMTPS. Disable only if your relay explicitly requires plain-text
+                connections.
+              </span>
+              <div className="config-row">
+                <span className="config-label">Username</span>
+                <input
+                  value={appSettings.mailUser ?? ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    updateAppSetting({ mailUser: value.trim().length > 0 ? value.trim() : null });
+                  }}
+                  disabled={mailInputsDisabled}
+                />
+                <span className="config-hint">
+                  Optional login for authenticated SMTP. Leave blank for IP/hostname based relays.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">From Address</span>
+                <input
+                  value={appSettings.mailFrom}
+                  onChange={(event) => updateAppSetting({ mailFrom: event.target.value })}
+                  disabled={mailInputsDisabled}
+                />
+                <span className="field-hint">Shown as the sender on outbound messages.</span>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={appSettings.mailPreview}
+                  onChange={(event) => updateAppSetting({ mailPreview: event.target.checked })}
+                  disabled={mailInputsDisabled}
+                />
+                Capture mail in local preview instead of sending
+              </label>
+              <span className="config-hint">
+                When enabled, emails are written to disk for inspection and never delivered to
+                external servers.
+              </span>
+              <div className="config-row">
+                <span className="config-label">Password</span>
+                <div className="mail-password-row">
+                  <input
+                    type="password"
+                    value={mailPasswordInput}
+                    placeholder={appSettings.mailPasswordSet ? '********' : 'Enter SMTP password'}
+                    onChange={(event) => setMailPasswordInput(event.target.value)}
+                    disabled={mailInputsDisabled}
+                  />
+                  <button
+                    type="button"
+                    className="control-chip"
+                    onClick={handleMailPasswordSave}
+                    disabled={
+                      mailInputsDisabled ||
+                      !mailPasswordReady ||
+                      updateAppSettingsMutation.isPending
+                    }
+                  >
+                    Save Password
+                  </button>
+                </div>
+                <span className="field-hint">
+                  {appSettings.mailPasswordSet
+                    ? 'A password is stored securely on the server.'
+                    : 'No password stored yet.'}
+                </span>
+                {mailPasswordMessage ? (
+                  <div
+                    className={mailPasswordMessage.type === 'error' ? 'form-error' : 'form-success'}
+                    role={mailPasswordMessage.type === 'error' ? 'alert' : 'status'}
+                  >
+                    {mailPasswordMessage.text}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <section className={cardClass('security')}>
+            <header>
+              <h2>Security Defaults</h2>
+              <p>Set application URLs and token expiry policies.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="config-row">
+                <span className="config-label">Application URL</span>
+                <input
+                  type="url"
+                  placeholder="https://command-center.example.com"
+                  value={appSettings.securityAppUrl}
+                  onChange={(event) => updateAppSetting({ securityAppUrl: event.target.value })}
+                />
+                <span className="field-hint">Used in email templates and deep links.</span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Invitation expiry (hours)</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={appSettings.invitationExpiryHours}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ invitationExpiryHours: value });
+                  }}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Password reset expiry (hours)</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={appSettings.passwordResetExpiryHours}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ passwordResetExpiryHours: value });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className={cardClass('appearance')}>
+            <header>
+              <h2>Theme & Alerts</h2>
+              <p>Choose a preset for the entire interface and fine-tune alert markers.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="theme-preset-section">
+                <h3>Theme Presets</h3>
+                <p className="field-hint">
+                  Pick from curated palettes for both light and dark modes. Presets apply to the
+                  entire application shell.
+                </p>
+                <div className="theme-preset-grid">
+                  {themePresetOptions.map((preset) => {
+                    const isSelected = preset.id === themePreset;
+                    const isPending =
+                      updateThemePresetMutation.isPending &&
+                      updateThemePresetMutation.variables === preset.id;
                     return (
-                      <div key={field.key} className="alert-color-item">
-                        <div className="alert-color-preview">
-                          <input
-                            type="color"
-                            value={previewColor}
-                            onChange={handleAlertColorChange(field.key)}
-                            aria-label={`${field.label} Color`}
-                          />
-                        </div>
-                        <div className="alert-color-details">
-                          <span className="config-label">{field.label}</span>
-                          <div className="alert-color-code">{previewColor}</div>
-                          <p className="field-hint">{field.description}</p>
-                          <div className="alert-color-actions">
-                            <button
-                              type="button"
-                              className="control-chip"
-                              onClick={() => handleAlertColorReset(field.key, field.previewKey)}
-                              disabled={isDefault}
-                            >
-                              Reset
-                            </button>
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`theme-preset-card${isSelected ? ' is-selected' : ''}`}
+                        onClick={() => handleThemePresetSelect(preset.id)}
+                        disabled={isSelected || isPending}
+                      >
+                        <div className="theme-preset-card__header">
+                          <div>
+                            <h4>{preset.label}</h4>
+                            <p>{preset.description}</p>
                           </div>
+                          {isSelected ? <span className="theme-preset-badge">Active</span> : null}
                         </div>
-                      </div>
+                        <div className="theme-preset-card__swatches">
+                          <div style={{ background: preset.palette.accent }} />
+                          <div style={{ background: preset.palette.light.background }} />
+                          <div style={{ background: preset.palette.dark.background }} />
+                        </div>
+                      </button>
                     );
                   })}
                 </div>
               </div>
-            </section>
 
-            <section className={cardClass('firewall')}>
-              <header>
-                <h2>Firewall</h2>
-                <p>Control geo filtering, login lockouts, and manual block rules.</p>
-              </header>
-              <div className="config-card__body">
-                {firewallOverviewQuery.isLoading && !firewallForm ? (
-                  <p className="form-hint">Loading firewall configurationÃ¢â-¬Â¦</p>
-                ) : firewallForm ? (
-                  <>
-                    <form className="config-form" onSubmit={handleFirewallSubmit}>
-                      <div className="config-row">
-                        <span className="config-label">Status</span>
-                        <label className="switch">
-                          <input
-                            type="checkbox"
-                            checked={firewallForm.enabled}
-                            onChange={(event) =>
-                              handleFirewallFieldChange('enabled', event.target.checked)
-                            }
-                          />
-                          <span>{firewallForm.enabled ? 'Enabled' : 'Disabled'}</span>
-                        </label>
-                        <span className="field-hint">
-                          When disabled, all firewall rules and geo checks are bypassed.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">Default policy</span>
-                        <select
-                          value={firewallForm.defaultPolicy}
-                          onChange={(event) =>
-                            handleFirewallFieldChange(
-                              'defaultPolicy',
-                              event.target.value as FirewallPolicy,
-                            )
-                          }
-                        >
-                          <option value="ALLOW">Allow</option>
-                          <option value="DENY">Deny</option>
-                        </select>
-                        <span className="field-hint">
-                          Deny blocks any request that does not match an allow rule.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">Geo policy</span>
-                        <select
-                          value={firewallForm.geoMode}
-                          onChange={(event) =>
-                            handleFirewallFieldChange(
-                              'geoMode',
-                              event.target.value as FirewallGeoMode,
-                            )
-                          }
-                        >
-                          <option value="DISABLED">Disabled</option>
-                          <option value="ALLOW_LIST">Allow list</option>
-                          <option value="BLOCK_LIST">Block list</option>
-                        </select>
-                        <span className="field-hint">
-                          Allow list admits only the specified countries. Block list denies matches.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">Allowed countries</span>
-                        <textarea
-                          rows={4}
-                          placeholder="US&#10;NO&#10;GB"
-                          value={firewallForm.allowedCountries}
-                          onChange={(event) =>
-                            handleFirewallFieldChange('allowedCountries', event.target.value)
-                          }
-                        />
-                        <span className="field-hint">
-                          ISO country codes separated by commas or new lines. Leave empty to allow
-                          all.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">Blocked countries</span>
-                        <textarea
-                          rows={4}
-                          placeholder="CN&#10;RU"
-                          value={firewallForm.blockedCountries}
-                          onChange={(event) =>
-                            handleFirewallFieldChange('blockedCountries', event.target.value)
-                          }
-                        />
-                        <span className="field-hint">
-                          ISO country codes to block when the geo policy is in block-list mode.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">IP allow list</span>
-                        <textarea
-                          rows={4}
-                          placeholder="192.0.2.10&#10;10.0.0.0/16"
-                          value={firewallForm.ipAllowList}
-                          onChange={(event) =>
-                            handleFirewallFieldChange('ipAllowList', event.target.value)
-                          }
-                        />
-                        <span className="field-hint">
-                          Optional. If populated, only addresses or CIDR ranges listed here may
-                          reach the backend.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">IP block list</span>
-                        <textarea
-                          rows={4}
-                          placeholder="203.0.113.5&#10;fd00::/8"
-                          value={firewallForm.ipBlockList}
-                          onChange={(event) =>
-                            handleFirewallFieldChange('ipBlockList', event.target.value)
-                          }
-                        />
-                        <span className="field-hint">
-                          Addresses or CIDR ranges that are always blocked, regardless of other
-                          rules.
-                        </span>
-                      </div>
-                      <div className="config-row">
-                        <span className="config-label">Failed attempts (count)</span>
+              <div className="alert-color-section">
+                <h3>Alert Colors</h3>
+                <p className="field-hint">
+                  Adjust the live map marker and radius palette for each alarm level.
+                </p>
+                <div className="alert-color-list">
+                  {ALERT_COLOR_FIELDS.map((field) => renderAlertColorRow(field))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className={cardClass('firewall')}>
+            <header>
+              <h2>Firewall</h2>
+              <p>Control geo filtering, login lockouts, and manual block rules.</p>
+            </header>
+            <div className="config-card__body">
+              {firewallOverviewQuery.isLoading && !firewallForm ? (
+                <p className="form-hint">Loading firewall configuration...</p>
+              ) : firewallForm ? (
+                <>
+                  <form className="config-form" onSubmit={handleFirewallSubmit}>
+                    <div className="config-row">
+                      <span className="config-label">Status</span>
+                      <label className="switch">
                         <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          value={firewallForm.failThreshold}
+                          type="checkbox"
+                          checked={firewallForm.enabled}
                           onChange={(event) =>
-                            handleFirewallFieldChange('failThreshold', event.target.value)
+                            handleFirewallFieldChange('enabled', event.target.checked)
                           }
                         />
-                        <span className="field-hint">
-                          Consecutive authentication failures before an IP is rate limited.
-                        </span>
+                        <span>{firewallForm.enabled ? 'Enabled' : 'Disabled'}</span>
+                      </label>
+                      <span className="field-hint">
+                        When disabled, all firewall rules and geo checks are bypassed.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Default policy</span>
+                      <select
+                        value={firewallForm.defaultPolicy}
+                        onChange={(event) =>
+                          handleFirewallFieldChange(
+                            'defaultPolicy',
+                            event.target.value as FirewallPolicy,
+                          )
+                        }
+                      >
+                        <option value="ALLOW">Allow</option>
+                        <option value="DENY">Deny</option>
+                      </select>
+                      <span className="field-hint">
+                        Deny blocks any request that does not match an allow rule.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Geo policy</span>
+                      <select
+                        value={firewallForm.geoMode}
+                        onChange={(event) =>
+                          handleFirewallFieldChange(
+                            'geoMode',
+                            event.target.value as FirewallGeoMode,
+                          )
+                        }
+                      >
+                        <option value="DISABLED">Disabled</option>
+                        <option value="ALLOW_LIST">Allow list</option>
+                        <option value="BLOCK_LIST">Block list</option>
+                      </select>
+                      <span className="field-hint">
+                        Allow list admits only the specified countries. Block list denies matches.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Allowed countries</span>
+                      <textarea
+                        rows={4}
+                        placeholder="US&#10;NO&#10;GB"
+                        value={firewallForm.allowedCountries}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('allowedCountries', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        ISO country codes separated by commas or new lines. Leave empty to allow
+                        all.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Blocked countries</span>
+                      <textarea
+                        rows={4}
+                        placeholder="CN&#10;RU"
+                        value={firewallForm.blockedCountries}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('blockedCountries', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        ISO country codes to block when the geo policy is in block-list mode.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">IP allow list</span>
+                      <textarea
+                        rows={4}
+                        placeholder="192.0.2.10&#10;10.0.0.0/16"
+                        value={firewallForm.ipAllowList}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('ipAllowList', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        Optional. If populated, only addresses or CIDR ranges listed here may reach
+                        the backend.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">IP block list</span>
+                      <textarea
+                        rows={4}
+                        placeholder="203.0.113.5&#10;fd00::/8"
+                        value={firewallForm.ipBlockList}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('ipBlockList', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        Addresses or CIDR ranges that are always blocked, regardless of other rules.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Failed attempts (count)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={firewallForm.failThreshold}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('failThreshold', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        Consecutive authentication failures before an IP is rate limited.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Failure window (seconds)</span>
+                      <input
+                        type="number"
+                        min={30}
+                        max={86400}
+                        value={firewallForm.failWindowSeconds}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('failWindowSeconds', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        Rolling time window for counting failed authentication attempts.
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Ban duration (seconds)</span>
+                      <input
+                        type="number"
+                        min={60}
+                        max={604800}
+                        value={firewallForm.banDurationSeconds}
+                        onChange={(event) =>
+                          handleFirewallFieldChange('banDurationSeconds', event.target.value)
+                        }
+                      />
+                      <span className="field-hint">
+                        How long an offending IP remains blocked after exceeding the threshold.
+                      </span>
+                    </div>
+                    {firewallError ? <div className="form-error">{firewallError}</div> : null}
+                    {firewallMessage ? (
+                      <div className="form-feedback">{firewallMessage}</div>
+                    ) : null}
+                    <div className="controls-row">
+                      <button
+                        type="submit"
+                        className="submit-button"
+                        disabled={!firewallDirty || firewallSaving}
+                      >
+                        {firewallSaving
+                          ? 'Saving...'
+                          : firewallDirty
+                            ? 'Save firewall settings'
+                            : 'Firewall up to date'}
+                      </button>
+                    </div>
+                  </form>
+                  {firewallStats ? (
+                    <div className="firewall-stats">
+                      <div>
+                        <span className="muted">Rules</span>
+                        <strong>{firewallStats.totalRules}</strong>
                       </div>
-                      <div className="config-row">
-                        <span className="config-label">Failure window (seconds)</span>
-                        <input
-                          type="number"
-                          min={30}
-                          max={86400}
-                          value={firewallForm.failWindowSeconds}
-                          onChange={(event) =>
-                            handleFirewallFieldChange('failWindowSeconds', event.target.value)
-                          }
-                        />
-                        <span className="field-hint">
-                          Rolling time window for counting failed authentication attempts.
-                        </span>
+                      <div>
+                        <span className="muted">Blocked rules</span>
+                        <strong>{firewallStats.totalBlockedRules}</strong>
                       </div>
-                      <div className="config-row">
-                        <span className="config-label">Ban duration (seconds)</span>
-                        <input
-                          type="number"
-                          min={60}
-                          max={604800}
-                          value={firewallForm.banDurationSeconds}
-                          onChange={(event) =>
-                            handleFirewallFieldChange('banDurationSeconds', event.target.value)
-                          }
-                        />
-                        <span className="field-hint">
-                          How long an offending IP remains blocked after exceeding the threshold.
-                        </span>
+                      <div>
+                        <span className="muted">Auth failures (24h)</span>
+                        <strong>{firewallStats.authFailuresLast24h}</strong>
                       </div>
-                      {firewallError ? <div className="form-error">{firewallError}</div> : null}
-                      {firewallMessage ? (
-                        <div className="form-feedback">{firewallMessage}</div>
-                      ) : null}
-                      <div className="controls-row">
+                      <div>
+                        <span className="muted">Blocks (24h)</span>
+                        <strong>{firewallStats.blockedLast24h}</strong>
+                      </div>
+                    </div>
+                  ) : null}
+                  {firewallConfig ? (
+                    <p className="field-hint">
+                      Last updated {formatDateTime(firewallConfig.updatedAt)}
+                    </p>
+                  ) : null}
+                  <details
+                    className="firewall-log-viewer"
+                    open={firewallLogsOpen}
+                    onToggle={(event) => setFirewallLogsOpen(event.currentTarget.open)}
+                  >
+                    <summary>
+                      Recent firewall activity
+                      <span className="firewall-log-viewer__summary-meta">
+                        {firewallLogsQuery.isFetching
+                          ? 'Refreshing...'
+                          : `${firewallLogs.length} entries`}
+                      </span>
+                    </summary>
+                    <div className="firewall-log-viewer__body">
+                      <div className="firewall-log-viewer__toolbar">
                         <button
-                          type="submit"
-                          className="submit-button"
-                          disabled={!firewallDirty || firewallSaving}
+                          type="button"
+                          className="control-chip control-chip--ghost"
+                          onClick={() => firewallLogsQuery.refetch()}
+                          disabled={firewallLogsQuery.isFetching}
                         >
-                          {firewallSaving
-                            ? 'Saving...'
-                            : firewallDirty
-                              ? 'Save firewall settings'
-                              : 'Firewall up to date'}
+                          {firewallLogsQuery.isFetching ? 'Loading...' : 'Refresh'}
+                        </button>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={handleFirewallLogsExport}
+                          disabled={firewallLogs.length === 0}
+                        >
+                          Export CSV
                         </button>
                       </div>
-                    </form>
-                    {firewallStats ? (
-                      <div className="firewall-stats">
-                        <div>
-                          <span className="muted">Rules</span>
-                          <strong>{firewallStats.totalRules}</strong>
-                        </div>
-                        <div>
-                          <span className="muted">Blocked rules</span>
-                          <strong>{firewallStats.totalBlockedRules}</strong>
-                        </div>
-                        <div>
-                          <span className="muted">Auth failures (24h)</span>
-                          <strong>{firewallStats.authFailuresLast24h}</strong>
-                        </div>
-                        <div>
-                          <span className="muted">Blocks (24h)</span>
-                          <strong>{firewallStats.blockedLast24h}</strong>
-                        </div>
-                      </div>
-                    ) : null}
-                    {firewallConfig ? (
-                      <p className="field-hint">
-                        Last updated {formatDateTime(firewallConfig.updatedAt)}
-                      </p>
-                    ) : null}
-                    <details
-                      className="firewall-log-viewer"
-                      open={firewallLogsOpen}
-                      onToggle={(event) => setFirewallLogsOpen(event.currentTarget.open)}
-                    >
-                      <summary>
-                        Recent firewall activity
-                        <span className="firewall-log-viewer__summary-meta">
-                          {firewallLogsQuery.isFetching
-                            ? 'Refreshing...'
-                            : `${firewallLogs.length} entries`}
-                        </span>
-                      </summary>
-                      <div className="firewall-log-viewer__body">
-                        <div className="firewall-log-viewer__toolbar">
-                          <button
-                            type="button"
-                            className="control-chip control-chip--ghost"
-                            onClick={() => firewallLogsQuery.refetch()}
-                            disabled={firewallLogsQuery.isFetching}
-                          >
-                            {firewallLogsQuery.isFetching ? 'Loading...' : 'Refresh'}
-                          </button>
-                          <button
-                            type="button"
-                            className="control-chip"
-                            onClick={handleFirewallLogsExport}
-                            disabled={firewallLogs.length === 0}
-                          >
-                            Export CSV
-                          </button>
-                        </div>
-                        {firewallLogsQuery.isLoading ? (
-                          <p className="form-hint">Loading firewall logs...</p>
-                        ) : firewallLogsQuery.isError ? (
-                          <p className="form-error">{firewallLogsError}</p>
-                        ) : firewallLogs.length === 0 ? (
-                          <p className="form-hint">No firewall events recorded yet.</p>
-                        ) : (
-                          <ul className="firewall-log-list">
-                            {firewallLogs.map((log) => (
-                              <li key={log.id} className="firewall-log-entry">
-                                <div className="firewall-log-entry__header">
-                                  <span className="firewall-log-entry__ip">{log.ip}</span>
-                                  <span
-                                    className={`firewall-log-entry__badge firewall-log-entry__badge--${log.outcome.toLowerCase()}`}
+                      {firewallLogsQuery.isLoading ? (
+                        <p className="form-hint">Loading firewall logs...</p>
+                      ) : firewallLogsQuery.isError ? (
+                        <p className="form-error">{firewallLogsError}</p>
+                      ) : firewallLogs.length === 0 ? (
+                        <p className="form-hint">No firewall events recorded yet.</p>
+                      ) : (
+                        <ul className="firewall-log-list">
+                          {firewallLogs.map((log) => (
+                            <li key={log.id} className="firewall-log-entry">
+                              <div className="firewall-log-entry__header">
+                                <span className="firewall-log-entry__ip">{log.ip}</span>
+                                <span
+                                  className={`firewall-log-entry__badge firewall-log-entry__badge--${log.outcome.toLowerCase()}`}
+                                >
+                                  {log.outcome.replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                              <div className="firewall-log-entry__meta">
+                                <span>{formatDateTime(log.lastSeen)}</span>
+                                <span>
+                                  {log.method.toUpperCase()} - {log.path}
+                                </span>
+                                {log.reason ? <span>{log.reason}</span> : null}
+                              </div>
+                              <dl className="firewall-log-entry__grid">
+                                <div>
+                                  <dt>Attempts</dt>
+                                  <dd>{log.attempts}</dd>
+                                </div>
+                                <div>
+                                  <dt>Blocked</dt>
+                                  <dd>{log.blocked ? 'Yes' : 'No'}</dd>
+                                </div>
+                                {log.country ? (
+                                  <div>
+                                    <dt>Country</dt>
+                                    <dd>{log.country}</dd>
+                                  </div>
+                                ) : null}
+                                {log.userAgent ? (
+                                  <div className="firewall-log-entry__ua">
+                                    <dt>User Agent</dt>
+                                    <dd>{log.userAgent}</dd>
+                                  </div>
+                                ) : null}
+                                {log.ruleId ? (
+                                  <div>
+                                    <dt>Rule</dt>
+                                    <dd>{log.ruleId}</dd>
+                                  </div>
+                                ) : null}
+                              </dl>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </details>
+                  <details
+                    className="firewall-log-viewer"
+                    open={firewallJailOpen}
+                    onToggle={(event) => setFirewallJailOpen(event.currentTarget.open)}
+                  >
+                    <summary>
+                      Jailed IPs
+                      <span className="firewall-log-viewer__summary-meta">
+                        {firewallJailedQuery.isFetching
+                          ? 'Refreshing...'
+                          : `${jailedRules.length} entries`}
+                      </span>
+                    </summary>
+                    <div className="firewall-log-viewer__body">
+                      {firewallJailedQuery.isLoading ? (
+                        <p className="form-hint">Loading jailed IPsÃ¢â‚¬Â¦</p>
+                      ) : firewallJailedQuery.isError ? (
+                        <p className="form-error">{jailedError}</p>
+                      ) : jailedRules.length === 0 ? (
+                        <p className="form-hint">No IPs are currently jailed.</p>
+                      ) : (
+                        <table className="firewall-jail-table">
+                          <thead>
+                            <tr>
+                              <th>IP</th>
+                              <th>Reason</th>
+                              <th>Expires</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {jailedRules.map((rule) => (
+                              <tr key={rule.id}>
+                                <td>{rule.ip}</td>
+                                <td>{rule.reason ?? 'Automatic block'}</td>
+                                <td>{rule.expiresAt ? formatDateTime(rule.expiresAt) : 'Auto'}</td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="control-chip control-chip--ghost"
+                                    onClick={() => handleUnblockJailed(rule.id)}
+                                    disabled={unblockJailedMutation.isPending}
                                   >
-                                    {log.outcome.replace(/_/g, ' ')}
-                                  </span>
-                                </div>
-                                <div className="firewall-log-entry__meta">
-                                  <span>{formatDateTime(log.lastSeen)}</span>
-                                  <span>
-                                    {log.method.toUpperCase()} - {log.path}
-                                  </span>
-                                  {log.reason ? <span>{log.reason}</span> : null}
-                                </div>
-                                <dl className="firewall-log-entry__grid">
-                                  <div>
-                                    <dt>Attempts</dt>
-                                    <dd>{log.attempts}</dd>
-                                  </div>
-                                  <div>
-                                    <dt>Blocked</dt>
-                                    <dd>{log.blocked ? 'Yes' : 'No'}</dd>
-                                  </div>
-                                  {log.country ? (
-                                    <div>
-                                      <dt>Country</dt>
-                                      <dd>{log.country}</dd>
-                                    </div>
-                                  ) : null}
-                                  {log.userAgent ? (
-                                    <div className="firewall-log-entry__ua">
-                                      <dt>User Agent</dt>
-                                      <dd>{log.userAgent}</dd>
-                                    </div>
-                                  ) : null}
-                                  {log.ruleId ? (
-                                    <div>
-                                      <dt>Rule</dt>
-                                      <dd>{log.ruleId}</dd>
-                                    </div>
-                                  ) : null}
-                                </dl>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </details>
-                    <details
-                      className="firewall-log-viewer"
-                      open={firewallJailOpen}
-                      onToggle={(event) => setFirewallJailOpen(event.currentTarget.open)}
-                    >
-                      <summary>
-                        Jailed IPs
-                        <span className="firewall-log-viewer__summary-meta">
-                          {firewallJailedQuery.isFetching
-                            ? 'Refreshing...'
-                            : `${jailedRules.length} entries`}
-                        </span>
-                      </summary>
-                      <div className="firewall-log-viewer__body">
-                        {firewallJailedQuery.isLoading ? (
-                          <p className="form-hint">Loading jailed IPs…</p>
-                        ) : firewallJailedQuery.isError ? (
-                          <p className="form-error">{jailedError}</p>
-                        ) : jailedRules.length === 0 ? (
-                          <p className="form-hint">No IPs are currently jailed.</p>
-                        ) : (
-                          <table className="firewall-jail-table">
-                            <thead>
-                              <tr>
-                                <th>IP</th>
-                                <th>Reason</th>
-                                <th>Expires</th>
-                                <th>Actions</th>
+                                    Unblock
+                                  </button>
+                                </td>
                               </tr>
-                            </thead>
-                            <tbody>
-                              {jailedRules.map((rule) => (
-                                <tr key={rule.id}>
-                                  <td>{rule.ip}</td>
-                                  <td>{rule.reason ?? 'Automatic block'}</td>
-                                  <td>
-                                    {rule.expiresAt ? formatDateTime(rule.expiresAt) : 'Auto'}
-                                  </td>
-                                  <td>
-                                    <button
-                                      type="button"
-                                      className="control-chip control-chip--ghost"
-                                      onClick={() => handleUnblockJailed(rule.id)}
-                                      disabled={unblockJailedMutation.isPending}
-                                    >
-                                      Unblock
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </details>
+                </>
+              ) : (
+                <p className="form-error">
+                  Unable to load firewall configuration. Check API connectivity.
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className={cardClass('sites')}>
+            <header>
+              <h2>Site Settings</h2>
+              <p>Update site names and colors for multi-site deployments.</p>
+              {runtimeSiteId ? (
+                <p className="config-hint">
+                  This backend instance reports as site <strong>{runtimeSiteId}</strong>.
+                </p>
+              ) : null}
+            </header>
+            <div className="config-card__body">
+              {sitesQuery.isLoading ? (
+                <div>Loading site metadata...</div>
+              ) : sitesQuery.isError ? (
+                <div className="form-error">Unable to load site list.</div>
+              ) : siteSettings.length === 0 ? (
+                <div className="empty-state">
+                  <div>No sites found. Create a site in the database to manage settings here.</div>
+                </div>
+              ) : (
+                siteSettings.map((site) => {
+                  const cardClassName = `config-subcard${
+                    site.id === runtimeSiteId ? ' config-subcard--active-runtime' : ''
+                  }`;
+                  return (
+                    <div key={site.id} className={cardClassName}>
+                      <div className="config-row">
+                        <span className="config-label">Site ID</span>
+                        <span className="muted">
+                          {site.id}
+                          {site.id === runtimeSiteId ? (
+                            <>
+                              {' '}
+                              <span
+                                className="status-pill status-active"
+                                title="Current backend runtime site"
+                              >
+                                Active runtime
+                              </span>
+                            </>
+                          ) : null}
+                        </span>
                       </div>
-                    </details>
-                  </>
+                      <div className="config-row">
+                        <span className="config-label">Name</span>
+                        <input
+                          value={site.name}
+                          onChange={(event) =>
+                            updateSiteSetting(site.id, { name: event.target.value })
+                          }
+                          onBlur={(event) => {
+                            const trimmed = event.target.value.trim();
+                            updateSiteSetting(site.id, { name: trimmed });
+                            commitSiteSetting(site.id, { name: trimmed });
+                          }}
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Display Color</span>
+                        <div className="site-color-row">
+                          <input
+                            type="color"
+                            value={site.color || '#0f62fe'}
+                            onChange={(event) => {
+                              const color = event.target.value;
+                              updateSiteSetting(site.id, { color });
+                              commitSiteSetting(site.id, { color });
+                            }}
+                            aria-label={`${site.name || site.id} color`}
+                          />
+                          <input
+                            value={site.color ?? ''}
+                            placeholder="#0f62fe"
+                            onChange={(event) =>
+                              updateSiteSetting(site.id, { color: event.target.value })
+                            }
+                            onBlur={(event) => {
+                              const raw = event.target.value.trim();
+                              if (!raw) {
+                                return;
+                              }
+                              const sanitized = raw.startsWith('#') ? raw : `#${raw}`;
+                              updateSiteSetting(site.id, { color: sanitized });
+                              commitSiteSetting(site.id, { color: sanitized });
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Region</span>
+                        <input
+                          value={site.region ?? ''}
+                          placeholder="Optional"
+                          onChange={(event) =>
+                            updateSiteSetting(site.id, {
+                              region: event.target.value === '' ? null : event.target.value,
+                            })
+                          }
+                          onBlur={(event) =>
+                            commitSiteSetting(site.id, {
+                              region: event.target.value === '' ? null : event.target.value.trim(),
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Country</span>
+                        <input
+                          value={site.country ?? ''}
+                          placeholder="Optional"
+                          onChange={(event) =>
+                            updateSiteSetting(site.id, {
+                              country: event.target.value === '' ? null : event.target.value,
+                            })
+                          }
+                          onBlur={(event) =>
+                            commitSiteSetting(site.id, {
+                              country: event.target.value === '' ? null : event.target.value.trim(),
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">City</span>
+                        <input
+                          value={site.city ?? ''}
+                          placeholder="Optional"
+                          onChange={(event) =>
+                            updateSiteSetting(site.id, {
+                              city: event.target.value === '' ? null : event.target.value,
+                            })
+                          }
+                          onBlur={(event) =>
+                            commitSiteSetting(site.id, {
+                              city: event.target.value === '' ? null : event.target.value.trim(),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </section>
+
+          <section className={cardClass('serial')}>
+            <header>
+              <h2>Serial Connection</h2>
+              <p>Review connection defaults and rate limits.</p>
+              {runtimeSiteLabel ? (
+                <p className="config-hint">
+                  Settings in this section apply to runtime site <strong>{runtimeSiteLabel}</strong>
+                  .
+                </p>
+              ) : null}
+            </header>
+            <div className="config-card__body">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={serialConfig.enabled}
+                  onChange={(event) => updateSerialSetting({ enabled: event.target.checked })}
+                />
+                Enable serial auto-connect
+              </label>
+              <span className="config-hint">
+                When enabled, the ingest service reconnects automatically using the settings below.
+              </span>
+              <div className="serial-actions">
+                <button
+                  type="button"
+                  className="control-chip"
+                  onClick={() => serialPortsQuery.refetch()}
+                  disabled={serialPortsQuery.isFetching}
+                >
+                  {serialPortsQuery.isFetching ? 'Refreshing ports...' : 'Refresh Ports'}
+                </button>
+                <button
+                  type="button"
+                  className="control-chip control-chip--danger"
+                  onClick={handleSerialReset}
+                  disabled={resetSerialConfigMutation.isPending}
+                >
+                  {resetSerialConfigMutation.isPending ? 'Resetting...' : 'Reset to Defaults'}
+                </button>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Device Path</span>
+                <div className="serial-device-picker">
+                  <select
+                    value={serialPortSelectValue}
+                    onChange={handleSerialPortSelect}
+                    disabled={serialPortsQuery.isLoading}
+                  >
+                    <option value="">Select detected port</option>
+                    {serialPorts.map((port) => (
+                      <option key={port.path} value={port.path}>
+                        {port.path}
+                        {port.manufacturer ? ` (${port.manufacturer})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    placeholder="/dev/ttyUSB0"
+                    value={serialConfig.devicePath ?? ''}
+                    onChange={(event) =>
+                      updateSerialSetting({ devicePath: event.target.value || null })
+                    }
+                  />
+                </div>
+                {serialPortsError ? (
+                  <span className="form-error">{serialPortsError}</span>
                 ) : (
-                  <p className="form-error">
-                    Unable to load firewall configuration. Check API connectivity.
-                  </p>
+                  <span className="config-hint">
+                    Path to the radio / serial bridge. On Windows use COM ports, on Linux use
+                    /dev/tty*.
+                  </span>
                 )}
               </div>
-            </section>
+              <div className="config-row">
+                <span className="config-label">Baud Rate</span>
+                <input
+                  type="number"
+                  placeholder="115200"
+                  value={serialConfig.baud ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ baud: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ baud: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Must match the firmware setting on the connected device (115200 for Meshtastic).
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Protocol</span>
+                <select
+                  value={appSettings.protocol}
+                  onChange={(event) => updateAppSetting({ protocol: event.target.value })}
+                >
+                  {PROTOCOL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="config-hint">
+                  Select the parser that matches the incoming frame format on the wire.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Data Bits</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={9}
+                  value={serialConfig.dataBits ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ dataBits: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ dataBits: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Most serial radios use 8 data bits. Adjust only for specialized hardware.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Parity</span>
+                <select
+                  value={serialConfig.parity ?? 'none'}
+                  onChange={(event) => updateSerialSetting({ parity: event.target.value })}
+                >
+                  {PARITY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="config-hint">
+                  Leave as None unless the device requires parity bits for error checking.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Stop Bits</span>
+                <select
+                  value={serialConfig.stopBits ?? 1}
+                  onChange={(event) =>
+                    updateSerialSetting({ stopBits: Number(event.target.value) })
+                  }
+                >
+                  {STOP_BITS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="config-hint">
+                  Typically 1; some equipment expects 2 stop bits on slower links.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Delimiter</span>
+                <input
+                  placeholder="auto (default)"
+                  value={serialConfig.delimiter ?? ''}
+                  onChange={(event) =>
+                    updateSerialSetting({ delimiter: event.target.value || null })
+                  }
+                  title="Use 'auto' to try CRLF and LF automatically. Common values: \n, \r\n."
+                />
+                <span className="config-hint">
+                  Line ending used to split incoming frames. Leave blank for automatic detection.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Reconnect Base (ms)</span>
+                <input
+                  type="number"
+                  value={serialConfig.reconnectBaseMs ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ reconnectBaseMs: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ reconnectBaseMs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Initial backoff delay before retrying a disconnected serial link.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Reconnect Max (ms)</span>
+                <input
+                  type="number"
+                  value={serialConfig.reconnectMaxMs ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ reconnectMaxMs: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ reconnectMaxMs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Upper bound for exponential backoff between reconnection attempts.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Reconnect Jitter</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={serialConfig.reconnectJitter ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ reconnectJitter: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ reconnectJitter: value });
+                  }}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Reconnect Attempts</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={serialConfig.reconnectMaxAttempts ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ reconnectMaxAttempts: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ reconnectMaxAttempts: value });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
 
-            <section className={cardClass('sites')}>
-              <header>
-                <h2>Site Settings</h2>
-                <p>Update site names and colors for multi-site deployments.</p>
-                {runtimeSiteId ? (
-                  <p className="config-hint">
-                    This backend instance reports as site <strong>{runtimeSiteId}</strong>.
-                  </p>
-                ) : null}
-              </header>
-              <div className="config-card__body">
-                {sitesQuery.isLoading ? (
-                  <div>Loading site metadata...</div>
-                ) : sitesQuery.isError ? (
-                  <div className="form-error">Unable to load site list.</div>
-                ) : siteSettings.length === 0 ? (
-                  <div className="empty-state">
-                    <div>
-                      No sites found. Create a site in the database to manage settings here.
+          <section className={cardClass('tak')}>
+            <header>
+              <h2>TAK Bridge</h2>
+              <p>Stream nodes, alerts, and command acknowledgements into your TAK ecosystem.</p>
+            </header>
+            <div className="config-card__body">
+              {takConfigQuery.isLoading ? (
+                <div>Loading TAK configuration...</div>
+              ) : takConfigError ? (
+                <div className="form-error" role="alert">
+                  {takConfigError.message}
+                </div>
+              ) : !takConfig ? (
+                <div className="form-hint">
+                  TAK configuration is unavailable. Ensure database migrations have run.
+                </div>
+              ) : (
+                <>
+                  {takNotice ? (
+                    <div
+                      className={
+                        takNotice.type === 'error'
+                          ? 'form-error'
+                          : takNotice.type === 'success'
+                            ? 'form-success'
+                            : 'form-hint'
+                      }
+                      role={takNotice.type === 'error' ? 'alert' : 'status'}
+                    >
+                      {takNotice.text}
+                    </div>
+                  ) : null}
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.enabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        updateTakSetting({ enabled });
+                        commitTakConfig({ enabled });
+                      }}
+                    />
+                    Enable TAK bridge
+                  </label>
+                  <span className="config-hint">
+                    When enabled, the backend emits Cursor-on-Target feeds for connected TAK
+                    clients.
+                  </span>
+                  <div className="config-subcard">
+                    <h3>Streams</h3>
+                    <p className="config-hint">
+                      Choose which Command Center events syndicate into TAK. Disable feeds you do
+                      not need on the common operational picture.
+                    </p>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamNodes}
+                        onChange={handleTakToggle('streamNodes')}
+                        disabled={takToggleDisabled}
+                      />
+                      Node telemetry (positions)
+                    </label>
+                    <span className="config-hint">
+                      Broadcast live node latitude/longitude updates as friendly unit markers.
+                    </span>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamTargets}
+                        onChange={handleTakToggle('streamTargets')}
+                        disabled={takToggleDisabled}
+                      />
+                      Target detections & triangulation
+                    </label>
+                    <span className="config-hint">
+                      Publishes MAC detections, triangulation estimates, and confidence metadata.
+                    </span>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamCommandAcks}
+                        onChange={handleTakToggle('streamCommandAcks')}
+                        disabled={takToggleDisabled}
+                      />
+                      Command acknowledgements
+                    </label>
+                    <span className="config-hint">
+                      Emits `ack` Cursor-on-Target events when nodes confirm command execution.
+                    </span>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamCommandResults}
+                        onChange={handleTakToggle('streamCommandResults')}
+                        disabled={takToggleDisabled}
+                      />
+                      Command results / telemetry blocks
+                    </label>
+                    <span className="config-hint">
+                      Forwards command result payloads (STATUS, BASELINE, TRIANGULATE, etc.) to TAK.
+                    </span>
+                  </div>
+                  <div className="config-subcard">
+                    <h4>Alert severities</h4>
+                    <p className="config-hint">
+                      Filter which alert severities ring out on TAK. Higher severity still respects
+                      the per-level toggles below.
+                    </p>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamAlertInfo}
+                        onChange={handleTakToggle('streamAlertInfo')}
+                        disabled={takToggleDisabled}
+                      />
+                      Info
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamAlertNotice}
+                        onChange={handleTakToggle('streamAlertNotice')}
+                        disabled={takToggleDisabled}
+                      />
+                      Notice
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamAlertAlert}
+                        onChange={handleTakToggle('streamAlertAlert')}
+                        disabled={takToggleDisabled}
+                      />
+                      Alert
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={takConfig.streamAlertCritical}
+                        onChange={handleTakToggle('streamAlertCritical')}
+                        disabled={takToggleDisabled}
+                      />
+                      Critical
+                    </label>
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Protocol</span>
+                    <select
+                      value={takConfig.protocol}
+                      onChange={(event) => {
+                        const protocol = event.target.value as TakProtocol;
+                        updateTakSetting({ protocol });
+                        commitTakConfig({ protocol });
+                      }}
+                    >
+                      {TAK_PROTOCOL_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="config-hint">
+                      UDP for LAN multicast, TCP/HTTPS for TAK servers or gateways.
+                    </span>
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Host</span>
+                    <input
+                      placeholder="tak.example.local"
+                      value={takConfig.host ?? ''}
+                      onChange={(event) => updateTakSetting({ host: event.target.value })}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        commitTakConfig({ host: raw.length > 0 ? raw : null });
+                      }}
+                    />
+                    <span className="config-hint">
+                      Hostname or IP of the TAK server (omit scheme).
+                    </span>
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Port</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={takConfig.port ?? ''}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        updateTakSetting({ port: raw === '' ? null : Number(raw) });
+                      }}
+                      onBlur={(event) => {
+                        const raw = event.target.value;
+                        if (raw === '') {
+                          commitTakConfig({ port: null });
+                          return;
+                        }
+                        const value = Number(raw);
+                        if (Number.isFinite(value)) {
+                          commitTakConfig({ port: value });
+                        }
+                      }}
+                    />
+                    <span className="config-hint">
+                      Defaults: UDP 6969, TCP 8088, HTTPS 8443 (change to match your TAK core).
+                    </span>
+                  </div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={takConfig.tlsEnabled}
+                      onChange={(event) => {
+                        const tlsEnabled = event.target.checked;
+                        updateTakSetting({ tlsEnabled });
+                        commitTakConfig({ tlsEnabled });
+                      }}
+                    />
+                    Require TLS certificates
+                  </label>
+                  <span className="config-hint">
+                    Provide CA, client certificate, and key paths when connecting over TLS or HTTPS.
+                  </span>
+                  <div className="config-row">
+                    <span className="config-label">CA File</span>
+                    <input
+                      placeholder="/etc/tak/ca.pem"
+                      value={takConfig.cafile ?? ''}
+                      onChange={(event) => updateTakSetting({ cafile: event.target.value })}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        commitTakConfig({ cafile: raw.length > 0 ? raw : null });
+                      }}
+                    />
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Client Certificate</span>
+                    <input
+                      placeholder="/etc/tak/client.pem"
+                      value={takConfig.certfile ?? ''}
+                      onChange={(event) => updateTakSetting({ certfile: event.target.value })}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        commitTakConfig({ certfile: raw.length > 0 ? raw : null });
+                      }}
+                    />
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Client Key</span>
+                    <input
+                      placeholder="/etc/tak/client.key"
+                      value={takConfig.keyfile ?? ''}
+                      onChange={(event) => updateTakSetting({ keyfile: event.target.value })}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        commitTakConfig({ keyfile: raw.length > 0 ? raw : null });
+                      }}
+                    />
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Username</span>
+                    <input
+                      placeholder="tak-agent"
+                      value={takConfig.username ?? ''}
+                      onChange={(event) => updateTakSetting({ username: event.target.value })}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        commitTakConfig({ username: raw.length > 0 ? raw : null });
+                      }}
+                    />
+                    <span className="config-hint">
+                      Optional basic auth username when relaying through TAK Enterprise.
+                    </span>
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Password</span>
+                    <div className="mqtt-password-row">
+                      <input
+                        type="password"
+                        value={takPasswordInput}
+                        onChange={(event) => setTakPasswordInput(event.target.value)}
+                        placeholder="Enter new password"
+                      />
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={handleTakPasswordSave}
+                        disabled={
+                          takPasswordInput.trim().length === 0 || updateTakConfigMutation.isPending
+                        }
+                      >
+                        Save Password
+                      </button>
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={handleTakPasswordClear}
+                        disabled={updateTakConfigMutation.isPending}
+                      >
+                        Clear Password
+                      </button>
+                    </div>
+                    <span className="config-hint">
+                      Password is write-only. Use Clear to remove credentials from the backend.
+                    </span>
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">API Key</span>
+                    <input
+                      placeholder="Optional TAK API key"
+                      value={takConfig.apiKey ?? ''}
+                      onChange={(event) => updateTakSetting({ apiKey: event.target.value })}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        commitTakConfig({ apiKey: raw.length > 0 ? raw : null });
+                      }}
+                    />
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Send CoT Test</span>
+                    <div className="config-value">
+                      <textarea
+                        rows={5}
+                        value={takSendPayload}
+                        onChange={(event) => setTakSendPayload(event.target.value)}
+                        placeholder="<event ...>Paste raw Cursor-on-Target XML here</event>"
+                      />
+                      <div className="controls-row">
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => {
+                            const trimmed = takSendPayload.trim();
+                            if (trimmed.length === 0 || takSendMutation.isPending) {
+                              return;
+                            }
+                            takSendMutation.mutate(trimmed);
+                          }}
+                          disabled={takSendPayload.trim().length === 0 || takSendMutation.isPending}
+                        >
+                          {takSendMutation.isPending ? 'Sending...' : 'Send Payload'}
+                        </button>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => setTakSendPayload('')}
+                          disabled={takSendMutation.isPending || takSendPayload.length === 0}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <span className="config-hint">
+                        Useful for validating the TAK bridge end-to-end. The payload is forwarded
+                        exactly as entered.
+                      </span>
                     </div>
                   </div>
-                ) : (
-                  siteSettings.map((site) => {
-                    const cardClassName = `config-subcard${
-                      site.id === runtimeSiteId ? ' config-subcard--active-runtime' : ''
-                    }`;
-                    return (
-                      <div key={site.id} className={cardClassName}>
-                        <div className="config-row">
-                          <span className="config-label">Site ID</span>
+                  <div className="config-row">
+                    <span className="config-label">Status</span>
+                    <div className="config-value">
+                      <div>Last connected: {takLastConnected}</div>
+                      <div className="controls-row">
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => reloadTakMutation.mutate()}
+                          disabled={reloadTakMutation.isPending}
+                        >
+                          {reloadTakMutation.isPending ? 'Restarting...' : 'Restart Bridge'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+          <section className={cardClass('mqtt')}>
+            <header>
+              <h2>MQTT Federation</h2>
+              <p>Configure broker connectivity for remote sites and command replication.</p>
+            </header>
+            <div className="config-card__body">
+              {mqttSitesQuery.isLoading ? (
+                <div>Loading MQTT configuration...</div>
+              ) : mqttSitesQuery.isError ? (
+                <div className="form-error">
+                  Unable to load MQTT configuration. Check backend logs.
+                </div>
+              ) : mqttConfigs.length === 0 ? (
+                <div className="empty-state">
+                  <div>No MQTT sites configured yet. Add a site to enable federation.</div>
+                </div>
+              ) : (
+                mqttConfigs.map((cfg) => {
+                  const status = mqttStatusMap[cfg.siteId];
+                  const state = status?.state ?? 'not_configured';
+                  const statusClassName = `status-pill status-${state}`;
+                  const statusLabel = formatMqttStatusState(state);
+                  const isLocalSite = cfg.siteId === runtimeSiteId;
+                  const notice = mqttNotices[cfg.siteId];
+                  const isTesting =
+                    mqttAction?.mode === 'test' &&
+                    mqttAction.siteId === cfg.siteId &&
+                    testMqttMutation.isPending;
+                  const isConnecting =
+                    mqttAction?.mode === 'connect' &&
+                    mqttAction.siteId === cfg.siteId &&
+                    reconnectMqttMutation.isPending;
+                  const statusUpdatedAt = status?.updatedAt
+                    ? formatDateTime(status.updatedAt)
+                    : null;
+
+                  return (
+                    <div key={cfg.siteId} className="config-subcard">
+                      <div className="config-row">
+                        <span className="config-label">Site</span>
+                        <div className="config-value">
+                          <strong>{cfg.site?.name ?? cfg.siteId}</strong>
                           <span className="muted">
-                            {site.id}
-                            {site.id === runtimeSiteId ? (
+                            {cfg.siteId}
+                            {isLocalSite ? (
                               <>
                                 {' '}
                                 <span
@@ -2161,1366 +3285,555 @@ export function ConfigPage() {
                             ) : null}
                           </span>
                         </div>
-                        <div className="config-row">
-                          <span className="config-label">Name</span>
-                          <input
-                            value={site.name}
-                            onChange={(event) =>
-                              updateSiteSetting(site.id, { name: event.target.value })
-                            }
-                            onBlur={(event) => {
-                              const trimmed = event.target.value.trim();
-                              updateSiteSetting(site.id, { name: trimmed });
-                              commitSiteSetting(site.id, { name: trimmed });
-                            }}
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Display Color</span>
-                          <div className="site-color-row">
-                            <input
-                              type="color"
-                              value={site.color || '#0f62fe'}
-                              onChange={(event) => {
-                                const color = event.target.value;
-                                updateSiteSetting(site.id, { color });
-                                commitSiteSetting(site.id, { color });
-                              }}
-                              aria-label={`${site.name || site.id} color`}
-                            />
-                            <input
-                              value={site.color ?? ''}
-                              placeholder="#0f62fe"
-                              onChange={(event) =>
-                                updateSiteSetting(site.id, { color: event.target.value })
-                              }
-                              onBlur={(event) => {
-                                const raw = event.target.value.trim();
-                                if (!raw) {
-                                  return;
-                                }
-                                const sanitized = raw.startsWith('#') ? raw : `#${raw}`;
-                                updateSiteSetting(site.id, { color: sanitized });
-                                commitSiteSetting(site.id, { color: sanitized });
-                              }}
-                            />
-                          </div>
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Region</span>
-                          <input
-                            value={site.region ?? ''}
-                            placeholder="Optional"
-                            onChange={(event) =>
-                              updateSiteSetting(site.id, {
-                                region: event.target.value === '' ? null : event.target.value,
-                              })
-                            }
-                            onBlur={(event) =>
-                              commitSiteSetting(site.id, {
-                                region:
-                                  event.target.value === '' ? null : event.target.value.trim(),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Country</span>
-                          <input
-                            value={site.country ?? ''}
-                            placeholder="Optional"
-                            onChange={(event) =>
-                              updateSiteSetting(site.id, {
-                                country: event.target.value === '' ? null : event.target.value,
-                              })
-                            }
-                            onBlur={(event) =>
-                              commitSiteSetting(site.id, {
-                                country:
-                                  event.target.value === '' ? null : event.target.value.trim(),
-                              })
-                            }
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">City</span>
-                          <input
-                            value={site.city ?? ''}
-                            placeholder="Optional"
-                            onChange={(event) =>
-                              updateSiteSetting(site.id, {
-                                city: event.target.value === '' ? null : event.target.value,
-                              })
-                            }
-                            onBlur={(event) =>
-                              commitSiteSetting(site.id, {
-                                city: event.target.value === '' ? null : event.target.value.trim(),
-                              })
-                            }
-                          />
-                        </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </section>
-
-            <section className={cardClass('serial')}>
-              <header>
-                <h2>Serial Connection</h2>
-                <p>Review connection defaults and rate limits.</p>
-                {runtimeSiteLabel ? (
-                  <p className="config-hint">
-                    Settings in this section apply to runtime site{' '}
-                    <strong>{runtimeSiteLabel}</strong>.
-                  </p>
-                ) : null}
-              </header>
-              <div className="config-card__body">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={serialConfig.enabled}
-                    onChange={(event) => updateSerialSetting({ enabled: event.target.checked })}
-                  />
-                  Enable serial auto-connect
-                </label>
-                <span className="config-hint">
-                  When enabled, the ingest service reconnects automatically using the settings
-                  below.
-                </span>
-                <div className="serial-actions">
-                  <button
-                    type="button"
-                    className="control-chip"
-                    onClick={() => serialPortsQuery.refetch()}
-                    disabled={serialPortsQuery.isFetching}
-                  >
-                    {serialPortsQuery.isFetching ? 'Refreshing ports...' : 'Refresh Ports'}
-                  </button>
-                  <button
-                    type="button"
-                    className="control-chip control-chip--danger"
-                    onClick={handleSerialReset}
-                    disabled={resetSerialConfigMutation.isPending}
-                  >
-                    {resetSerialConfigMutation.isPending ? 'Resetting…' : 'Reset to Defaults'}
-                  </button>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Device Path</span>
-                  <div className="serial-device-picker">
-                    <select
-                      value={serialPortSelectValue}
-                      onChange={handleSerialPortSelect}
-                      disabled={serialPortsQuery.isLoading}
-                    >
-                      <option value="">Select detected port</option>
-                      {serialPorts.map((port) => (
-                        <option key={port.path} value={port.path}>
-                          {port.path}
-                          {port.manufacturer ? ` (${port.manufacturer})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      placeholder="/dev/ttyUSB0"
-                      value={serialConfig.devicePath ?? ''}
-                      onChange={(event) =>
-                        updateSerialSetting({ devicePath: event.target.value || null })
-                      }
-                    />
-                  </div>
-                  {serialPortsError ? (
-                    <span className="form-error">{serialPortsError}</span>
-                  ) : (
-                    <span className="config-hint">
-                      Path to the radio / serial bridge. On Windows use COM ports, on Linux use
-                      /dev/tty*.
-                    </span>
-                  )}
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Baud Rate</span>
-                  <input
-                    type="number"
-                    placeholder="115200"
-                    value={serialConfig.baud ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw === '') {
-                        updateSerialSetting({ baud: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) return;
-                      updateSerialSetting({ baud: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Must match the firmware setting on the connected device (115200 for Meshtastic).
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Protocol</span>
-                  <select
-                    value={appSettings.protocol}
-                    onChange={(event) => updateAppSetting({ protocol: event.target.value })}
-                  >
-                    {PROTOCOL_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="config-hint">
-                    Select the parser that matches the incoming frame format on the wire.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Data Bits</span>
-                  <input
-                    type="number"
-                    min={5}
-                    max={9}
-                    value={serialConfig.dataBits ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw === '') {
-                        updateSerialSetting({ dataBits: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) return;
-                      updateSerialSetting({ dataBits: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Most serial radios use 8 data bits. Adjust only for specialized hardware.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Parity</span>
-                  <select
-                    value={serialConfig.parity ?? 'none'}
-                    onChange={(event) => updateSerialSetting({ parity: event.target.value })}
-                  >
-                    {PARITY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="config-hint">
-                    Leave as None unless the device requires parity bits for error checking.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Stop Bits</span>
-                  <select
-                    value={serialConfig.stopBits ?? 1}
-                    onChange={(event) =>
-                      updateSerialSetting({ stopBits: Number(event.target.value) })
-                    }
-                  >
-                    {STOP_BITS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="config-hint">
-                    Typically 1; some equipment expects 2 stop bits on slower links.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Delimiter</span>
-                  <input
-                    placeholder="auto (default)"
-                    value={serialConfig.delimiter ?? ''}
-                    onChange={(event) =>
-                      updateSerialSetting({ delimiter: event.target.value || null })
-                    }
-                    title="Use 'auto' to try CRLF and LF automatically. Common values: \n, \r\n."
-                  />
-                  <span className="config-hint">
-                    Line ending used to split incoming frames. Leave blank for automatic detection.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Reconnect Base (ms)</span>
-                  <input
-                    type="number"
-                    value={serialConfig.reconnectBaseMs ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw === '') {
-                        updateSerialSetting({ reconnectBaseMs: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) return;
-                      updateSerialSetting({ reconnectBaseMs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Initial backoff delay before retrying a disconnected serial link.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Reconnect Max (ms)</span>
-                  <input
-                    type="number"
-                    value={serialConfig.reconnectMaxMs ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw === '') {
-                        updateSerialSetting({ reconnectMaxMs: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) return;
-                      updateSerialSetting({ reconnectMaxMs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Upper bound for exponential backoff between reconnection attempts.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Reconnect Jitter</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={serialConfig.reconnectJitter ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw === '') {
-                        updateSerialSetting({ reconnectJitter: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) return;
-                      updateSerialSetting({ reconnectJitter: value });
-                    }}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Reconnect Attempts</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={serialConfig.reconnectMaxAttempts ?? ''}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      if (raw === '') {
-                        updateSerialSetting({ reconnectMaxAttempts: null });
-                        return;
-                      }
-                      const value = Number(raw);
-                      if (!Number.isFinite(value)) return;
-                      updateSerialSetting({ reconnectMaxAttempts: value });
-                    }}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className={cardClass('tak')}>
-              <header>
-                <h2>TAK Bridge</h2>
-                <p>Stream nodes, alerts, and command acknowledgements into your TAK ecosystem.</p>
-              </header>
-              <div className="config-card__body">
-                {takConfigQuery.isLoading ? (
-                  <div>Loading TAK configuration...</div>
-                ) : takConfigError ? (
-                  <div className="form-error" role="alert">
-                    {takConfigError.message}
-                  </div>
-                ) : !takConfig ? (
-                  <div className="form-hint">
-                    TAK configuration is unavailable. Ensure database migrations have run.
-                  </div>
-                ) : (
-                  <>
-                    {takNotice ? (
-                      <div
-                        className={
-                          takNotice.type === 'error'
-                            ? 'form-error'
-                            : takNotice.type === 'success'
-                              ? 'form-success'
-                              : 'form-hint'
-                        }
-                        role={takNotice.type === 'error' ? 'alert' : 'status'}
-                      >
-                        {takNotice.text}
-                      </div>
-                    ) : null}
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={takConfig.enabled}
-                        onChange={(event) => {
-                          const enabled = event.target.checked;
-                          updateTakSetting({ enabled });
-                          commitTakConfig({ enabled });
-                        }}
-                      />
-                      Enable TAK bridge
-                    </label>
-                    <span className="config-hint">
-                      When enabled, the backend emits Cursor-on-Target feeds for connected TAK
-                      clients.
-                    </span>
-                    <div className="config-subcard">
-                      <h3>Streams</h3>
-                      <p className="config-hint">
-                        Choose which Command Center events syndicate into TAK. Disable feeds you do
-                        not need on the common operational picture.
-                      </p>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamNodes}
-                          onChange={handleTakToggle('streamNodes')}
-                          disabled={takToggleDisabled}
-                        />
-                        Node telemetry (positions)
-                      </label>
-                      <span className="config-hint">
-                        Broadcast live node latitude/longitude updates as friendly unit markers.
-                      </span>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamTargets}
-                          onChange={handleTakToggle('streamTargets')}
-                          disabled={takToggleDisabled}
-                        />
-                        Target detections & triangulation
-                      </label>
-                      <span className="config-hint">
-                        Publishes MAC detections, triangulation estimates, and confidence metadata.
-                      </span>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamCommandAcks}
-                          onChange={handleTakToggle('streamCommandAcks')}
-                          disabled={takToggleDisabled}
-                        />
-                        Command acknowledgements
-                      </label>
-                      <span className="config-hint">
-                        Emits `ack` Cursor-on-Target events when nodes confirm command execution.
-                      </span>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamCommandResults}
-                          onChange={handleTakToggle('streamCommandResults')}
-                          disabled={takToggleDisabled}
-                        />
-                        Command results / telemetry blocks
-                      </label>
-                      <span className="config-hint">
-                        Forwards command result payloads (STATUS, BASELINE, TRIANGULATE, etc.) to
-                        TAK.
-                      </span>
-                    </div>
-                    <div className="config-subcard">
-                      <h4>Alert severities</h4>
-                      <p className="config-hint">
-                        Filter which alert severities ring out on TAK. Higher severity still
-                        respects the per-level toggles below.
-                      </p>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamAlertInfo}
-                          onChange={handleTakToggle('streamAlertInfo')}
-                          disabled={takToggleDisabled}
-                        />
-                        Info
-                      </label>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamAlertNotice}
-                          onChange={handleTakToggle('streamAlertNotice')}
-                          disabled={takToggleDisabled}
-                        />
-                        Notice
-                      </label>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamAlertAlert}
-                          onChange={handleTakToggle('streamAlertAlert')}
-                          disabled={takToggleDisabled}
-                        />
-                        Alert
-                      </label>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={takConfig.streamAlertCritical}
-                          onChange={handleTakToggle('streamAlertCritical')}
-                          disabled={takToggleDisabled}
-                        />
-                        Critical
-                      </label>
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Protocol</span>
-                      <select
-                        value={takConfig.protocol}
-                        onChange={(event) => {
-                          const protocol = event.target.value as TakProtocol;
-                          updateTakSetting({ protocol });
-                          commitTakConfig({ protocol });
-                        }}
-                      >
-                        {TAK_PROTOCOL_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="config-hint">
-                        UDP for LAN multicast, TCP/HTTPS for TAK servers or gateways.
-                      </span>
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Host</span>
-                      <input
-                        placeholder="tak.example.local"
-                        value={takConfig.host ?? ''}
-                        onChange={(event) => updateTakSetting({ host: event.target.value })}
-                        onBlur={(event) => {
-                          const raw = event.target.value.trim();
-                          commitTakConfig({ host: raw.length > 0 ? raw : null });
-                        }}
-                      />
-                      <span className="config-hint">
-                        Hostname or IP of the TAK server (omit scheme).
-                      </span>
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Port</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={65535}
-                        value={takConfig.port ?? ''}
-                        onChange={(event) => {
-                          const raw = event.target.value;
-                          updateTakSetting({ port: raw === '' ? null : Number(raw) });
-                        }}
-                        onBlur={(event) => {
-                          const raw = event.target.value;
-                          if (raw === '') {
-                            commitTakConfig({ port: null });
-                            return;
-                          }
-                          const value = Number(raw);
-                          if (Number.isFinite(value)) {
-                            commitTakConfig({ port: value });
-                          }
-                        }}
-                      />
-                      <span className="config-hint">
-                        Defaults: UDP 6969, TCP 8088, HTTPS 8443 (change to match your TAK core).
-                      </span>
-                    </div>
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={takConfig.tlsEnabled}
-                        onChange={(event) => {
-                          const tlsEnabled = event.target.checked;
-                          updateTakSetting({ tlsEnabled });
-                          commitTakConfig({ tlsEnabled });
-                        }}
-                      />
-                      Require TLS certificates
-                    </label>
-                    <span className="config-hint">
-                      Provide CA, client certificate, and key paths when connecting over TLS or
-                      HTTPS.
-                    </span>
-                    <div className="config-row">
-                      <span className="config-label">CA File</span>
-                      <input
-                        placeholder="/etc/tak/ca.pem"
-                        value={takConfig.cafile ?? ''}
-                        onChange={(event) => updateTakSetting({ cafile: event.target.value })}
-                        onBlur={(event) => {
-                          const raw = event.target.value.trim();
-                          commitTakConfig({ cafile: raw.length > 0 ? raw : null });
-                        }}
-                      />
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Client Certificate</span>
-                      <input
-                        placeholder="/etc/tak/client.pem"
-                        value={takConfig.certfile ?? ''}
-                        onChange={(event) => updateTakSetting({ certfile: event.target.value })}
-                        onBlur={(event) => {
-                          const raw = event.target.value.trim();
-                          commitTakConfig({ certfile: raw.length > 0 ? raw : null });
-                        }}
-                      />
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Client Key</span>
-                      <input
-                        placeholder="/etc/tak/client.key"
-                        value={takConfig.keyfile ?? ''}
-                        onChange={(event) => updateTakSetting({ keyfile: event.target.value })}
-                        onBlur={(event) => {
-                          const raw = event.target.value.trim();
-                          commitTakConfig({ keyfile: raw.length > 0 ? raw : null });
-                        }}
-                      />
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Username</span>
-                      <input
-                        placeholder="tak-agent"
-                        value={takConfig.username ?? ''}
-                        onChange={(event) => updateTakSetting({ username: event.target.value })}
-                        onBlur={(event) => {
-                          const raw = event.target.value.trim();
-                          commitTakConfig({ username: raw.length > 0 ? raw : null });
-                        }}
-                      />
-                      <span className="config-hint">
-                        Optional basic auth username when relaying through TAK Enterprise.
-                      </span>
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Password</span>
-                      <div className="mqtt-password-row">
-                        <input
-                          type="password"
-                          value={takPasswordInput}
-                          onChange={(event) => setTakPasswordInput(event.target.value)}
-                          placeholder="Enter new password"
-                        />
-                        <button
-                          type="button"
-                          className="control-chip"
-                          onClick={handleTakPasswordSave}
-                          disabled={
-                            takPasswordInput.trim().length === 0 ||
-                            updateTakConfigMutation.isPending
-                          }
-                        >
-                          Save Password
-                        </button>
-                        <button
-                          type="button"
-                          className="control-chip"
-                          onClick={handleTakPasswordClear}
-                          disabled={updateTakConfigMutation.isPending}
-                        >
-                          Clear Password
-                        </button>
-                      </div>
-                      <span className="config-hint">
-                        Password is write-only. Use Clear to remove credentials from the backend.
-                      </span>
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">API Key</span>
-                      <input
-                        placeholder="Optional TAK API key"
-                        value={takConfig.apiKey ?? ''}
-                        onChange={(event) => updateTakSetting({ apiKey: event.target.value })}
-                        onBlur={(event) => {
-                          const raw = event.target.value.trim();
-                          commitTakConfig({ apiKey: raw.length > 0 ? raw : null });
-                        }}
-                      />
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Send CoT Test</span>
-                      <div className="config-value">
-                        <textarea
-                          rows={5}
-                          value={takSendPayload}
-                          onChange={(event) => setTakSendPayload(event.target.value)}
-                          placeholder="<event ...>Paste raw Cursor-on-Target XML here</event>"
-                        />
-                        <div className="controls-row">
-                          <button
-                            type="button"
-                            className="control-chip"
-                            onClick={() => {
-                              const trimmed = takSendPayload.trim();
-                              if (trimmed.length === 0 || takSendMutation.isPending) {
-                                return;
+                      <div className="config-row">
+                        <span className="config-label">Connection</span>
+                        <div className="config-value">
+                          <span className={statusClassName}>{statusLabel}</span>
+                          {statusUpdatedAt ? (
+                            <span className="config-hint">Updated {statusUpdatedAt}</span>
+                          ) : null}
+                          {status?.message ? (
+                            <div className="config-hint">{status.message}</div>
+                          ) : null}
+                          {notice ? (
+                            <div
+                              className={
+                                notice.type === 'error'
+                                  ? 'form-error'
+                                  : notice.type === 'success'
+                                    ? 'form-success'
+                                    : 'form-hint'
                               }
-                              takSendMutation.mutate(trimmed);
-                            }}
-                            disabled={
-                              takSendPayload.trim().length === 0 || takSendMutation.isPending
-                            }
-                          >
-                            {takSendMutation.isPending ? 'SendingÃ¢â-¬Â¦' : 'Send Payload'}
-                          </button>
-                          <button
-                            type="button"
-                            className="control-chip"
-                            onClick={() => setTakSendPayload('')}
-                            disabled={takSendMutation.isPending || takSendPayload.length === 0}
-                          >
-                            Clear
-                          </button>
-                        </div>
-                        <span className="config-hint">
-                          Useful for validating the TAK bridge end-to-end. The payload is forwarded
-                          exactly as entered.
-                        </span>
-                      </div>
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Status</span>
-                      <div className="config-value">
-                        <div>Last connected: {takLastConnected}</div>
-                        <div className="controls-row">
-                          <button
-                            type="button"
-                            className="control-chip"
-                            onClick={() => reloadTakMutation.mutate()}
-                            disabled={reloadTakMutation.isPending}
-                          >
-                            {reloadTakMutation.isPending ? 'RestartingÃ¢â-¬Â¦' : 'Restart Bridge'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </section>
-            <section className={cardClass('mqtt')}>
-              <header>
-                <h2>MQTT Federation</h2>
-                <p>Configure broker connectivity for remote sites and command replication.</p>
-              </header>
-              <div className="config-card__body">
-                {mqttSitesQuery.isLoading ? (
-                  <div>Loading MQTT configuration...</div>
-                ) : mqttSitesQuery.isError ? (
-                  <div className="form-error">
-                    Unable to load MQTT configuration. Check backend logs.
-                  </div>
-                ) : mqttConfigs.length === 0 ? (
-                  <div className="empty-state">
-                    <div>No MQTT sites configured yet. Add a site to enable federation.</div>
-                  </div>
-                ) : (
-                  mqttConfigs.map((cfg) => {
-                    const status = mqttStatusMap[cfg.siteId];
-                    const state = status?.state ?? 'not_configured';
-                    const statusClassName = `status-pill status-${state}`;
-                    const statusLabel = formatMqttStatusState(state);
-                    const isLocalSite = cfg.siteId === runtimeSiteId;
-                    const notice = mqttNotices[cfg.siteId];
-                    const isTesting =
-                      mqttAction?.mode === 'test' &&
-                      mqttAction.siteId === cfg.siteId &&
-                      testMqttMutation.isPending;
-                    const isConnecting =
-                      mqttAction?.mode === 'connect' &&
-                      mqttAction.siteId === cfg.siteId &&
-                      reconnectMqttMutation.isPending;
-                    const statusUpdatedAt = status?.updatedAt
-                      ? formatDateTime(status.updatedAt)
-                      : null;
-
-                    return (
-                      <div key={cfg.siteId} className="config-subcard">
-                        <div className="config-row">
-                          <span className="config-label">Site</span>
-                          <div className="config-value">
-                            <strong>{cfg.site?.name ?? cfg.siteId}</strong>
-                            <span className="muted">
-                              {cfg.siteId}
-                              {isLocalSite ? (
-                                <>
-                                  {' '}
-                                  <span
-                                    className="status-pill status-active"
-                                    title="Current backend runtime site"
-                                  >
-                                    Active runtime
-                                  </span>
-                                </>
-                              ) : null}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Connection</span>
-                          <div className="config-value">
-                            <span className={statusClassName}>{statusLabel}</span>
-                            {statusUpdatedAt ? (
-                              <span className="config-hint">Updated {statusUpdatedAt}</span>
-                            ) : null}
-                            {status?.message ? (
-                              <div className="config-hint">{status.message}</div>
-                            ) : null}
-                            {notice ? (
-                              <div
-                                className={
-                                  notice.type === 'error'
-                                    ? 'form-error'
-                                    : notice.type === 'success'
-                                      ? 'form-success'
-                                      : 'form-hint'
-                                }
-                              >
-                                {notice.text}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="controls-row">
-                          <button
-                            type="button"
-                            className="control-chip"
-                            onClick={() => handleMqttReconnect(cfg.siteId)}
-                            disabled={isConnecting}
-                          >
-                            {isConnecting ? 'ConnectingÃ¢â-¬Â¦' : 'Reconnect'}
-                          </button>
-                          <button
-                            type="button"
-                            className="control-chip"
-                            onClick={() => handleMqttTest(cfg.siteId)}
-                            disabled={isTesting}
-                          >
-                            {isTesting ? 'TestingÃ¢â-¬Â¦' : 'Test connection'}
-                          </button>
-                        </div>
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={cfg.enabled}
-                            onChange={(event) => {
-                              const enabled = event.target.checked;
-                              setLocalMqttConfig(cfg.siteId, { enabled });
-                              commitMqttConfig(cfg.siteId, { enabled });
-                            }}
-                          />
-                          Enable site replication
-                        </label>
-                        <div className="config-row">
-                          <span className="config-label">Broker URL</span>
-                          <input
-                            value={cfg.brokerUrl}
-                            onChange={(event) =>
-                              setLocalMqttConfig(cfg.siteId, { brokerUrl: event.target.value })
-                            }
-                            onBlur={(event) => {
-                              const value = event.target.value.trim();
-                              setLocalMqttConfig(cfg.siteId, { brokerUrl: value });
-                              if (value.length > 0) {
-                                commitMqttConfig(cfg.siteId, { brokerUrl: value });
-                              }
-                            }}
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Client ID</span>
-                          <input
-                            value={cfg.clientId}
-                            onChange={(event) =>
-                              setLocalMqttConfig(cfg.siteId, { clientId: event.target.value })
-                            }
-                            onBlur={(event) => {
-                              const value = event.target.value.trim();
-                              if (value.length === 0) {
-                                return;
-                              }
-                              setLocalMqttConfig(cfg.siteId, { clientId: value });
-                              commitMqttConfig(cfg.siteId, { clientId: value });
-                            }}
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Username</span>
-                          <input
-                            value={cfg.username ?? ''}
-                            onChange={(event) =>
-                              setLocalMqttConfig(cfg.siteId, {
-                                username: event.target.value || null,
-                              })
-                            }
-                            onBlur={(event) => {
-                              const value = event.target.value.trim();
-                              const normalized = value.length > 0 ? value : null;
-                              setLocalMqttConfig(cfg.siteId, { username: normalized });
-                              commitMqttConfig(cfg.siteId, {
-                                username: normalized,
-                              });
-                            }}
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Password</span>
-                          <div className="mqtt-password-row">
-                            <input
-                              type="password"
-                              value={mqttPasswords[cfg.siteId] ?? ''}
-                              placeholder={cfg.username ? 'Enter new password' : 'Optional'}
-                              onChange={(event) =>
-                                setMqttPasswords((prev) => ({
-                                  ...prev,
-                                  [cfg.siteId]: event.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="button"
-                              className="control-chip"
-                              onClick={() => handleMqttPasswordSubmit(cfg.siteId)}
-                              disabled={!mqttPasswords[cfg.siteId]}
                             >
-                              Update
-                            </button>
-                          </div>
-                        </div>
-                        <label className="checkbox-label">
-                          <input
-                            type="checkbox"
-                            checked={cfg.tlsEnabled}
-                            onChange={(event) => {
-                              const tlsEnabled = event.target.checked;
-                              setLocalMqttConfig(cfg.siteId, { tlsEnabled });
-                              commitMqttConfig(cfg.siteId, { tlsEnabled });
-                            }}
-                          />
-                          TLS enabled
-                        </label>
-                        <div className="config-row">
-                          <span className="config-label">QoS (events)</span>
-                          <select
-                            value={cfg.qosEvents}
-                            onChange={(event) => {
-                              const value = Number(event.target.value);
-                              setLocalMqttConfig(cfg.siteId, { qosEvents: value });
-                              commitMqttConfig(cfg.siteId, { qosEvents: value });
-                            }}
-                          >
-                            {[0, 1, 2].map((level) => (
-                              <option key={level} value={level}>
-                                {level}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">QoS (commands)</span>
-                          <select
-                            value={cfg.qosCommands}
-                            onChange={(event) => {
-                              const value = Number(event.target.value);
-                              setLocalMqttConfig(cfg.siteId, { qosCommands: value });
-                              commitMqttConfig(cfg.siteId, { qosCommands: value });
-                            }}
-                          >
-                            {[0, 1, 2].map((level) => (
-                              <option key={level} value={level}>
-                                {level}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">CA PEM</span>
-                          <textarea
-                            rows={3}
-                            value={cfg.caPem ?? ''}
-                            onChange={(event) =>
-                              setLocalMqttConfig(cfg.siteId, { caPem: event.target.value || null })
-                            }
-                            onBlur={(event) =>
-                              commitMqttConfig(cfg.siteId, { caPem: event.target.value || null })
-                            }
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Client Cert PEM</span>
-                          <textarea
-                            rows={3}
-                            value={cfg.certPem ?? ''}
-                            onChange={(event) =>
-                              setLocalMqttConfig(cfg.siteId, {
-                                certPem: event.target.value || null,
-                              })
-                            }
-                            onBlur={(event) =>
-                              commitMqttConfig(cfg.siteId, { certPem: event.target.value || null })
-                            }
-                          />
-                        </div>
-                        <div className="config-row">
-                          <span className="config-label">Client Key PEM</span>
-                          <textarea
-                            rows={3}
-                            value={cfg.keyPem ?? ''}
-                            onChange={(event) =>
-                              setLocalMqttConfig(cfg.siteId, { keyPem: event.target.value || null })
-                            }
-                            onBlur={(event) =>
-                              commitMqttConfig(cfg.siteId, { keyPem: event.target.value || null })
-                            }
-                          />
+                              {notice.text}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </section>
+                      <div className="controls-row">
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => handleMqttReconnect(cfg.siteId)}
+                          disabled={isConnecting}
+                        >
+                          {isConnecting ? 'Connecting...' : 'Reconnect'}
+                        </button>
+                        <button
+                          type="button"
+                          className="control-chip"
+                          onClick={() => handleMqttTest(cfg.siteId)}
+                          disabled={isTesting}
+                        >
+                          {isTesting ? 'Testing...' : 'Test connection'}
+                        </button>
+                      </div>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={cfg.enabled}
+                          onChange={(event) => {
+                            const enabled = event.target.checked;
+                            setLocalMqttConfig(cfg.siteId, { enabled });
+                            commitMqttConfig(cfg.siteId, { enabled });
+                          }}
+                        />
+                        Enable site replication
+                      </label>
+                      <div className="config-row">
+                        <span className="config-label">Broker URL</span>
+                        <input
+                          value={cfg.brokerUrl}
+                          onChange={(event) =>
+                            setLocalMqttConfig(cfg.siteId, { brokerUrl: event.target.value })
+                          }
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            setLocalMqttConfig(cfg.siteId, { brokerUrl: value });
+                            if (value.length > 0) {
+                              commitMqttConfig(cfg.siteId, { brokerUrl: value });
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Client ID</span>
+                        <input
+                          value={cfg.clientId}
+                          onChange={(event) =>
+                            setLocalMqttConfig(cfg.siteId, { clientId: event.target.value })
+                          }
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            if (value.length === 0) {
+                              return;
+                            }
+                            setLocalMqttConfig(cfg.siteId, { clientId: value });
+                            commitMqttConfig(cfg.siteId, { clientId: value });
+                          }}
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Username</span>
+                        <input
+                          value={cfg.username ?? ''}
+                          onChange={(event) =>
+                            setLocalMqttConfig(cfg.siteId, {
+                              username: event.target.value || null,
+                            })
+                          }
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            const normalized = value.length > 0 ? value : null;
+                            setLocalMqttConfig(cfg.siteId, { username: normalized });
+                            commitMqttConfig(cfg.siteId, {
+                              username: normalized,
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Password</span>
+                        <div className="mqtt-password-row">
+                          <input
+                            type="password"
+                            value={mqttPasswords[cfg.siteId] ?? ''}
+                            placeholder={cfg.username ? 'Enter new password' : 'Optional'}
+                            onChange={(event) =>
+                              setMqttPasswords((prev) => ({
+                                ...prev,
+                                [cfg.siteId]: event.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="control-chip"
+                            onClick={() => handleMqttPasswordSubmit(cfg.siteId)}
+                            disabled={!mqttPasswords[cfg.siteId]}
+                          >
+                            Update
+                          </button>
+                        </div>
+                      </div>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={cfg.tlsEnabled}
+                          onChange={(event) => {
+                            const tlsEnabled = event.target.checked;
+                            setLocalMqttConfig(cfg.siteId, { tlsEnabled });
+                            commitMqttConfig(cfg.siteId, { tlsEnabled });
+                          }}
+                        />
+                        TLS enabled
+                      </label>
+                      <div className="config-row">
+                        <span className="config-label">QoS (events)</span>
+                        <select
+                          value={cfg.qosEvents}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setLocalMqttConfig(cfg.siteId, { qosEvents: value });
+                            commitMqttConfig(cfg.siteId, { qosEvents: value });
+                          }}
+                        >
+                          {[0, 1, 2].map((level) => (
+                            <option key={level} value={level}>
+                              {level}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">QoS (commands)</span>
+                        <select
+                          value={cfg.qosCommands}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setLocalMqttConfig(cfg.siteId, { qosCommands: value });
+                            commitMqttConfig(cfg.siteId, { qosCommands: value });
+                          }}
+                        >
+                          {[0, 1, 2].map((level) => (
+                            <option key={level} value={level}>
+                              {level}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">CA PEM</span>
+                        <textarea
+                          rows={3}
+                          value={cfg.caPem ?? ''}
+                          onChange={(event) =>
+                            setLocalMqttConfig(cfg.siteId, { caPem: event.target.value || null })
+                          }
+                          onBlur={(event) =>
+                            commitMqttConfig(cfg.siteId, { caPem: event.target.value || null })
+                          }
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Client Cert PEM</span>
+                        <textarea
+                          rows={3}
+                          value={cfg.certPem ?? ''}
+                          onChange={(event) =>
+                            setLocalMqttConfig(cfg.siteId, {
+                              certPem: event.target.value || null,
+                            })
+                          }
+                          onBlur={(event) =>
+                            commitMqttConfig(cfg.siteId, { certPem: event.target.value || null })
+                          }
+                        />
+                      </div>
+                      <div className="config-row">
+                        <span className="config-label">Client Key PEM</span>
+                        <textarea
+                          rows={3}
+                          value={cfg.keyPem ?? ''}
+                          onChange={(event) =>
+                            setLocalMqttConfig(cfg.siteId, { keyPem: event.target.value || null })
+                          }
+                          onBlur={(event) =>
+                            commitMqttConfig(cfg.siteId, { keyPem: event.target.value || null })
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </section>
 
-            <section className={cardClass('detection')}>
-              <header>
-                <h2>Detection Defaults</h2>
-                <p>Preset channels and durations for scan/baseline workflows.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="config-row">
-                  <span className="config-label">Mode</span>
-                  <select
-                    value={appSettings.detectMode}
-                    onChange={(event) =>
-                      updateAppSetting({ detectMode: Number(event.target.value) })
-                    }
-                  >
-                    {DETECTION_MODE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="config-hint">
-                    Default interface mix used when operators start a new scan (WiFi, BLE, or both).
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Channels</span>
-                  <input
-                    placeholder="1..14"
-                    value={appSettings.detectChannels}
-                    onChange={(event) => updateAppSetting({ detectChannels: event.target.value })}
-                  />
-                  <span className="config-hint">
-                    Accepts comma-separated channels or ranges (e.g. 1,6,11 or 1..14). Applied to
-                    quick-start presets.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Scan Duration (s)</span>
-                  <input
-                    type="number"
-                    value={appSettings.detectScanSecs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ detectScanSecs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Baseline length for general scans before results are returned.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Device Scan Duration (s)</span>
-                  <input
-                    type="number"
-                    value={appSettings.deviceScanSecs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ deviceScanSecs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Used when operators launch inventory-focused sweeps.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Baseline Duration (s)</span>
-                  <input
-                    type="number"
-                    value={appSettings.baselineSecs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ baselineSecs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Time allowed for sites to capture a quiet profile before anomaly detection
-                    starts.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Randomization Duration (s)</span>
-                  <input
-                    type="number"
-                    value={appSettings.randomizeSecs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ randomizeSecs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Duration for MAC randomization sweeps triggered from the console.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Drone Duration (s)</span>
-                  <input
-                    type="number"
-                    value={appSettings.droneSecs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ droneSecs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    How long RID monitoring runs before automatically stopping.
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Deauth Duration (s)</span>
-                  <input
-                    type="number"
-                    value={appSettings.deauthSecs}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ deauthSecs: value });
-                    }}
-                  />
-                  <span className="config-hint">
-                    Time limit for deauthentication campaigns to avoid accidental long runs.
-                  </span>
-                </div>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.allowForever}
-                    onChange={(event) => updateAppSetting({ allowForever: event.target.checked })}
-                  />
-                  Allow FOREVER commands
-                </label>
+          <section className={cardClass('detection')}>
+            <header>
+              <h2>Detection Defaults</h2>
+              <p>Preset channels and durations for scan/baseline workflows.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="config-row">
+                <span className="config-label">Mode</span>
+                <select
+                  value={appSettings.detectMode}
+                  onChange={(event) => updateAppSetting({ detectMode: Number(event.target.value) })}
+                >
+                  {DETECTION_MODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
                 <span className="config-hint">
-                  Permit operators to schedule indefinite tasks (requires explicit STOP to end).
+                  Default interface mix used when operators start a new scan (WiFi, BLE, or both).
                 </span>
               </div>
-            </section>
-
-            <section className={cardClass('map')}>
-              <header>
-                <h2>Map & Coverage</h2>
-                <p>Tiles, attribution, and coverage radius defaults.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="config-row">
-                  <span className="config-label">Map Tile URL</span>
-                  <input
-                    placeholder="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    value={appSettings.mapTileUrl}
-                    onChange={(event) => updateAppSetting({ mapTileUrl: event.target.value })}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Attribution</span>
-                  <input
-                    value={appSettings.mapAttribution}
-                    onChange={(event) => updateAppSetting({ mapAttribution: event.target.value })}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Default Radius (m)</span>
-                  <input
-                    type="number"
-                    min={DEFAULT_RADIUS_LIMITS.min}
-                    max={DEFAULT_RADIUS_LIMITS.max}
-                    value={appSettings.defaultRadiusM}
-                    onChange={handleDefaultRadiusChange}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Min Zoom</span>
-                  <input
-                    type="number"
-                    value={appSettings.minZoom}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ minZoom: value });
-                    }}
-                  />
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Max Zoom</span>
-                  <input
-                    type="number"
-                    value={appSettings.maxZoom}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      if (!Number.isFinite(value)) return;
-                      updateAppSetting({ maxZoom: value });
-                    }}
-                  />
-                </div>
+              <div className="config-row">
+                <span className="config-label">Channels</span>
+                <input
+                  placeholder="1..14"
+                  value={appSettings.detectChannels}
+                  onChange={(event) => updateAppSetting({ detectChannels: event.target.value })}
+                />
+                <span className="config-hint">
+                  Accepts comma-separated channels or ranges (e.g. 1,6,11 or 1..14). Applied to
+                  quick-start presets.
+                </span>
               </div>
-            </section>
-
-            <section className={cardClass('faa')}>
-              <header>
-                <h2>FAA Registry</h2>
-                <p>Download and parse the FAA aircraft registry to enrich drone cards.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="config-row">
-                  <span className="config-label">Last sync</span>
-                  <span>{formatDateTime(faaRegistry?.lastSyncedAt ?? null)}</span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Records</span>
-                  <span>{(faaRegistry?.totalRecords ?? 0).toLocaleString()}</span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Online lookup</span>
-                  <span>
-                    {faaOnline.enabled ? 'Enabled' : 'Disabled'} · Cache {faaOnline.cacheEntries}
-                  </span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Dataset version</span>
-                  <span>{faaRegistry?.datasetVersion ?? 'Unknown'}</span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Status</span>
-                  <span>
-                    {faaInProgress
-                      ? `Syncing (${faaProgressCount.toLocaleString()} rows processed)`
-                      : 'Idle'}
-                  </span>
-                </div>
-                {faaLastError ? <div className="form-error">Last error: {faaLastError}</div> : null}
-                <div className="config-row">
-                  <span className="config-label">Dataset URL</span>
-                  <input
-                    type="url"
-                    value={faaUrl}
-                    onChange={(event) => setFaaUrl(event.target.value)}
-                    placeholder={FAA_DATASET_URL}
-                  />
-                </div>
-                <div className="controls-row">
-                  <button
-                    type="button"
-                    className="submit-button"
-                    disabled={faaInProgress || faaSyncMutation.isPending}
-                    onClick={() => faaSyncMutation.mutate()}
-                  >
-                    {faaInProgress ? 'Sync in progress…' : 'Download & Parse'}
-                  </button>
-                  <button
-                    type="button"
-                    className="control-chip"
-                    onClick={() => faaStatusQuery.refetch()}
-                    disabled={faaStatusQuery.isFetching}
-                  >
-                    Refresh Status
-                  </button>
-                </div>
-                <p className="config-hint">
-                  The FAA releases updates daily. Parsing the dataset may take several minutes.
-                </p>
+              <div className="config-row">
+                <span className="config-label">Scan Duration (s)</span>
+                <input
+                  type="number"
+                  value={appSettings.detectScanSecs}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ detectScanSecs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Baseline length for general scans before results are returned.
+                </span>
               </div>
-            </section>
-
-            <section className={cardClass('oui')}>
-              <header>
-                <h2>OUI Resolver</h2>
-                <p>Manage vendor lookup cache for MAC address resolution.</p>
-              </header>
-              <div className="config-card__body">
-                <div className="config-row">
-                  <span className="config-label">Total entries</span>
-                  <span>{ouiStats ? ouiStats.total.toLocaleString() : 'N/A'}</span>
-                </div>
-                <div className="config-row">
-                  <span className="config-label">Last updated</span>
-                  <span>{formatDateTime(ouiStats?.lastUpdated ?? null)}</span>
-                </div>
-                {ouiError ? <div className="form-error">{ouiError}</div> : null}
-                <div className="config-row">
-                  <span className="config-label">Import mode</span>
-                  <select
-                    value={ouiMode}
-                    onChange={(event) => setOuiMode(event.target.value as 'replace' | 'merge')}
-                  >
-                    <option value="replace">Replace existing</option>
-                    <option value="merge">Merge</option>
-                  </select>
-                </div>
-                <label className="control-chip">
-                  {ouiImportMutation.isPending ? 'Uploading...' : 'Upload CSV/JSON'}
-                  <input
-                    type="file"
-                    accept=".csv,.json,text/csv,application/json"
-                    hidden
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) {
-                        handleOuiUpload(file);
-                        event.target.value = '';
-                      }
-                    }}
-                  />
-                </label>
-                <div className="controls-row">
-                  <button
-                    type="button"
-                    className="control-chip"
-                    onClick={() => handleOuiExport('csv')}
-                  >
-                    Export CSV
-                  </button>
-                  <button
-                    type="button"
-                    className="control-chip"
-                    onClick={() => handleOuiExport('json')}
-                  >
-                    Export JSON
-                  </button>
-                </div>
+              <div className="config-row">
+                <span className="config-label">Device Scan Duration (s)</span>
+                <input
+                  type="number"
+                  value={appSettings.deviceScanSecs}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ deviceScanSecs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Used when operators launch inventory-focused sweeps.
+                </span>
               </div>
-            </section>
-          </div>
+              <div className="config-row">
+                <span className="config-label">Baseline Duration (s)</span>
+                <input
+                  type="number"
+                  value={appSettings.baselineSecs}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ baselineSecs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Time allowed for sites to capture a quiet profile before anomaly detection starts.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Randomization Duration (s)</span>
+                <input
+                  type="number"
+                  value={appSettings.randomizeSecs}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ randomizeSecs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Duration for MAC randomization sweeps triggered from the console.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Drone Duration (s)</span>
+                <input
+                  type="number"
+                  value={appSettings.droneSecs}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ droneSecs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  How long RID monitoring runs before automatically stopping.
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Deauth Duration (s)</span>
+                <input
+                  type="number"
+                  value={appSettings.deauthSecs}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ deauthSecs: value });
+                  }}
+                />
+                <span className="config-hint">
+                  Time limit for deauthentication campaigns to avoid accidental long runs.
+                </span>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={appSettings.allowForever}
+                  onChange={(event) => updateAppSetting({ allowForever: event.target.checked })}
+                />
+                Allow FOREVER commands
+              </label>
+              <span className="config-hint">
+                Permit operators to schedule indefinite tasks (requires explicit STOP to end).
+              </span>
+            </div>
+          </section>
+
+          <section className={cardClass('map')}>
+            <header>
+              <h2>Map & Coverage</h2>
+              <p>Tiles, attribution, and coverage radius defaults.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="config-row">
+                <span className="config-label">Map Tile URL</span>
+                <input
+                  placeholder="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  value={appSettings.mapTileUrl}
+                  onChange={(event) => updateAppSetting({ mapTileUrl: event.target.value })}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Attribution</span>
+                <input
+                  value={appSettings.mapAttribution}
+                  onChange={(event) => updateAppSetting({ mapAttribution: event.target.value })}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Default Radius (m)</span>
+                <input
+                  type="number"
+                  min={DEFAULT_RADIUS_LIMITS.min}
+                  max={DEFAULT_RADIUS_LIMITS.max}
+                  value={appSettings.defaultRadiusM}
+                  onChange={handleDefaultRadiusChange}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Min Zoom</span>
+                <input
+                  type="number"
+                  value={appSettings.minZoom}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ minZoom: value });
+                  }}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Max Zoom</span>
+                <input
+                  type="number"
+                  value={appSettings.maxZoom}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (!Number.isFinite(value)) return;
+                    updateAppSetting({ maxZoom: value });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className={cardClass('faa')}>
+            <header>
+              <h2>FAA Registry</h2>
+              <p>Download and parse the FAA aircraft registry to enrich drone cards.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="config-row">
+                <span className="config-label">Last sync</span>
+                <span>{formatDateTime(faaRegistry?.lastSyncedAt ?? null)}</span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Records</span>
+                <span>{(faaRegistry?.totalRecords ?? 0).toLocaleString()}</span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Online lookup</span>
+                <span>
+                  {faaOnline.enabled ? 'Enabled' : 'Disabled'} · Cache {faaOnline.cacheEntries}
+                </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Dataset version</span>
+                <span>{faaRegistry?.datasetVersion ?? 'Unknown'}</span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Status</span>
+                <span>
+                  {faaInProgress
+                    ? `Syncing (${faaProgressCount.toLocaleString()} rows processed)`
+                    : 'Idle'}
+                </span>
+              </div>
+              {faaLastError ? <div className="form-error">Last error: {faaLastError}</div> : null}
+              <div className="config-row">
+                <span className="config-label">Dataset URL</span>
+                <input
+                  type="url"
+                  value={faaUrl}
+                  onChange={(event) => setFaaUrl(event.target.value)}
+                  placeholder={FAA_DATASET_URL}
+                />
+              </div>
+              <div className="controls-row">
+                <button
+                  type="button"
+                  className="submit-button"
+                  disabled={faaInProgress || faaSyncMutation.isPending}
+                  onClick={() => faaSyncMutation.mutate()}
+                >
+                  {faaInProgress ? 'Sync in progressÃ¢â‚¬Â¦' : 'Download & Parse'}
+                </button>
+                <button
+                  type="button"
+                  className="control-chip"
+                  onClick={() => faaStatusQuery.refetch()}
+                  disabled={faaStatusQuery.isFetching}
+                >
+                  Refresh Status
+                </button>
+              </div>
+              <p className="config-hint">
+                The FAA releases updates daily. Parsing the dataset may take several minutes.
+              </p>
+            </div>
+          </section>
+
+          <section className={cardClass('oui')}>
+            <header>
+              <h2>OUI Resolver</h2>
+              <p>Manage vendor lookup cache for MAC address resolution.</p>
+            </header>
+            <div className="config-card__body">
+              <div className="config-row">
+                <span className="config-label">Total entries</span>
+                <span>{ouiStats ? ouiStats.total.toLocaleString() : 'N/A'}</span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Last updated</span>
+                <span>{formatDateTime(ouiStats?.lastUpdated ?? null)}</span>
+              </div>
+              {ouiError ? <div className="form-error">{ouiError}</div> : null}
+              <div className="config-row">
+                <span className="config-label">Import mode</span>
+                <select
+                  value={ouiMode}
+                  onChange={(event) => setOuiMode(event.target.value as 'replace' | 'merge')}
+                >
+                  <option value="replace">Replace existing</option>
+                  <option value="merge">Merge</option>
+                </select>
+              </div>
+              <label className="control-chip">
+                {ouiImportMutation.isPending ? 'Uploading...' : 'Upload CSV/JSON'}
+                <input
+                  type="file"
+                  accept=".csv,.json,text/csv,application/json"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      handleOuiUpload(file);
+                      event.target.value = '';
+                    }
+                  }}
+                />
+              </label>
+              <div className="controls-row">
+                <button
+                  type="button"
+                  className="control-chip"
+                  onClick={() => handleOuiExport('csv')}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  className="control-chip"
+                  onClick={() => handleOuiExport('json')}
+                >
+                  Export JSON
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
-    </section>
+    </>,
   );
 }
 
@@ -3545,6 +3858,66 @@ function parseCountryList(value: string): string[] {
     .map((item) => item.trim().toUpperCase())
     .filter(Boolean);
   return Array.from(new Set(tokens));
+}
+
+function applyAlertPreferencePatch(user: AuthUser, patch: AlertColorUpdate): AuthUser {
+  const currentAlert = user.preferences.alertColors ?? {
+    idle: null,
+    info: null,
+    notice: null,
+    alert: null,
+    critical: null,
+  };
+
+  const nextAlert: UserAlertColors = {
+    idle: currentAlert.idle ?? null,
+    info: currentAlert.info ?? null,
+    notice: currentAlert.notice ?? null,
+    alert: currentAlert.alert ?? null,
+    critical: currentAlert.critical ?? null,
+  };
+
+  for (const [rawKey, rawValue] of Object.entries(patch)) {
+    const key = rawKey as AlertColorFieldKey;
+    const value = (rawValue ?? null) as string | null;
+    switch (key) {
+      case 'alertColorIdle':
+        nextAlert.idle = value;
+        break;
+      case 'alertColorInfo':
+        nextAlert.info = value;
+        break;
+      case 'alertColorNotice':
+        nextAlert.notice = value;
+        break;
+      case 'alertColorAlert':
+        nextAlert.alert = value;
+        break;
+      case 'alertColorCritical':
+        nextAlert.critical = value;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return {
+    ...user,
+    preferences: {
+      ...user.preferences,
+      alertColors: nextAlert,
+    },
+  };
+}
+
+function applyThemePresetOptimistic(user: AuthUser, preset: ThemePresetId): AuthUser {
+  return {
+    ...user,
+    preferences: {
+      ...user.preferences,
+      themePreset: preset,
+    },
+  };
 }
 
 function parseLineList(value: string): string[] {

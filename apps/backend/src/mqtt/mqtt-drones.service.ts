@@ -1,13 +1,13 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Subscription } from 'rxjs';
 import { DroneStatus } from '@prisma/client';
+import { Subscription } from 'rxjs';
 
 import { MqttService, SiteMqttContext } from './mqtt.service';
 import { DronesService } from '../drones/drones.service';
 import { DroneSnapshot } from '../drones/drones.types';
-import { PrismaService } from '../prisma/prisma.service';
 import { FaaAircraftSummary } from '../faa/faa.types';
+import { PrismaService } from '../prisma/prisma.service';
 
 type DroneUpsertMessage = {
   type: 'drone.upsert';

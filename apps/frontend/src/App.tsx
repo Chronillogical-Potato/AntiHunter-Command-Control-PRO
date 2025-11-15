@@ -9,7 +9,12 @@ import { AuthOverlay } from './components/auth-overlay';
 import { SidebarNav } from './components/sidebar-nav';
 import { SocketBridge } from './components/socket-bridge';
 import { TerminalDrawer } from './components/terminal-drawer';
-import { DEFAULT_ALERT_COLORS, extractAlertColors } from './constants/alert-colors';
+import {
+  DEFAULT_ALERT_COLORS,
+  extractAlertColors,
+  applyAlertOverrides,
+} from './constants/alert-colors';
+import { resolveThemePalette, type ThemePalette, type ThemePresetId } from './constants/theme';
 import { AddonPage } from './pages/AddonPage';
 import { CommandConsolePage } from './pages/CommandConsolePage';
 import { ConfigPage } from './pages/ConfigPage';
@@ -26,6 +31,8 @@ import { UserPage } from './pages/UserPage';
 import { useTheme } from './providers/theme-provider';
 import { useAuthStore } from './stores/auth-store';
 import { useDroneStore } from './stores/drone-store';
+
+const LAST_THEME_PRESET_STORAGE_KEY = 'ahcc:lastThemePreset';
 
 export default function App() {
   const status = useAuthStore((state) => state.status);
@@ -69,12 +76,29 @@ export default function App() {
   }, [user?.preferences.theme, setTheme]);
 
   useEffect(() => {
-    if (isAuthenticated && appSettingsQuery.data) {
-      applyAlertColors(extractAlertColors(appSettingsQuery.data));
-    } else if (!isAuthenticated) {
+    if (!isAuthenticated) {
       applyAlertColors(DEFAULT_ALERT_COLORS);
+      const storedPreset = getStoredThemePreset();
+      const fallbackPreset: ThemePresetId = storedPreset ?? 'classic';
+      const palette = resolveThemePalette(fallbackPreset);
+      applyThemePalette(palette);
+      return;
     }
-  }, [isAuthenticated, appSettingsQuery.data]);
+    const baseAlertColors = appSettingsQuery.data
+      ? extractAlertColors(appSettingsQuery.data)
+      : { ...DEFAULT_ALERT_COLORS };
+    const userAlertOverrides = user?.preferences?.alertColors ?? null;
+    const presetId = user?.preferences?.themePreset ?? 'classic';
+    applyAlertColors(applyAlertOverrides(baseAlertColors, userAlertOverrides));
+    const resolvedPalette = resolveThemePalette(presetId, appSettingsQuery.data);
+    applyThemePalette(resolvedPalette);
+    saveThemePreset(presetId);
+  }, [
+    isAuthenticated,
+    appSettingsQuery.data,
+    user?.preferences?.alertColors,
+    user?.preferences?.themePreset,
+  ]);
 
   return (
     <BrowserRouter>
@@ -120,4 +144,84 @@ function applyAlertColors(config: typeof DEFAULT_ALERT_COLORS) {
   root.style.setProperty('--alert-color-notice', config.notice);
   root.style.setProperty('--alert-color-alert', config.alert);
   root.style.setProperty('--alert-color-critical', config.critical);
+}
+
+function applyThemePalette(config: ThemePalette) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const root = document.documentElement;
+  const defaultAccentRgb = '37, 99, 235';
+  const lightAccentRgb = hexToRgbString(config.accent.light.background) ?? defaultAccentRgb;
+  const darkAccentRgb = hexToRgbString(config.accent.dark.background) ?? defaultAccentRgb;
+  root.style.setProperty('--theme-light-bg', config.light.background);
+  root.style.setProperty('--theme-light-surface', config.light.surface);
+  root.style.setProperty('--theme-light-text', config.light.text);
+  root.style.setProperty('--theme-dark-bg', config.dark.background);
+  root.style.setProperty('--theme-dark-surface', config.dark.surface);
+  root.style.setProperty('--theme-dark-text', config.dark.text);
+  root.style.setProperty('--theme-light-accent', config.accent.light.background);
+  root.style.setProperty('--theme-light-accent-text', config.accent.light.text);
+  root.style.setProperty('--theme-dark-accent', config.accent.dark.background);
+  root.style.setProperty('--theme-dark-accent-text', config.accent.dark.text);
+  root.style.setProperty('--theme-light-accent-rgb', lightAccentRgb);
+  root.style.setProperty('--theme-dark-accent-rgb', darkAccentRgb);
+  root.style.setProperty('--theme-light-header-start', config.header.light.start);
+  root.style.setProperty('--theme-light-header-end', config.header.light.end);
+  root.style.setProperty('--theme-light-header-text', config.header.light.text);
+  root.style.setProperty('--theme-dark-header-start', config.header.dark.start);
+  root.style.setProperty('--theme-dark-header-end', config.header.dark.end);
+  root.style.setProperty('--theme-dark-header-text', config.header.dark.text);
+  root.style.setProperty('--theme-light-sidebar-bg', config.sidebar.light.background);
+  root.style.setProperty('--theme-light-sidebar-border', config.sidebar.light.border);
+  root.style.setProperty('--theme-light-sidebar-icon', config.sidebar.light.icon);
+  root.style.setProperty('--theme-light-sidebar-icon-active', config.sidebar.light.iconActive);
+  root.style.setProperty('--theme-dark-sidebar-bg', config.sidebar.dark.background);
+  root.style.setProperty('--theme-dark-sidebar-border', config.sidebar.dark.border);
+  root.style.setProperty('--theme-dark-sidebar-icon', config.sidebar.dark.icon);
+  root.style.setProperty('--theme-dark-sidebar-icon-active', config.sidebar.dark.iconActive);
+  root.style.setProperty('--theme-light-terminal-bg', config.terminal.light.background);
+  root.style.setProperty('--theme-light-terminal-border', config.terminal.light.border);
+  root.style.setProperty('--theme-dark-terminal-bg', config.terminal.dark.background);
+  root.style.setProperty('--theme-dark-terminal-border', config.terminal.dark.border);
+}
+
+function getStoredThemePreset(): ThemePresetId | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const value = window.localStorage.getItem(LAST_THEME_PRESET_STORAGE_KEY);
+  if (value === 'classic' || value === 'tactical_ops') {
+    return value;
+  }
+  return null;
+}
+
+function saveThemePreset(preset: ThemePresetId) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  window.localStorage.setItem(LAST_THEME_PRESET_STORAGE_KEY, preset);
+}
+
+function hexToRgbString(hex: string): string | null {
+  const normalized = hex?.trim().replace(/^#/, '');
+  if (!normalized || !/^[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(normalized)) {
+    return null;
+  }
+  const expanded =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : normalized;
+  const value = Number.parseInt(expanded, 16);
+  if (Number.isNaN(value)) {
+    return null;
+  }
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `${r}, ${g}, ${b}`;
 }

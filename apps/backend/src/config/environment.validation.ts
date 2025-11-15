@@ -63,6 +63,12 @@ const envSchema = z.object({
     .optional()
     .transform((val) => (val ? Number(val) : undefined))
     .pipe(z.number().int().min(0).optional()),
+  SERIAL_CLUSTER_ROLE: z.enum(['leader', 'replica', 'standalone']).optional(),
+  SERIAL_RPC_TIMEOUT_MS: z
+    .string()
+    .optional()
+    .transform((val) => (val ? Number(val) : undefined))
+    .pipe(z.number().int().min(1000).optional()),
   WS_MAX_CLIENTS: z
     .string()
     .optional()

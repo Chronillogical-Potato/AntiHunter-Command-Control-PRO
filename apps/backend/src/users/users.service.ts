@@ -28,9 +28,17 @@ import {
 interface PreferenceDto {
   theme: string;
   density: string;
+  themePreset: string;
   language: string;
   timeFormat: string;
   notifications: Record<string, unknown> | null;
+  alertColors: {
+    idle: string | null;
+    info: string | null;
+    notice: string | null;
+    alert: string | null;
+    critical: string | null;
+  };
 }
 
 interface SiteAccessDto {
@@ -93,9 +101,15 @@ export interface AuditEntryDto {
 interface PreferenceUpdateData {
   theme?: string;
   density?: string;
+  themePreset?: string;
   language?: string;
   timeFormat?: string;
   notifications?: Prisma.InputJsonValue;
+  alertColorIdle?: string | null;
+  alertColorInfo?: string | null;
+  alertColorNotice?: string | null;
+  alertColorAlert?: string | null;
+  alertColorCritical?: string | null;
 }
 
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -259,6 +273,7 @@ export class UsersService {
           create: {
             theme: 'auto',
             density: 'compact',
+            themePreset: 'classic',
             language: 'en',
             timeFormat: dto.timeFormat ?? '24h',
           },
@@ -667,10 +682,18 @@ export class UsersService {
       preferences: {
         theme: preferenceRecord?.theme ?? 'auto',
         density: preferenceRecord?.density ?? 'compact',
+        themePreset: preferenceRecord?.themePreset ?? 'classic',
         language: preferenceRecord?.language ?? 'en',
         timeFormat: preferenceRecord?.timeFormat ?? '24h',
         notifications:
           (preferenceRecord?.notifications as Record<string, unknown> | null | undefined) ?? null,
+        alertColors: {
+          idle: preferenceRecord?.alertColorIdle ?? null,
+          info: preferenceRecord?.alertColorInfo ?? null,
+          notice: preferenceRecord?.alertColorNotice ?? null,
+          alert: preferenceRecord?.alertColorAlert ?? null,
+          critical: preferenceRecord?.alertColorCritical ?? null,
+        },
       },
       permissions:
         user.permissions && user.permissions.length > 0
@@ -693,6 +716,18 @@ export class UsersService {
       throw new BadRequestException(`Invalid feature keys: ${invalid.join(', ')}`);
     }
     return normalized;
+  }
+
+  private normalizeColorValue(value: string | null): string | null {
+    if (value === null) {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const prefixed = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+    return `#${prefixed.slice(1).toUpperCase()}`;
   }
 
   private extractProfileUpdate(dto: UpdateCurrentUserDto): {
@@ -730,8 +765,26 @@ export class UsersService {
     if (dto.timeFormat !== undefined) {
       preferenceData.timeFormat = dto.timeFormat;
     }
+    if (dto.themePreset !== undefined) {
+      preferenceData.themePreset = dto.themePreset;
+    }
     if (dto.notifications !== undefined) {
       preferenceData.notifications = dto.notifications as Prisma.InputJsonValue;
+    }
+    if (dto.alertColorIdle !== undefined) {
+      preferenceData.alertColorIdle = this.normalizeColorValue(dto.alertColorIdle ?? null);
+    }
+    if (dto.alertColorInfo !== undefined) {
+      preferenceData.alertColorInfo = this.normalizeColorValue(dto.alertColorInfo ?? null);
+    }
+    if (dto.alertColorNotice !== undefined) {
+      preferenceData.alertColorNotice = this.normalizeColorValue(dto.alertColorNotice ?? null);
+    }
+    if (dto.alertColorAlert !== undefined) {
+      preferenceData.alertColorAlert = this.normalizeColorValue(dto.alertColorAlert ?? null);
+    }
+    if (dto.alertColorCritical !== undefined) {
+      preferenceData.alertColorCritical = this.normalizeColorValue(dto.alertColorCritical ?? null);
     }
 
     return {

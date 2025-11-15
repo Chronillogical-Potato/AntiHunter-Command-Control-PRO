@@ -87,6 +87,13 @@ enum FirewallLogOutcome {
   AUTH_SUCCESS
 }
 
+enum DroneStatus {
+  UNKNOWN
+  FRIENDLY
+  NEUTRAL
+  HOSTILE
+}
+
 model AppConfig {
   id       Int     @id @default(1)
   appName  String  @default("Command Center")
@@ -127,6 +134,14 @@ model AppConfig {
   mapAttribution String @default("OpenStreetMap contributors")
   minZoom        Int    @default(2)
   maxZoom        Int    @default(18)
+
+  themeLightBackground String @default("#f3f4f6")
+  themeLightSurface    String @default("#ffffff")
+  themeLightText       String @default("#1F2933")
+  themeDarkBackground  String @default("#0F172A")
+  themeDarkSurface     String @default("#111C32")
+  themeDarkText        String @default("#E2E8F0")
+  themeAccentPrimary   String @default("#2563EB")
 
   alertColorIdle     String @default("#38BDF8")
   alertColorInfo     String @default("#2563EB")
@@ -178,6 +193,7 @@ model Drone {
   mac         String?
   nodeId      String?
   siteId      String?
+  originSiteId String?
   lat         Float
   lon         Float
   altitude    Float?
@@ -185,16 +201,19 @@ model Drone {
   operatorLat Float?
   operatorLon Float?
   rssi        Int?
+  status      DroneStatus @default(UNKNOWN)
   lastSeen    DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   node Node? @relation(fields: [nodeId], references: [id])
   site Site? @relation(fields: [siteId], references: [id])
+  originSite Site? @relation("DroneOriginSite", fields: [originSiteId], references: [id])
 
   @@index([siteId])
   @@index([nodeId])
   @@index([droneId])
+  @@index([originSiteId])
 }
 
 model NodePosition {
@@ -377,6 +396,8 @@ model AlarmConfig {
   volumeNotice      Int      @default(70)
   volumeAlert       Int      @default(80)
   volumeCritical    Int      @default(90)
+  volumeDroneGeofence   Int  @default(80)
+  volumeDroneTelemetry  Int  @default(80)
   gapInfoMs         Int      @default(1000)
   gapNoticeMs       Int      @default(1500)
   gapAlertMs        Int      @default(2000)
@@ -441,6 +462,7 @@ model Site {
   userAccess        UserSiteAccess[]
   firewallLogs      FirewallLog[]
   drones            Drone[]
+  originDrones      Drone[]          @relation("DroneOriginSite")
 }
 
 model SerialConfig {
@@ -484,6 +506,7 @@ model UserPreference {
   userId          String   @id
   theme           String   @default("auto")
   density         String   @default("compact")
+  themePreset     String   @default("classic")
   mapState        Json?
   tablePrefs      Json?
   terminalFilters Json?
@@ -491,6 +514,11 @@ model UserPreference {
   language        String   @default("en")
   notifications   Json?
   timeFormat      String   @default("24h")
+  alertColorIdle       String?
+  alertColorInfo       String?
+  alertColorNotice     String?
+  alertColorAlert      String?
+  alertColorCritical   String?
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id])
@@ -584,6 +612,54 @@ model FirewallLog {
   @@unique([ip, outcome, path])
   @@index([ip])
   @@index([outcome])
+}
+
+model FaaAircraft {
+  id                String   @id @default(cuid())
+  nNumber           String   @db.VarChar(10)
+  serialNumber      String?  @db.VarChar(80)
+  manufacturerModel String?  @db.VarChar(32)
+  engineModel       String?  @db.VarChar(32)
+  yearManufactured  Int?
+  registrantType    Int?
+  registrantName    String?
+  street1           String?
+  street2           String?
+  city              String?
+  state             String?  @db.VarChar(4)
+  zip               String?  @db.VarChar(16)
+  region            String?  @db.VarChar(4)
+  county            String?
+  country           String?
+  lastActionDate    DateTime?
+  certIssueDate     DateTime?
+  certification     String?
+  aircraftType      String?
+  engineType        String?
+  statusCode        String?  @db.VarChar(4)
+  modeSCode         String?  @db.VarChar(16)
+  modeSCodeHex      String?  @db.VarChar(16)
+  fractionalOwner   Boolean?
+  airworthinessDate DateTime?
+  expirationDate    DateTime?
+  uniqueId          String?  @db.VarChar(32)
+  kitManufacturer   String?
+  kitModel          String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([nNumber])
+  @@index([modeSCodeHex])
+}
+
+model FaaRegistrySync {
+  id             Int      @id @default(1)
+  datasetUrl     String?
+  datasetVersion String?
+  lastSyncedAt   DateTime?
+  totalRecords   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model UserPermission {

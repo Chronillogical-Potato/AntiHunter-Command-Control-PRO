@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { SerialService } from './serial.service';
@@ -82,6 +83,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
   private readonly ingestQueue: SerialIngestQueue;
   private readonly ingestHighWaterMark: number;
   private lastBacklogWarning = 0;
+  private readonly recordDroneInventory: boolean;
 
   constructor(
     private readonly serialService: SerialService,
@@ -100,6 +102,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
       concurrency * 10,
       configService.get<number>('serial.ingestBuffer', 500),
     );
+    this.recordDroneInventory = configService.get<boolean>('drones.recordInventory', false);
   }
 
   onModuleInit(): void {
@@ -370,12 +373,17 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             ? this.nodesService.getSnapshotById(event.nodeId)
             : undefined;
           const resolvedSiteId = nodeSnapshot?.siteId ?? siteId;
-          await this.dronesService.upsert({
+          const reportingNodeId = nodeSnapshot?.id ?? null;
+          const existingDrone = this.dronesService.getSnapshotById(event.droneId);
+          const nextStatus = existingDrone?.status ?? DroneStatus.UNKNOWN;
+
+          const droneSnapshot = await this.dronesService.upsert({
             id: event.droneId,
             droneId: event.droneId,
             mac: event.mac ?? null,
-            nodeId: event.nodeId ?? null,
+            nodeId: reportingNodeId,
             siteId: resolvedSiteId,
+            originSiteId: resolvedSiteId ?? siteId ?? null,
             siteName: nodeSnapshot?.siteName ?? null,
             siteColor: nodeSnapshot?.siteColor ?? null,
             siteCountry: nodeSnapshot?.siteCountry ?? null,
@@ -389,9 +397,10 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             rssi: event.rssi ?? null,
             lastSeen: timestamp,
             ts: timestamp,
+            status: nextStatus,
           });
 
-          if (event.mac && event.nodeId) {
+          if (this.recordDroneInventory && event.mac && event.nodeId) {
             await this.inventoryService.recordDetection(
               {
                 kind: 'target-detected',
@@ -413,7 +422,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             type: 'drone.telemetry',
             droneId: event.droneId,
             mac: event.mac ?? null,
-            nodeId: event.nodeId ?? null,
+            nodeId: reportingNodeId ?? event.nodeId ?? null,
             lat: event.lat,
             lon: event.lon,
             altitude: event.altitude ?? null,
@@ -426,7 +435,10 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             siteColor: nodeSnapshot?.siteColor ?? null,
             siteCountry: nodeSnapshot?.siteCountry ?? null,
             siteCity: nodeSnapshot?.siteCity ?? null,
+            originSiteId: droneSnapshot.originSiteId ?? resolvedSiteId ?? null,
             timestamp: timestamp.toISOString(),
+            status: droneSnapshot.status,
+            faa: droneSnapshot.faa ?? null,
           });
         }
         break;

@@ -28,6 +28,13 @@ export class AppConfigService {
       alertColorNotice,
       alertColorAlert,
       alertColorCritical,
+      themeLightBackground,
+      themeLightSurface,
+      themeLightText,
+      themeDarkBackground,
+      themeDarkSurface,
+      themeDarkText,
+      themeAccentPrimary,
       ...rest
     } = dto;
 
@@ -73,6 +80,34 @@ export class AppConfigService {
 
     if (alertColorCritical !== undefined) {
       Object.assign(data, { alertColorCritical: this.normalizeColor(alertColorCritical) });
+    }
+
+    if (themeLightBackground !== undefined) {
+      Object.assign(data, { themeLightBackground: this.normalizeColor(themeLightBackground) });
+    }
+
+    if (themeLightSurface !== undefined) {
+      Object.assign(data, { themeLightSurface: this.normalizeColor(themeLightSurface) });
+    }
+
+    if (themeLightText !== undefined) {
+      Object.assign(data, { themeLightText: this.normalizeColor(themeLightText) });
+    }
+
+    if (themeDarkBackground !== undefined) {
+      Object.assign(data, { themeDarkBackground: this.normalizeColor(themeDarkBackground) });
+    }
+
+    if (themeDarkSurface !== undefined) {
+      Object.assign(data, { themeDarkSurface: this.normalizeColor(themeDarkSurface) });
+    }
+
+    if (themeDarkText !== undefined) {
+      Object.assign(data, { themeDarkText: this.normalizeColor(themeDarkText) });
+    }
+
+    if (themeAccentPrimary !== undefined) {
+      Object.assign(data, { themeAccentPrimary: this.normalizeColor(themeAccentPrimary) });
     }
 
     if (mailPassword !== undefined) {

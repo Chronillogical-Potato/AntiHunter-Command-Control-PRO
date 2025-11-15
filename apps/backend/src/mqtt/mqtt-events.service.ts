@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { MqttService, SiteMqttContext } from './mqtt.service';
@@ -31,6 +32,13 @@ type DroneTelemetryEvent = CommandCenterEvent & {
   operatorLon?: number | string | null;
   rssi?: number | string | null;
   timestamp?: string | Date;
+  status?: string;
+};
+
+type DroneStatusEvent = CommandCenterEvent & {
+  type: 'drone.status';
+  droneId?: string;
+  status?: string;
 };
 
 const EVENT_TOPIC_PATTERN = 'ahcc/+/events/+';
@@ -40,6 +48,7 @@ const FEDERATED_EVENT_TYPES = new Set([
   'command.ack',
   'command.result',
   'drone.telemetry',
+  'drone.status',
 ]);
 
 @Injectable()
@@ -180,6 +189,12 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
       const lat = typeof event.lat === 'number' ? event.lat : Number(event.lat);
       const lon = typeof event.lon === 'number' ? event.lon : Number(event.lon);
       if (droneId && Number.isFinite(lat) && Number.isFinite(lon)) {
+        const existingDrone = this.dronesService.getSnapshotById(droneId);
+        const nextStatus =
+          (isDroneStatus(event.status) ? event.status : undefined) ??
+          existingDrone?.status ??
+          DroneStatus.UNKNOWN;
+
         await this.dronesService.upsert({
           id: droneId,
           droneId,
@@ -214,7 +229,26 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
               : (toNumber(event.rssi as string | number | null | undefined) ?? null),
           lastSeen: event.timestamp ? new Date(event.timestamp as string) : new Date(),
           ts: event.timestamp ? new Date(event.timestamp as string) : new Date(),
+          status: nextStatus,
         });
+      }
+    } else if (isDroneStatusEvent(event)) {
+      const droneId = typeof event.droneId === 'string' ? event.droneId : undefined;
+      if (!droneId) {
+        return;
+      }
+      const status = isDroneStatus(event.status) ? event.status : undefined;
+      if (!status) {
+        return;
+      }
+      try {
+        await this.dronesService.updateStatus(droneId, status);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to apply drone status update for ${droneId}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
       }
     }
 
@@ -229,6 +263,19 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
 
 function isDroneTelemetryEvent(event: CommandCenterEvent): event is DroneTelemetryEvent {
   return event.type === 'drone.telemetry';
+}
+
+function isDroneStatusEvent(event: CommandCenterEvent): event is DroneStatusEvent {
+  return event.type === 'drone.status';
+}
+
+function isDroneStatus(value: unknown): value is DroneStatus {
+  return (
+    value === DroneStatus.UNKNOWN ||
+    value === DroneStatus.FRIENDLY ||
+    value === DroneStatus.NEUTRAL ||
+    value === DroneStatus.HOSTILE
+  );
 }
 
 function toNumber(value: unknown): number | undefined {

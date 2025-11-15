@@ -1,10 +1,12 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
   UnauthorizedException,
   UsePipes,
   ValidationPipe,
+  forwardRef,
 } from '@nestjs/common';
 import {
   ConnectedSocket,
@@ -55,6 +57,7 @@ export class CommandCenterGateway
     private readonly authService: AuthService,
     private readonly eventBus: EventBusService,
     private readonly geofencesService: GeofencesService,
+    @Inject(forwardRef(() => DronesService))
     private readonly dronesService: DronesService,
   ) {}
 

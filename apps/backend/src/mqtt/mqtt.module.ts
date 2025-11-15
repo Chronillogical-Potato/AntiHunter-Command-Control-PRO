@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { MqttCommandsService } from './mqtt-commands.service';
+import { MqttDronesService } from './mqtt-drones.service';
 import { MqttEventsService } from './mqtt-events.service';
 import { MqttFederationService } from './mqtt-federation.service';
 import { MqttGeofencesService } from './mqtt-geofences.service';
@@ -38,6 +39,7 @@ import { WsModule } from '../ws/ws.module';
     MqttTargetsService,
     MqttGeofencesService,
     MqttEventsService,
+    MqttDronesService,
   ],
   controllers: [MqttController],
   exports: [MqttService],

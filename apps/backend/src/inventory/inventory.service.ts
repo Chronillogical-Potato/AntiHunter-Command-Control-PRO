@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InventoryDevice, Prisma } from '@prisma/client';
 import { Observable, Subject } from 'rxjs';
 
+import { DronesService } from '../drones/drones.service';
 import { OuiService } from '../oui/oui.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SerialTargetDetected } from '../serial/serial.types';
@@ -48,6 +49,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ouiService: OuiService,
+    private readonly dronesService: DronesService,
   ) {}
 
   getUpdatesStream(): Observable<InventoryDevice> {
@@ -360,6 +362,13 @@ export class InventoryService {
 
   async clearAll(): Promise<{ deleted: number }> {
     const result = await this.prisma.inventoryDevice.deleteMany();
+    try {
+      await this.dronesService.clearAll();
+    } catch (error) {
+      this.logger.warn(
+        `Failed clearing drones on inventory reset: ${error instanceof Error ? error.message : error}`,
+      );
+    }
     return { deleted: result.count };
   }
 }

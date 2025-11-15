@@ -281,6 +281,7 @@ export const useGeofenceStore = create<GeofenceStoreState>()((set, get) => {
     processCoordinateEvent: ({ entityId, entityLabel, entityType, lat, lon }) => {
       const events: GeofenceEvent[] = [];
       const { geofences } = get();
+      const highlight = get().setHighlighted;
 
       geofences.forEach((geofence) => {
         if (geofence.polygon.length < 3 || !geofence.alarm.enabled) {
@@ -300,6 +301,7 @@ export const useGeofenceStore = create<GeofenceStoreState>()((set, get) => {
         set({ states: nextStates });
 
         if (inside && !prevState) {
+          highlight(geofence.id, 5000);
           events.push({
             geofenceId: geofence.id,
             geofenceName: geofence.name,
@@ -319,6 +321,7 @@ export const useGeofenceStore = create<GeofenceStoreState>()((set, get) => {
             transition: 'enter',
           });
         } else if (!inside && prevState && geofence.alarm.triggerOnExit) {
+          highlight(geofence.id, 5000);
           events.push({
             geofenceId: geofence.id,
             geofenceName: geofence.name,

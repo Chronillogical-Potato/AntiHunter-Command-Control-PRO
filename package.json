@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "pnpm -r --parallel dev",
     "AHCC": "pnpm dev",
+    "AHCC:cluster": "powershell -NoLogo -NoProfile -Command \"$root = Get-Location; $jobs = @(); $jobs += Start-Job -ArgumentList $root { param($r) Set-Location $r; pnpm -C apps/backend dev:cluster }; $jobs += Start-Job -ArgumentList $root { param($r) Set-Location $r; pnpm -C apps/frontend dev }; $jobs | Receive-Job -Wait -AutoRemoveJob\"",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",

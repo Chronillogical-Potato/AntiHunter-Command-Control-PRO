@@ -538,6 +538,7 @@ Optional environment flags:
 | `HTTPS_CA_PATH`           | Optional comma separated CA bundle paths                                                                                     |
 | `HTTPS_PASSPHRASE`        | Passphrase if the private key is encrypted                                                                                   |
 | `HTTP_REDIRECT_PORT`      | Optional plain HTTP listener that 301-redirects to HTTPS                                                                     |
+| `CLUSTER_WORKERS`         | Number of backend workers for cluster mode (default 1 = single process; leader + replicas when >1)                           |
 | `TAK_ENABLED`             | `true` to boot the TAK bridge automatically                                                                                  |
 | `TAK_PROTOCOL`            | TAK transport (`UDP`, `TCP`, or `HTTPS`)                                                                                     |
 | `TAK_HOST`                | TAK core hostname or IP                                                                                                      |
@@ -727,9 +728,31 @@ pnpm dev     # http://localhost:5173
 
 ```
 
-Prefer a single command? From the repo root run `pnpm AHCC` to start both workspaces in parallel.
+Prefer a single command? From the repo root run `pnpm AHCC` to start both workspaces in parallel (single backend process).
+
+Need multi-core / multi-worker? Use the cluster script and set worker count (leader + replicas):
+
+```powershell
+$env:CLUSTER_WORKERS=2; pnpm AHCC:cluster   # Windows PowerShell example
+```
+
+Or on POSIX shells:
+
+```bash
+CLUSTER_WORKERS=2 pnpm AHCC:cluster
+```
+
+The leader is the only process that opens serial hardware; replicas share the HTTP/WebSocket load.
 
 The Vite dev server proxies `/api/*`, `/healthz`, `/readyz`, `/metrics`, `/socket.io` back to the NestJS service so CORS is not a concern in development.
+
+For production after building, start the backend with clustering if you want multi-core:
+
+```bash
+CLUSTER_WORKERS=4 pnpm --filter @command-center/backend start:cluster
+```
+
+Set `CLUSTER_WORKERS=1` (or omit) to keep a single process.
 
 ### Updating an Existing Deployment
 

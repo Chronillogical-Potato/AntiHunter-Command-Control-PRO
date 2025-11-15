@@ -224,13 +224,7 @@ function createDroneState({ id, mac, args, speedRange, intervalRange }) {
     operatorHeading,
   );
 
-  const distanceFactor = clamp(
-    randomBetween(0.45, 0.8) + randomBetween(-args.start_spread / 2, args.start_spread / 2),
-    0.25,
-    0.9,
-  );
-  const startDistance = Math.max(120, operatorDistance * distanceFactor);
-  const startPoint = offsetFromNode(args.node_lat, args.node_lon, startDistance, heading);
+  const startPoint = { ...operatorPoint };
 
   const approachSpeedKmh = randomBetween(speedRange.min, speedRange.max);
   const intervalMs = Math.round(randomBetween(intervalRange.min, intervalRange.max));

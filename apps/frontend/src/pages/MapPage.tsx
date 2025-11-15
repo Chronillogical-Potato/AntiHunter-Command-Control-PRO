@@ -27,7 +27,7 @@ import type {
 } from '../api/types';
 import { DroneFloatingCard } from '../components/DroneFloatingCard';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
-import { extractAlertColors } from '../constants/alert-colors';
+import { extractAlertColors, applyAlertOverrides } from '../constants/alert-colors';
 import type { AlertColorConfig } from '../constants/alert-colors';
 import { useAlertStore } from '../stores/alert-store';
 import { useAuthStore } from '../stores/auth-store';
@@ -177,8 +177,12 @@ export function MapPage() {
   );
 
   const alertColors: AlertColorConfig = useMemo(
-    () => extractAlertColors(appSettingsQuery.data),
-    [appSettingsQuery.data],
+    () =>
+      applyAlertOverrides(
+        extractAlertColors(appSettingsQuery.data),
+        currentUser?.preferences?.alertColors ?? null,
+      ),
+    [appSettingsQuery.data, currentUser?.preferences?.alertColors],
   );
   const mapDefaultRadius = appSettingsQuery.data?.defaultRadiusM ?? 50;
 

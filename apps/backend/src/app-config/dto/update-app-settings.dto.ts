@@ -111,6 +111,41 @@ export class UpdateAppSettingsDto {
   alertColorCritical?: string;
 
   @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeLightBackground?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeLightSurface?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeLightText?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeDarkBackground?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeDarkSurface?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeDarkText?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(HEX_COLOR_REGEX)
+  themeAccentPrimary?: string;
+
+  @IsOptional()
   @IsBoolean()
   mailEnabled?: boolean;
 
