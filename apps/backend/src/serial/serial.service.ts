@@ -527,6 +527,12 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
 
     await this.commandQueue.add(async () => {
       this.ensureConnected();
+      this.logger.debug({
+        writeProtocol: this.connectionOptions?.protocol,
+        writePort: this.connectionOptions?.path,
+        writeBaud: this.connectionOptions?.baudRate,
+        writeOpen: this.port?.isOpen ?? false,
+      });
       this.consumeRate(this.globalRate, this.globalRateLimit);
       this.consumeRate(this.getTargetCounter(built.target), this.perTargetRateLimit);
       const protocol = this.connectionOptions?.protocol ?? 'meshtastic-like';
@@ -700,7 +706,8 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         case: 'decoded',
         value: decoded,
       },
-      hopLimit: 0,
+      // ensure it can traverse the mesh; 3 is a common default
+      hopLimit: 3,
     });
 
     const toRadio = create(Mesh.ToRadioSchema, {
@@ -1174,9 +1181,24 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.incoming$.next(sanitized);
     try {
       const parsed = this.protocolParser.parseLine(sanitized);
-      this.logger.debug({ parsed }, 'Parsed serial events');
-      parsed.forEach((event) => this.parsed$.next(event));
-      this.broadcastParsedEvents(parsed);
+      if (parsed.length > 0) {
+        this.logger.debug({ parsed }, 'Parsed serial events');
+        parsed.forEach((event) => this.parsed$.next(event));
+        this.broadcastParsedEvents(parsed);
+        return;
+      }
+
+      const fallback = parseFallbackTelemetry(sanitized);
+      if (fallback) {
+        this.logger.debug({ parsed: fallback }, 'Parsed serial events (fallback)');
+        fallback.forEach((event) => this.parsed$.next(event));
+        this.broadcastParsedEvents(fallback);
+        return;
+      }
+
+      // Nothing parsed; emit as raw so it is still visible to the app.
+      this.logger.debug({ line: sanitized }, 'Unparsed serial line, emitting raw');
+      this.parsed$.next({ kind: 'raw', raw: sanitized });
     } catch (err) {
       const fallback = parseFallbackTelemetry(sanitized);
       if (fallback) {
