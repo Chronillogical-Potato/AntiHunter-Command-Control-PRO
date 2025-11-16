@@ -476,6 +476,9 @@ export class MeshtasticNewParser implements SerialProtocolParser {
     // If payload contains a colon but matched none of the known patterns, drop it (likely malformed).
     if (
       payload.includes(':') &&
+      // Drop broken HDOP fragments (router sometimes truncates).
+      !/\bHDOP[:=\s]*-?\d/i.test(payload) &&
+      /\bHDOP\b/i.test(payload) &&
       !STATUS_REGEX.test(payload) &&
       !TIME_TEMP_GPS_REGEX.test(payload) &&
       !TARGET_REGEX.test(payload) &&
