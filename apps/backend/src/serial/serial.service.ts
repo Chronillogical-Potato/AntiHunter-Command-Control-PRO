@@ -1338,6 +1338,21 @@ function parseFallbackTelemetry(line: string): SerialParseResult[] | null {
     }
   }
 
+  // Device discovery lines, e.g. "AHLL: DEVICE:AA:BB:CC:DD:EE:FF B -92"
+  const deviceMatch = /DEVICE[:\s]+(?<mac>[0-9A-Fa-f:]{17})\s+(?<band>[BW])\s+(?<rssi>-?\d+)/i.exec(
+    payload,
+  );
+  if (deviceMatch?.groups && sourceId) {
+    const mac = deviceMatch.groups.mac.toUpperCase();
+    results.push({
+      kind: 'target-detected',
+      nodeId: sourceId,
+      mac,
+      rssi: Number(deviceMatch.groups.rssi),
+      raw: line,
+    });
+  }
+
   return results.length > 0 ? results : null;
 }
 
