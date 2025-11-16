@@ -1192,49 +1192,30 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     if (!sanitized) {
       return;
     }
-    this.logger.debug(
-      { line: sanitized },
-      source === 'serial' ? 'Serial line received' : 'Simulated serial line',
-    );
-    this.incoming$.next(sanitized);
-    try {
-      const parsed = this.protocolParser.parseLine(sanitized);
-      const allRaw = parsed.length > 0 && parsed.every((evt) => evt.kind === 'raw');
-      if (parsed.length > 0 && !allRaw) {
+    // Some devices bundle multiple payloads in one line separated by CR/LF.
+    const parts = sanitized
+      .split(/\r?\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const part of parts) {
+      this.logger.debug(
+        { line: part },
+        source === 'serial' ? 'Serial line received' : 'Simulated serial line',
+      );
+      this.incoming$.next(part);
+      try {
+        const parsed = this.protocolParser.parseLine(part);
+        if (!parsed.length) {
+          this.logger.debug({ line: part }, 'Serial line ignored by parser');
+          continue;
+        }
         this.logger.debug({ parsed }, 'Parsed serial events');
         parsed.forEach((event) => this.parsed$.next(event));
         this.broadcastParsedEvents(parsed);
-        return;
+      } catch (err) {
+        this.logger.error(`Failed to parse ${source} line: ${part}`, err as Error);
+        this.parsed$.next({ kind: 'raw', raw: part });
       }
-
-      const fallback = parseFallbackTelemetry(sanitized);
-      if (fallback) {
-        this.logger.debug({ parsed: fallback }, 'Parsed serial events (fallback)');
-        fallback.forEach((event) => this.parsed$.next(event));
-        this.broadcastParsedEvents(fallback);
-        return;
-      }
-
-      // If protocol parser only returned raw/unknown, keep that; otherwise emit raw.
-      if (allRaw) {
-        this.logger.debug({ parsed }, 'Parsed serial events (protocol raw only)');
-        parsed.forEach((event) => this.parsed$.next(event));
-        this.broadcastParsedEvents(parsed);
-        return;
-      }
-
-      this.logger.debug({ line: sanitized }, 'Unparsed serial line, emitting raw');
-      this.parsed$.next({ kind: 'raw', raw: sanitized });
-    } catch (err) {
-      const fallback = parseFallbackTelemetry(sanitized);
-      if (fallback) {
-        this.logger.debug({ parsed: fallback }, 'Parsed serial events (fallback)');
-        fallback.forEach((event) => this.parsed$.next(event));
-        this.broadcastParsedEvents(fallback);
-        return;
-      }
-      this.logger.error(`Failed to parse ${source} line: ${sanitized}`, err as Error);
-      this.parsed$.next({ kind: 'raw', raw: sanitized });
     }
   }
 }
@@ -1273,87 +1254,6 @@ function sanitizeLine(value: string): string {
   cleaned = stripAnsi(cleaned);
 
   return cleaned.trim();
-}
-
-function parseFallbackTelemetry(line: string): SerialParseResult[] | null {
-  const results: SerialParseResult[] = [];
-
-  const cleaned = stripAnsi(line);
-  const payload = cleaned.includes(' msg=') ? cleaned.split(' msg=')[1] : cleaned;
-  const sourceIdMatch =
-    /(?:from=|fr=|node[=:])(?<source>[A-Za-z0-9_.:-]+)/i.exec(cleaned) ??
-    /^(?<source>[A-Za-z0-9_.:-]+):/.exec(cleaned);
-  const sourceId = sourceIdMatch?.groups?.source;
-
-  const tempMatch =
-    /Temp[:\s]+(?<tempC>-?\d+(?:\.\d+)?)[cC](?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?/i.exec(payload);
-  const tempC = tempMatch?.groups?.tempC ? Number(tempMatch.groups.tempC) : undefined;
-  const tempF = tempMatch?.groups?.tempF ? Number(tempMatch.groups.tempF) : undefined;
-
-  // Status messages like: "AH1: STATUS: ... Temp:57.6C ... GPS:63.742538,11.306898"
-  const statusMatch =
-    /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*STATUS:.*?GPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
-      payload,
-    );
-  if (statusMatch?.groups) {
-    const lat = Number(statusMatch.groups.lat);
-    const lon = Number(statusMatch.groups.lon);
-    const nodeId = statusMatch.groups.id || sourceId;
-    if (Number.isFinite(lat) && Number.isFinite(lon) && nodeId) {
-      results.push({
-        kind: 'node-telemetry',
-        nodeId: nodeId ?? 'unknown',
-        lat,
-        lon,
-        lastMessage: payload,
-        raw: line,
-        ...(Number.isFinite(tempC) && { temperatureC: tempC }),
-        ...(Number.isFinite(tempF) && { temperatureF: tempF }),
-      });
-    }
-  }
-
-  // Simple time/temp/gps telemetry e.g. "Time:... Temp:57.6C/136F GPS:lat,lon"
-  const timeGpsMatch =
-    /^(?<id>[A-Za-z0-9_.:-]+)?\s*Time:[^\s]+\s+Temp[:\s]+(?<tc>-?\d+(?:\.\d+)?)[cC](?:\/(?<tf>-?\d+(?:\.\d+)?)[fF])?.*?\bGPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
-      payload,
-    );
-  if (timeGpsMatch?.groups) {
-    const lat = Number(timeGpsMatch.groups.lat);
-    const lon = Number(timeGpsMatch.groups.lon);
-    const nodeId = timeGpsMatch.groups.id || sourceId;
-    const tC = Number(timeGpsMatch.groups.tc);
-    const tF = timeGpsMatch.groups.tf ? Number(timeGpsMatch.groups.tf) : undefined;
-    if (Number.isFinite(lat) && Number.isFinite(lon) && nodeId) {
-      results.push({
-        kind: 'node-telemetry',
-        nodeId,
-        lat,
-        lon,
-        lastMessage: payload,
-        raw: line,
-        ...(Number.isFinite(tC) && { temperatureC: tC }),
-        ...(Number.isFinite(tF) && { temperatureF: tF }),
-      });
-    }
-  }
-
-  // Device discovery lines, e.g. "AHLL: DEVICE:AA:BB:CC:DD:EE:FF B -92"
-  const deviceMatch = /DEVICE[:\s]+(?<mac>[0-9A-Fa-f:]{17})\s+(?<band>[BW])\s+(?<rssi>-?\d+)/i.exec(
-    payload,
-  );
-  if (deviceMatch?.groups && sourceId) {
-    const mac = deviceMatch.groups.mac.toUpperCase();
-    results.push({
-      kind: 'target-detected',
-      nodeId: sourceId,
-      mac,
-      rssi: Number(deviceMatch.groups.rssi),
-      raw: line,
-    });
-  }
-
-  return results.length > 0 ? results : null;
 }
 
 function stripAnsi(value: string): string {
