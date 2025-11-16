@@ -536,8 +536,21 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.consumeRate(this.globalRate, this.globalRateLimit);
       this.consumeRate(this.getTargetCounter(built.target), this.perTargetRateLimit);
       const protocol = this.connectionOptions?.protocol ?? 'meshtastic-like';
+      const sendMode =
+        this.configService.get<string>('serial.sendMode')?.toLowerCase() ?? 'protobuf';
+      const hopLimit = this.configService.get<number>('serial.hopLimit');
+
       if (protocol === 'meshtastic-like') {
-        await this.sendMeshtasticCommand(line);
+        if (sendMode === 'plain') {
+          await this.writeLine(line);
+          return;
+        }
+
+        const wantAck = sendMode === 'protobuf-ack';
+        await this.sendMeshtasticCommand(line, {
+          wantAck,
+          hopLimit: Number.isFinite(hopLimit) ? (hopLimit as number) : undefined,
+        });
       } else {
         await this.writeLine(line);
       }
@@ -670,7 +683,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     await this.writeBuffer(buffer);
   }
 
-  private async sendMeshtasticCommand(line: string): Promise<void> {
+  private async sendMeshtasticCommand(
+    line: string,
+    options?: { wantAck?: boolean; hopLimit?: number },
+  ): Promise<void> {
     this.ensureConnected();
     const trimmed = line.trim();
     if (!trimmed) {
@@ -700,14 +716,16 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       id: this.nextPacketId(),
       to: this.broadcastNum,
       channel: channelIndex,
-      wantAck: false,
+      wantAck: options?.wantAck ?? false,
       priority: Mesh.MeshPacket_Priority.RELIABLE,
       payloadVariant: {
         case: 'decoded',
         value: decoded,
       },
-      // ensure it can traverse the mesh; 3 is a common default
-      hopLimit: 3,
+      hopLimit:
+        Number.isFinite(options?.hopLimit) && (options?.hopLimit as number) > 0
+          ? (options?.hopLimit as number)
+          : 3,
     });
 
     const toRadio = create(Mesh.ToRadioSchema, {
@@ -1181,7 +1199,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.incoming$.next(sanitized);
     try {
       const parsed = this.protocolParser.parseLine(sanitized);
-      if (parsed.length > 0) {
+      const allRaw =
+        parsed.length > 0 && parsed.every((evt) => evt.kind === 'raw' || evt.kind === 'unknown');
+      if (parsed.length > 0 && !allRaw) {
         this.logger.debug({ parsed }, 'Parsed serial events');
         parsed.forEach((event) => this.parsed$.next(event));
         this.broadcastParsedEvents(parsed);
@@ -1196,7 +1216,14 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Nothing parsed; emit as raw so it is still visible to the app.
+      // If protocol parser only returned raw/unknown, keep that; otherwise emit raw.
+      if (allRaw) {
+        this.logger.debug({ parsed }, 'Parsed serial events (protocol raw only)');
+        parsed.forEach((event) => this.parsed$.next(event));
+        this.broadcastParsedEvents(parsed);
+        return;
+      }
+
       this.logger.debug({ line: sanitized }, 'Unparsed serial line, emitting raw');
       this.parsed$.next({ kind: 'raw', raw: sanitized });
     } catch (err) {
@@ -1235,6 +1262,10 @@ function sanitizeLine(value: string): string {
 
   // Remove placeholder Fahrenheit fragments like "/undefinedF" or "undefinedF".
   cleaned = cleaned.replace(/\/?undefinedf\b/gi, '');
+
+  // Drop leading channel/slot markers like "1 :" or "10:" that some devices prepend.
+  cleaned = cleaned.replace(/^\s*\d+\s*:/, '').trimStart();
+
   return cleaned.trim();
 }
 
@@ -1287,6 +1318,26 @@ function parseFallbackTelemetry(line: string): SerialParseResult[] | null {
       results.push({
         kind: 'node-telemetry',
         nodeId: telemetryMatch.groups.id,
+        lat,
+        lon,
+        lastMessage: payload,
+        raw: line,
+      });
+    }
+  }
+
+  // Generic GPS-bearing lines, even without explicit "STATUS"
+  const gpsMatch =
+    /^(?<id>[A-Za-z0-9_.:-]+).*?\bGPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
+      payload,
+    );
+  if (gpsMatch?.groups) {
+    const lat = Number(gpsMatch.groups.lat);
+    const lon = Number(gpsMatch.groups.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      results.push({
+        kind: 'node-telemetry',
+        nodeId: gpsMatch.groups.id,
         lat,
         lon,
         lastMessage: payload,
