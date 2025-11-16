@@ -166,12 +166,18 @@ export class InventoryService {
     const lastLat = payload.lastLat ?? null;
     const lastLon = payload.lastLon ?? null;
 
+    const ouiInfo = await this.ouiService.resolve(mac);
+    const resolvedVendor = payload.vendor ?? ouiInfo.vendor ?? null;
+    const resolvedLocallyAdministered =
+      payload.locallyAdministered ?? ouiInfo.locallyAdministered ?? false;
+    const resolvedMulticast = payload.multicast ?? ouiInfo.multicast ?? false;
+
     const record = (await this.prisma.inventoryDevice.upsert({
       where: { mac },
       create: {
         mac,
         siteId: payload.siteId ?? null,
-        vendor: payload.vendor ?? null,
+        vendor: resolvedVendor,
         type: payload.type ?? null,
         ssid: payload.ssid ?? null,
         hits: payload.hits,
@@ -179,8 +185,8 @@ export class InventoryService {
         maxRSSI,
         minRSSI,
         avgRSSI,
-        locallyAdministered: payload.locallyAdministered,
-        multicast: payload.multicast,
+        locallyAdministered: resolvedLocallyAdministered,
+        multicast: resolvedMulticast,
         lastNodeId: payload.lastNodeId ?? null,
         lastLat,
         lastLon,
@@ -189,7 +195,7 @@ export class InventoryService {
       } as Prisma.InventoryDeviceUncheckedCreateInput,
       update: {
         siteId: payload.siteId ?? null,
-        vendor: payload.vendor ?? null,
+        vendor: resolvedVendor,
         type: payload.type ?? null,
         ssid: payload.ssid ?? null,
         hits: payload.hits,
@@ -197,8 +203,8 @@ export class InventoryService {
         maxRSSI,
         minRSSI,
         avgRSSI,
-        locallyAdministered: payload.locallyAdministered,
-        multicast: payload.multicast,
+        locallyAdministered: resolvedLocallyAdministered,
+        multicast: resolvedMulticast,
         lastNodeId: payload.lastNodeId ?? null,
         lastLat,
         lastLon,
