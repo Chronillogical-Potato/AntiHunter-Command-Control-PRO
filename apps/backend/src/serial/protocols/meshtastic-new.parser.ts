@@ -37,6 +37,8 @@ const DRONE_RSSI_REGEX = /\bR(?<rssi>-?\d+)\b/i;
 const GPS_ROUTER_LOG_REGEX = /\bGPS\b.*(power state|updatePosition LOCAL)/i;
 const GPS_LOCK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*GPS[:\s]+LOCKED\s+Location:(?<lat>-?\d+(?:\.\d+)?),\s*(?<lon>-?\d+(?:\.\d+)?)(?:\s+Satellites:(?<sats>\d+))?(?:\s+HDOP:(?<hdop>\d+(?:\.\d+)?))?/i;
+const ROUTER_LOG_NO_MSG_REGEX =
+  /\b(Router|RadioIf|SerialConsole)\b.*\b(Rebroadcast received floodmsg|ToPhone queue is full|External Notification Module|Received routing|busyRx)\b/i;
 
 const SOURCE_ID_REGEX = /(?:from=|fr=|node[=:])(?<source>[A-Za-z0-9_.:-]+)/i;
 
@@ -90,6 +92,12 @@ export class MeshtasticNewParser implements SerialProtocolParser {
       // If this looks like a fragment (very short), buffer and wait for next line.
       if (combined.length <= 3) {
         this.carryFragment = combined;
+        return [];
+      }
+
+      // Drop obvious router/log lines that arrive without msg= to avoid noise.
+      if (ROUTER_LOG_NO_MSG_REGEX.test(combined)) {
+        this.pendingDeviceWithoutName = undefined;
         return [];
       }
 
