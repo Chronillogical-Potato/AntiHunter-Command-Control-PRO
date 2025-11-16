@@ -1263,7 +1263,11 @@ function sanitizeLine(value: string): string {
   cleaned = cleaned.replace(/\/?undefinedf\b/gi, '');
 
   // Drop leading channel/slot markers like "1 :" or "10:" that some devices prepend.
-  cleaned = cleaned.replace(/^\s*\d+\s*:/, '').trimStart();
+  const channelMarker = /^\s*\d+\s*:\s*(.+)$/;
+  const markerMatch = channelMarker.exec(cleaned);
+  if (markerMatch?.[1]) {
+    cleaned = markerMatch[1];
+  }
 
   return cleaned.trim();
 }
@@ -1273,32 +1277,49 @@ function parseFallbackTelemetry(line: string): SerialParseResult[] | null {
 
   const cleaned = stripAnsi(line);
   const payload = cleaned.includes(' msg=') ? cleaned.split(' msg=')[1] : cleaned;
+  const sourceIdMatch =
+    /(?:from=|fr=|node[=:])(?<source>[A-Za-z0-9_.:-]+)/i.exec(cleaned) ??
+    /^(?<source>[A-Za-z0-9_.:-]+):/.exec(cleaned);
+  const sourceId = sourceIdMatch?.groups?.source;
+
+  const tempMatch =
+    /Temp[:\s]+(?<tempC>-?\d+(?:\.\d+)?)[cC](?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?/i.exec(payload);
+  const tempC = tempMatch?.groups?.tempC ? Number(tempMatch.groups.tempC) : undefined;
+  const tempF = tempMatch?.groups?.tempF ? Number(tempMatch.groups.tempF) : undefined;
 
   // Status messages like: "AH1: STATUS: ... Temp:57.6C ... GPS:63.742538,11.306898"
   const statusMatch =
-    /^(?<id>[A-Za-z0-9_.:-]+):?\s*STATUS:.*?GPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
+    /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*STATUS:.*?GPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
       payload,
     );
   if (statusMatch?.groups) {
     const lat = Number(statusMatch.groups.lat);
     const lon = Number(statusMatch.groups.lon);
+    const nodeId = statusMatch.groups.id || sourceId;
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
       results.push({
         kind: 'alert',
         level: 'NOTICE',
         category: 'status',
-        nodeId: statusMatch.groups.id,
+        nodeId: nodeId ?? undefined,
         message: payload,
-        data: undefined,
+        data: {
+          ...(Number.isFinite(tempC) && { tempC }),
+          ...(Number.isFinite(tempF) && { tempF }),
+          lat,
+          lon,
+        },
         raw: line,
       });
       results.push({
         kind: 'node-telemetry',
-        nodeId: statusMatch.groups.id,
+        nodeId: nodeId ?? 'unknown',
         lat,
         lon,
         lastMessage: payload,
         raw: line,
+        ...(Number.isFinite(tempC) && { temperatureC: tempC }),
+        ...(Number.isFinite(tempF) && { temperatureF: tempF }),
       });
     }
   }
@@ -1325,20 +1346,23 @@ function parseFallbackTelemetry(line: string): SerialParseResult[] | null {
 
   // Generic GPS-bearing lines, even without explicit "STATUS"
   const gpsMatch =
-    /^(?<id>[A-Za-z0-9_.:-]+).*?\bGPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
+    /^(?<id>[A-Za-z0-9_.:-]+)?.*?\bGPS[:\s]+(?<lat>-?\d+(?:\.\d+)?)[,\s]+(?<lon>-?\d+(?:\.\d+)?)/i.exec(
       payload,
     );
   if (gpsMatch?.groups) {
     const lat = Number(gpsMatch.groups.lat);
     const lon = Number(gpsMatch.groups.lon);
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    const nodeId = gpsMatch.groups.id || sourceId;
+    if (Number.isFinite(lat) && Number.isFinite(lon) && nodeId) {
       results.push({
         kind: 'node-telemetry',
-        nodeId: gpsMatch.groups.id,
+        nodeId,
         lat,
         lon,
         lastMessage: payload,
         raw: line,
+        ...(Number.isFinite(tempC) && { temperatureC: tempC }),
+        ...(Number.isFinite(tempF) && { temperatureF: tempF }),
       });
     }
   }
