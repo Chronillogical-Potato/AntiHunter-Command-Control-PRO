@@ -64,7 +64,13 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     }
 
     const msgIndex = sanitized.lastIndexOf('msg=');
-    const payloadRaw = msgIndex >= 0 ? sanitized.slice(msgIndex + 4).trim() : sanitized;
+    const hasMsgSegment = msgIndex >= 0;
+    const isRouterEcho =
+      hasMsgSegment &&
+      /\[Router\]/i.test(sanitized) &&
+      /Received text msg/i.test(sanitized);
+    const payloadRaw =
+      hasMsgSegment && !isRouterEcho ? sanitized.slice(msgIndex + 4).trim() : sanitized;
     const payload = this.stripTrailingHash(payloadRaw.replace(/^0m\s*/i, ''));
     const sourceId = this.extractSourceId(sanitized);
 
@@ -82,7 +88,8 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseAck(payload, sourceId, sanitized);
 
     if (parsed) return parsed;
-    return msgIndex >= 0 ? [] : [{ kind: 'raw', raw: sanitized }];
+    const shouldEmitRaw = !hasMsgSegment || isRouterEcho;
+    return shouldEmitRaw ? [{ kind: 'raw', raw: sanitized }] : [];
   }
 
   reset(): void {
