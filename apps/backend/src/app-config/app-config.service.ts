@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpdateAppSettingsDto } from './dto/update-app-settings.dto';
 
 const APP_CONFIG_ID = 1;
+const SUPPORTED_SERIAL_PROTOCOLS = new Set(['meshtastic-rewrite', 'raw-lines', 'nmea-like']);
 
 interface AppConfigResponse extends Omit<AppConfig, 'mailPassword'> {
   mailPasswordSet: boolean;
@@ -60,6 +61,11 @@ export class AppConfigService {
       if (trimmed.length > 0) {
         data.mailFrom = trimmed;
       }
+    }
+
+    if (rest.protocol !== undefined) {
+      const normalized = this.normalizeProtocol(rest.protocol);
+      data.protocol = normalized;
     }
 
     if (alertColorIdle !== undefined) {
@@ -135,11 +141,18 @@ export class AppConfigService {
   }
 
   private async ensureExists(): Promise<AppConfig> {
-    return this.prisma.appConfig.upsert({
+    const config = await this.prisma.appConfig.upsert({
       where: { id: APP_CONFIG_ID },
       update: {},
       create: { id: APP_CONFIG_ID },
     });
+    if (!SUPPORTED_SERIAL_PROTOCOLS.has(config.protocol)) {
+      return this.prisma.appConfig.update({
+        where: { id: APP_CONFIG_ID },
+        data: { protocol: 'meshtastic-rewrite' },
+      });
+    }
+    return config;
   }
 
   private toResponse(config: AppConfig): AppConfigResponse {
@@ -175,5 +188,12 @@ export class AppConfigService {
       return `#${trimmed.toUpperCase()}`;
     }
     return `#${trimmed.slice(1).toUpperCase()}`;
+  }
+
+  private normalizeProtocol(value?: string | null): string {
+    if (value && SUPPORTED_SERIAL_PROTOCOLS.has(value)) {
+      return value;
+    }
+    return 'meshtastic-rewrite';
   }
 }

@@ -1291,6 +1291,9 @@ export function ConfigPage() {
     });
   };
 
+  const isValidSerialProtocol = (value: string | null | undefined): value is string =>
+    !!value && PROTOCOL_OPTIONS.some((option) => option.value === value);
+
   const buildSerialConnectPayload = (): SerialConnectPayload | null => {
     if (!appSettings || !serialConfig) {
       return null;
@@ -1305,7 +1308,9 @@ export function ConfigPage() {
     if (serialConfig.delimiter ?? '') {
       payload.delimiter = serialConfig.delimiter ?? undefined;
     }
-    payload.protocol = appSettings.protocol ?? 'meshtastic-rewrite';
+    payload.protocol = isValidSerialProtocol(appSettings.protocol)
+      ? appSettings.protocol
+      : 'meshtastic-rewrite';
     return payload;
   };
 
