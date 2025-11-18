@@ -325,7 +325,15 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             raw: event.raw,
             siteId,
           });
-          if (event.nodeId && lat != null && lon != null) {
+          const allowNodePositionUpdate = (() => {
+            if (!event.category) return false;
+            const normalized = event.category.toLowerCase();
+            // Triangulation alerts contain target GPS, not node GPS. Avoid
+            // overwriting the node snapshot with tracking estimates.
+            return normalized === 'gps' || normalized === 'status';
+          })();
+
+          if (allowNodePositionUpdate && event.nodeId && lat != null && lon != null) {
             await this.nodesService.upsert({
               id: event.nodeId,
               name: event.nodeId,

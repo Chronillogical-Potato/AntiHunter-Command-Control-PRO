@@ -30,6 +30,8 @@ interface DetectionEntry {
   nodeId?: string;
   lat: number;
   lon: number;
+  nodeLat?: number;
+  nodeLon?: number;
   weight: number;
   rssi?: number;
   timestamp: number;
@@ -58,7 +60,13 @@ interface BaseEstimate {
   samples: number;
   uniqueNodes: number;
   spreadMeters: number;
-  contributors: Array<{ nodeId?: string; weight: number; maxRssi?: number }>;
+  contributors: Array<{
+    nodeId?: string;
+    weight: number;
+    maxRssi?: number;
+    lat?: number;
+    lon?: number;
+  }>;
 }
 
 export interface TrackingEstimate extends BaseEstimate {
@@ -119,6 +127,8 @@ export class TargetTrackingService {
       nodeId: input.nodeId,
       lat: latForEntry,
       lon: lonForEntry,
+      nodeLat: nodeLat,
+      nodeLon: nodeLon,
       weight,
       rssi: this.toFinite(input.rssi),
       timestamp: now,
@@ -210,7 +220,10 @@ export class TargetTrackingService {
     const clampedLon = this.clampLongitude(rawLon);
 
     const uniqueNodes = new Set<string>();
-    const contributorMap = new Map<string, { nodeId?: string; weight: number; maxRssi?: number }>();
+    const contributorMap = new Map<
+      string,
+      { nodeId?: string; weight: number; maxRssi?: number; lat?: number; lon?: number }
+    >();
 
     let weightedDistanceSq = 0;
 
@@ -222,7 +235,17 @@ export class TargetTrackingService {
         nodeId: entry.nodeId,
         weight: 0,
         maxRssi: entry.rssi,
+        lat: entry.nodeLat ?? entry.lat,
+        lon: entry.nodeLon ?? entry.lon,
       };
+      if (
+        (aggregate.lat === undefined || aggregate.lon === undefined) &&
+        entry.nodeLat !== undefined &&
+        entry.nodeLon !== undefined
+      ) {
+        aggregate.lat = entry.nodeLat;
+        aggregate.lon = entry.nodeLon;
+      }
       aggregate.weight += entry.weight;
       if (entry.rssi !== undefined) {
         aggregate.maxRssi =
@@ -247,6 +270,8 @@ export class TargetTrackingService {
         nodeId: entry.nodeId,
         weight: Number(entry.weight.toFixed(3)),
         maxRssi: entry.maxRssi !== undefined ? Number(entry.maxRssi.toFixed(1)) : undefined,
+        lat: entry.lat !== undefined ? Number(entry.lat.toFixed(6)) : undefined,
+        lon: entry.lon !== undefined ? Number(entry.lon.toFixed(6)) : undefined,
       }))
       .sort((a, b) => b.weight - a.weight);
 

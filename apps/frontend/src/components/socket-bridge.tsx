@@ -308,6 +308,10 @@ export function SocketBridge() {
       if (trackingSample) {
         useTrackingSessionStore.getState().recordSample(trackingSample);
       }
+      const serverEstimate = extractServerTrackingEstimate(payload);
+      if (serverEstimate) {
+        useTrackingSessionStore.getState().applyServerEstimate(serverEstimate);
+      }
       if (alertDetails && alertDetails.nodeId) {
         const level = (alertDetails.level ?? 'NOTICE').toUpperCase() as AlarmLevel;
         triggerAlert({
@@ -793,6 +797,14 @@ interface TargetEventDetails {
   confidence?: number;
 }
 
+interface TrackingEstimatePayload {
+  mac: string;
+  lat: number;
+  lon: number;
+  confidence?: number;
+  contributors?: Array<{ nodeId?: string; lat: number; lon: number; weight?: number }>;
+}
+
 function extractTargetDetails(payload: unknown): TargetEventDetails | null {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -839,6 +851,62 @@ function extractTargetDetails(payload: unknown): TargetEventDetails | null {
           ? base.ts
           : undefined,
     confidence: typeof trackingConfidence === 'number' ? trackingConfidence : undefined,
+  };
+}
+
+function extractServerTrackingEstimate(payload: unknown): TrackingEstimatePayload | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const base = payload as {
+    type?: string;
+    mac?: string;
+    lat?: number | string;
+    lon?: number | string;
+    tracking?: {
+      confidence?: number;
+      contributors?: Array<{
+        nodeId?: string;
+        lat?: number;
+        lon?: number;
+        weight?: number;
+      }>;
+    };
+  };
+  if (base.type !== 'event.target' || typeof base.mac !== 'string') {
+    return null;
+  }
+  const lat = toNumber(base.lat);
+  const lon = toNumber(base.lon);
+  if (typeof lat !== 'number' || typeof lon !== 'number') {
+    return null;
+  }
+  const contributors = Array.isArray(base.tracking?.contributors)
+    ? base
+        .tracking!.contributors.map((entry) => {
+          const cLat = toNumber(entry?.lat);
+          const cLon = toNumber(entry?.lon);
+          if (typeof cLat !== 'number' || typeof cLon !== 'number') {
+            return null;
+          }
+          return {
+            nodeId: typeof entry?.nodeId === 'string' ? entry?.nodeId : undefined,
+            lat: cLat,
+            lon: cLon,
+            weight: toNumber(entry?.weight),
+          } as { nodeId?: string; lat: number; lon: number; weight?: number };
+        })
+        .filter((entry): entry is { nodeId?: string; lat: number; lon: number; weight?: number } =>
+          Boolean(entry),
+        )
+    : [];
+  return {
+    mac: base.mac,
+    lat,
+    lon,
+    confidence:
+      typeof base.tracking?.confidence === 'number' ? base.tracking.confidence : undefined,
+    contributors,
   };
 }
 

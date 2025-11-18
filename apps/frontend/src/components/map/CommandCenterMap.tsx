@@ -663,22 +663,43 @@ export function CommandCenterMap({
             </Fragment>
           );
         })}
-      {trackingOverlays.map((overlay) => (
-        <Fragment key={`tracking-${overlay.targetId}`}>
-          <Marker position={[overlay.lat, overlay.lon]} icon={trackingEstimateIcon}>
-            <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
-              <div className="tracking-tooltip">
-                <strong>{overlay.label ?? overlay.mac}</strong>
-                <div>Tracking estimate</div>
-                <div>
-                  Position: {overlay.lat.toFixed(5)}, {overlay.lon.toFixed(5)}
+      {trackingOverlays.map((overlay) => {
+        const contributorLines =
+          overlay.contributors?.filter(
+            (contributor) => Number.isFinite(contributor.lat) && Number.isFinite(contributor.lon),
+          ) ?? [];
+        return (
+          <Fragment key={`tracking-${overlay.targetId}`}>
+            {contributorLines.map((contributor, index) => (
+              <Polyline
+                key={`tracking-link-${overlay.targetId}-${contributor.nodeId ?? index}`}
+                positions={[
+                  [contributor.lat, contributor.lon],
+                  [overlay.lat, overlay.lon],
+                ]}
+                pathOptions={{
+                  color: '#c084fc',
+                  weight: 2,
+                  opacity: 0.75,
+                  dashArray: '6, 10',
+                }}
+              />
+            ))}
+            <Marker position={[overlay.lat, overlay.lon]} icon={trackingEstimateIcon}>
+              <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+                <div className="tracking-tooltip">
+                  <strong>{overlay.label ?? overlay.mac}</strong>
+                  <div>Tracking estimate</div>
+                  <div>
+                    Position: {overlay.lat.toFixed(5)}, {overlay.lon.toFixed(5)}
+                  </div>
+                  <div>Confidence: {(overlay.confidence * 100).toFixed(0)}%</div>
                 </div>
-                <div>Confidence: {(overlay.confidence * 100).toFixed(0)}%</div>
-              </div>
-            </Tooltip>
-          </Marker>
-        </Fragment>
-      ))}
+              </Tooltip>
+            </Marker>
+          </Fragment>
+        );
+      })}
 
       {drones.map((drone) => {
         const dronePosition: LatLngExpression = [drone.lat, drone.lon];

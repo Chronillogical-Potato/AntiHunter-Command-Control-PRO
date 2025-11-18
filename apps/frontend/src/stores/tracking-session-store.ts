@@ -19,6 +19,14 @@ export interface TrackingEstimate {
   label?: string | null;
   mac: string;
   targetId: string;
+  contributors: TrackingContributor[];
+}
+
+interface TrackingContributor {
+  nodeId?: string;
+  lat: number;
+  lon: number;
+  weight?: number;
 }
 
 interface TrackingSessionEntry {
@@ -48,6 +56,13 @@ interface TrackingStoreState {
     rssi: number;
     band?: string;
     timestamp?: number;
+  }) => void;
+  applyServerEstimate: (estimate: {
+    mac: string;
+    lat: number;
+    lon: number;
+    confidence?: number;
+    contributors?: Array<{ nodeId?: string; lat?: number; lon?: number; weight?: number }>;
   }) => void;
 }
 
@@ -153,6 +168,71 @@ export const useTrackingSessionStore = create<TrackingStoreState>((set, get) => 
       return { sessions, macIndex: state.macIndex };
     });
   },
+  applyServerEstimate: ({ mac, lat, lon, confidence, contributors }) => {
+    const now = Date.now();
+    set((state) => {
+      const macKey = mac.toUpperCase();
+      const targetId = state.macIndex[macKey];
+      if (!targetId) {
+        return state;
+      }
+      const session = state.sessions[targetId];
+      if (!session) {
+        return state;
+      }
+      if (now > session.expiresAt) {
+        const sessions = { ...state.sessions };
+        delete sessions[targetId];
+        const macIndex = { ...state.macIndex };
+        Object.entries(macIndex).forEach(([key, value]) => {
+          if (value === targetId) {
+            delete macIndex[key];
+          }
+        });
+        return { sessions, macIndex };
+      }
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return state;
+      }
+      const sanitizedContributors: TrackingContributor[] = [];
+      (contributors ?? []).forEach((entry) => {
+        if (
+          typeof entry.lat === 'number' &&
+          Number.isFinite(entry.lat) &&
+          typeof entry.lon === 'number' &&
+          Number.isFinite(entry.lon)
+        ) {
+          sanitizedContributors.push({
+            nodeId: entry.nodeId,
+            lat: entry.lat,
+            lon: entry.lon,
+            weight: typeof entry.weight === 'number' ? entry.weight : undefined,
+          });
+        }
+      });
+      const estimate: TrackingEstimate = {
+        targetId: session.targetId,
+        mac: session.mac,
+        label: session.label,
+        lat,
+        lon,
+        confidence:
+          typeof confidence === 'number' ? confidence : (session.estimate?.confidence ?? 0),
+        updatedAt: now,
+        contributors: sanitizedContributors,
+      };
+      return {
+        sessions: {
+          ...state.sessions,
+          [targetId]: {
+            ...session,
+            estimate,
+          },
+        },
+        macIndex: state.macIndex,
+      };
+    });
+  },
 }));
 
 function cleanupExpiredSessions(
@@ -204,6 +284,14 @@ function computeEstimate(
   const averageDistance = sumDistance / entries.length;
   const coverageFactor = Math.min(1, entries.length / 3);
   const confidence = Math.min(1, coverageFactor * (1 / (1 + averageDistance / 80)));
+  const contributors: TrackingContributor[] = [...entries]
+    .sort((a, b) => b.weight - a.weight)
+    .map((sample) => ({
+      nodeId: sample.nodeId,
+      lat: sample.lat,
+      lon: sample.lon,
+      weight: sample.weight,
+    }));
   return {
     targetId: context.targetId,
     mac: context.mac,
@@ -212,5 +300,6 @@ function computeEstimate(
     lon: sumLon / totalWeight,
     confidence,
     updatedAt: Date.now(),
+    contributors,
   };
 }
