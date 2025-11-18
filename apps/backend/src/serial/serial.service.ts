@@ -1240,6 +1240,9 @@ function sanitizeLine(value: string): string {
   // Remove placeholder Fahrenheit fragments like "/undefinedF" or "undefinedF".
   cleaned = cleaned.replace(/\/?undefinedf\b/gi, '');
 
+  // Strip stray Unicode replacement characters so prefixes like "0� :" don't block parsing.
+  cleaned = cleaned.replace(/\uFFFD/g, '');
+
   // Drop leading channel/slot markers like "1 :" or "10:" that some devices prepend.
   const channelMarker = /^\s*\d+\s*:\s*(.+)$/;
   const markerMatch = channelMarker.exec(cleaned);
