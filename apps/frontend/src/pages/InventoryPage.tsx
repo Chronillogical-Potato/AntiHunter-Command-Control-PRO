@@ -338,11 +338,11 @@ export function InventoryPage() {
                             }
                             promoteMutation.mutate(device);
                           }}
-                          disabled={promoteMutation.isPending || !locationKnown || !canPromote}
+                          disabled={promoteMutation.isPending || !canPromote}
                           title={
-                            locationKnown
-                              ? 'Promote device to targets list'
-                              : 'Awaiting coordinate fix before promotion'
+                            !canPromote
+                              ? 'You need OPERATOR or ADMIN privileges to promote devices.'
+                              : 'Promote device to targets list'
                           }
                         >
                           {promoteMutation.isPending ? 'Promoting...' : 'Promote to Target'}

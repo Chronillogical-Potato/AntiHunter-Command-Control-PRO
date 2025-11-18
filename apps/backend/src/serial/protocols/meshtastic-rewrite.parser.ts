@@ -15,8 +15,12 @@ const GPS_LOST_REGEX = /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*GPS:\s*LOST/i;
 const NODE_HB_REGEX =
   /^\[NODE_HB\]\s*(?<id>[A-Za-z0-9_.:-]+)\s+Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 
-const TARGET_REGEX =
+const TARGET_REGEX_TYPE_FIRST =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*Target:\s*(?<type>\w+)\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)(?:\s+Name:(?<name>[^ ]+))?(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
+const TARGET_REGEX_MAC_FIRST =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*Target:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)\s+Type:(?<type>\w+)(?:\s+Name:(?<name>[^ ]+))?(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
+const TRI_TARGET_DATA_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*TARGET_DATA:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+Hits=(?<hits>\d+)\s+RSSI:(?<rssi>-?\d+)\s+Type:(?<type>\w+)\s+GPS=(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?)(?:\s+HDOP=(?<hdop>-?\d+(?:\.\d+)?))?/i;
 const DEVICE_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*DEVICE:(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(?<band>[A-Za-z])\s+(?<rssi>-?\d+)(?:\s+C(?<channel>\d+))?(?:\s+N:(?<name>.+))?/i;
 const DRONE_REGEX =
@@ -66,16 +70,19 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const msgIndex = sanitized.lastIndexOf('msg=');
     const hasMsgSegment = msgIndex >= 0;
     const isRouterEcho =
-      hasMsgSegment &&
-      /\[Router\]/i.test(sanitized) &&
-      /Received text msg/i.test(sanitized);
+      hasMsgSegment && /\[Router\]/i.test(sanitized) && /Received text msg/i.test(sanitized);
     const payloadRaw =
       hasMsgSegment && !isRouterEcho ? sanitized.slice(msgIndex + 4).trim() : sanitized;
-    const payload = this.stripTrailingHash(payloadRaw.replace(/^0m\s*/i, ''));
+    const normalizedPayloadRaw = payloadRaw
+      .replace(/\r?\n\s*Type:/g, ' Type:')
+      .replace(/\r?\n\s*RSSI:/g, ' RSSI:')
+      .replace(/\r?\n\s*GPS=/g, ' GPS=');
+    const payload = this.stripTrailingHash(normalizedPayloadRaw.replace(/^0m\s*/i, ''));
     const sourceId = this.extractSourceId(sanitized);
 
     const parsed =
       this.parseTarget(payload, sourceId, sanitized) ||
+      this.parseTriangulationTarget(payload, sourceId, sanitized) ||
       this.parseDevice(payload, sourceId, sanitized) ||
       this.parseDrone(payload, sourceId, sanitized) ||
       this.parseAnomaly(payload, sourceId, sanitized) ||
@@ -101,21 +108,39 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     nodeId: string | undefined,
     raw: string,
   ): SerialParseResult[] | null {
-    const m = TARGET_REGEX.exec(payload);
+    const m = TARGET_REGEX_TYPE_FIRST.exec(payload) ?? TARGET_REGEX_MAC_FIRST.exec(payload);
     if (!m?.groups) return null;
-    return [
-      {
-        kind: 'target-detected',
-        nodeId: nodeId ?? m.groups.id,
-        mac: m.groups.mac.toUpperCase(),
-        rssi: Number(m.groups.rssi),
-        type: m.groups.type,
-        name: m.groups.name,
-        lat: m.groups.lat ? Number(m.groups.lat) : undefined,
-        lon: m.groups.lon ? Number(m.groups.lon) : undefined,
-        raw,
+    const sourceNode = nodeId ?? m.groups.id;
+    const lat = m.groups.lat ? Number(m.groups.lat) : undefined;
+    const lon = m.groups.lon ? Number(m.groups.lon) : undefined;
+    const detected: SerialParseResult = {
+      kind: 'target-detected',
+      nodeId: sourceNode,
+      mac: m.groups.mac.toUpperCase(),
+      rssi: Number(m.groups.rssi),
+      type: m.groups.type,
+      name: m.groups.name,
+      lat,
+      lon,
+      raw,
+    };
+    const alert: SerialParseResult = {
+      kind: 'alert',
+      level: 'NOTICE',
+      category: 'inventory',
+      nodeId: sourceNode,
+      message: payload,
+      raw,
+      data: {
+        mac: detected.mac,
+        rssi: detected.rssi,
+        type: detected.type,
+        name: detected.name,
+        lat,
+        lon,
       },
-    ];
+    };
+    return [detected, alert];
   }
 
   private parseDevice(
@@ -135,6 +160,44 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
         channel: m.groups.channel ? Number(m.groups.channel) : undefined,
         name: m.groups.name,
         raw,
+      },
+    ];
+  }
+
+  private parseTriangulationTarget(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const match = TRI_TARGET_DATA_REGEX.exec(payload);
+    if (!match?.groups) {
+      return null;
+    }
+    const mac = match.groups.mac.toUpperCase();
+    const hits = Number(match.groups.hits);
+    const rssi = Number(match.groups.rssi);
+    const lat = Number(match.groups.lat);
+    const lon = Number(match.groups.lon);
+    const hdop = match.groups.hdop ? Number(match.groups.hdop) : undefined;
+    const type = match.groups.type;
+    const resolvedNodeId = nodeId ?? match.groups.id;
+    return [
+      {
+        kind: 'alert',
+        level: 'NOTICE',
+        category: 'triangulation',
+        nodeId: resolvedNodeId,
+        message: payload,
+        raw,
+        data: {
+          mac,
+          hits,
+          rssi,
+          type,
+          lat,
+          lon,
+          hdop,
+        },
       },
     ];
   }

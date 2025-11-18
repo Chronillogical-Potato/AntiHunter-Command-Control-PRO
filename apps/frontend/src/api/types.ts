@@ -477,6 +477,29 @@ export interface AuditEntry {
 
 export type UserRole = 'ADMIN' | 'OPERATOR' | 'ANALYST' | 'VIEWER';
 
+export interface SavedMapViewPreference {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  zoom: number;
+  createdAt?: number;
+}
+
+export interface MapViewSnapshotPreference {
+  id?: string;
+  name?: string;
+  lat: number;
+  lon: number;
+  zoom: number;
+  updatedAt?: number;
+}
+
+export interface MapStatePreference {
+  views?: SavedMapViewPreference[];
+  lastView?: MapViewSnapshotPreference | null;
+}
+
 export interface UserPreferences {
   theme: string;
   density: string;
@@ -485,6 +508,7 @@ export interface UserPreferences {
   timeFormat: '12h' | '24h';
   notifications?: Record<string, unknown> | null;
   alertColors?: UserAlertColors | null;
+  mapState?: MapStatePreference | null;
 }
 
 export interface UserAlertColors {

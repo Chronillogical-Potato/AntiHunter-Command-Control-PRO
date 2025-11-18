@@ -278,15 +278,20 @@ export class InventoryService {
       }
     }
 
-    if (lat === undefined || lon === undefined) {
-      throw new BadRequestException(
-        'Unable to promote device without a coordinate fix. Wait for the node to report GPS coordinates.',
-      );
-    }
-
     const existing = await this.prisma.target.findFirst({
       where: { mac: { equals: normalizedMac } },
     });
+
+    const droneDevice = this.isDroneDevice(device.type ?? existing?.deviceType ?? undefined);
+    if (lat === undefined || lon === undefined) {
+      if (droneDevice) {
+        throw new BadRequestException(
+          'Unable to promote device without a coordinate fix. Wait for the node to report GPS coordinates.',
+        );
+      }
+      lat = lat ?? 0;
+      lon = lon ?? 0;
+    }
 
     const name = options.name ?? device.vendor ?? normalizedMac;
     const resolvedSiteId = options.siteId ?? device.siteId ?? existing?.siteId ?? undefined;
@@ -364,6 +369,13 @@ export class InventoryService {
       return value;
     }
     return undefined;
+  }
+
+  private isDroneDevice(type: string | null | undefined): boolean {
+    if (!type) {
+      return false;
+    }
+    return type.trim().toLowerCase().includes('drone');
   }
 
   async clearAll(): Promise<{ deleted: number }> {

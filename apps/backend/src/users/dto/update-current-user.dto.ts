@@ -81,4 +81,8 @@ export class UpdateCurrentUserDto {
   @IsOptional()
   @Matches(HEX_COLOR_REGEX)
   alertColorCritical?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  mapState?: Record<string, unknown>;
 }

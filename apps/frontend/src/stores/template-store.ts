@@ -22,15 +22,6 @@ export const DEFAULT_TEMPLATES: CommandTemplate[] = [
     builtIn: true,
   },
   {
-    id: 'tmpl-status-node',
-    label: 'Status - NODE_22',
-    commandName: 'STATUS',
-    target: '@NODE_22',
-    params: [],
-    description: 'Check status for NODE_22 specifically.',
-    builtIn: true,
-  },
-  {
     id: 'tmpl-scan-wifi',
     label: 'WiFi Scan - 60s',
     commandName: 'SCAN_START',

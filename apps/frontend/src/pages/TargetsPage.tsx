@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, useMemo, useState, useRef, useEffect } from 'react';
 
 import { apiClient } from '../api/client';
 import type { CommandRequest, InventoryDevice, Target } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
 import { useTargetStore } from '../stores/target-store';
+import { useTrackingSessionStore } from '../stores/tracking-session-store';
 
 const DEFAULT_TRIANGULATION_DURATION = 300;
 const DEFAULT_SCAN_DURATION = 60;
@@ -27,6 +28,7 @@ interface TriangulatePayload {
 
 interface TrackPayload {
   target: Target;
+  duration?: number;
 }
 
 function normalizeNodeTarget(nodeId?: string | null): string | null {
@@ -66,6 +68,17 @@ export function TargetsPage() {
     setTracking: state.setTracking,
     reset: state.reset,
   }));
+  const startTrackingSession = useTrackingSessionStore((state) => state.startSession);
+  const stopTrackingSession = useTrackingSessionStore((state) => state.stopSession);
+  const trackingTimeouts = useRef<Record<string, number>>({});
+  useEffect(() => {
+    return () => {
+      Object.values(trackingTimeouts.current).forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      trackingTimeouts.current = {};
+    };
+  }, []);
   const queryClient = useQueryClient();
 
   const targetsQuery = useQuery({
@@ -108,8 +121,38 @@ export function TargetsPage() {
     },
   });
 
+  const clearAutoStop = (targetId: string) => {
+    const existing = trackingTimeouts.current[targetId];
+    if (existing) {
+      window.clearTimeout(existing);
+      delete trackingTimeouts.current[targetId];
+    }
+  };
+
+  const stopTrackingMutation = useMutation({
+    mutationFn: async ({ target: _target }: TrackPayload) => {
+      await sendCommand({
+        target: '@ALL',
+        name: 'STOP',
+        params: [],
+      });
+    },
+    onSuccess: (_result, variables) => {
+      setTracking(variables.target.id, false);
+      stopTrackingSession(variables.target.id);
+      clearAutoStop(variables.target.id);
+    },
+  });
+
+  const scheduleAutoStop = (target: Target, duration: number) => {
+    clearAutoStop(target.id);
+    trackingTimeouts.current[target.id] = window.setTimeout(() => {
+      stopTrackingMutation.mutate({ target });
+    }, duration * 1000);
+  };
+
   const trackMutation = useMutation({
-    mutationFn: async ({ target }: TrackPayload) => {
+    mutationFn: async ({ target, duration = DEFAULT_SCAN_DURATION }: TrackPayload) => {
       if (!target.mac) {
         throw new Error('Target MAC unknown');
       }
@@ -122,22 +165,48 @@ export function TargetsPage() {
       await sendCommand({
         target: '@ALL',
         name: 'SCAN_START',
-        params: ['2', String(DEFAULT_SCAN_DURATION), '1,6,11'],
+        params: ['2', String(duration), '1,6,11'],
       });
-      setTracking(target.id, true);
+    },
+    onSuccess: (_result, variables) => {
+      const duration = variables.duration ?? DEFAULT_SCAN_DURATION;
+      setTracking(variables.target.id, true);
+      if (variables.target.mac) {
+        startTrackingSession({
+          targetId: variables.target.id,
+          mac: variables.target.mac,
+          label: variables.target.name ?? variables.target.mac ?? variables.target.id,
+          duration,
+        });
+      }
+      scheduleAutoStop(variables.target, duration);
     },
   });
 
-  const stopTrackingMutation = useMutation({
-    mutationFn: async ({ target }: TrackPayload) => {
-      await sendCommand({
-        target: '@ALL',
-        name: 'STOP',
-        params: [],
-      });
-      setTracking(target.id, false);
-    },
-  });
+  const handleTrackRequest = (target: Target) => {
+    if (!target.mac) {
+      window.alert('Target MAC unknown.');
+      return;
+    }
+    const input = window.prompt(
+      'Enter tracking duration in seconds (10-600)',
+      String(DEFAULT_SCAN_DURATION),
+    );
+    if (input == null) {
+      return;
+    }
+    const parsed = Number(input);
+    if (!Number.isFinite(parsed)) {
+      window.alert('Invalid duration.');
+      return;
+    }
+    const duration = Math.max(10, Math.min(600, Math.round(parsed)));
+    trackMutation.mutate({ target, duration });
+  };
+
+  const handleStopTrackingRequest = (target: Target) => {
+    stopTrackingMutation.mutate({ target });
+  };
 
   const clearTargetsMutation = useMutation({
     mutationFn: async () => apiClient.delete('/targets/clear'),
@@ -206,6 +275,8 @@ export function TargetsPage() {
   const ariaSort = (key: TargetSortKey): 'none' | 'ascending' | 'descending' =>
     sortKey === key ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none';
 
+  const totalTargets = sortedTargets.length;
+
   return (
     <section className="panel">
       <header className="panel__header">
@@ -215,39 +286,44 @@ export function TargetsPage() {
             Promoted detections, triangulation, and tracking orchestration.
           </p>
         </div>
-        <div className="controls-row">
+        <div className="targets-header__actions">
+          <div className="targets-header__summary">
+            {totalTargets} target{totalTargets === 1 ? '' : 's'} promoted
+          </div>
           <input
             className="control-input"
             placeholder="Search MAC, vendor, or name"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-          <button type="button" className="control-chip" onClick={() => targetsQuery.refetch()}>
-            Refresh
-          </button>
-          <button
-            type="button"
-            className="control-chip control-chip--danger"
-            onClick={() => {
-              if (clearTargetsMutation.isPending) {
-                return;
-              }
-              if (!canClearTargets) {
-                window.alert('You need ADMIN privileges to clear all targets.');
-                return;
-              }
-              const confirmed = window.confirm(
-                'Clear all targets? This removes all promoted devices.',
-              );
-              if (!confirmed) {
-                return;
-              }
-              clearTargetsMutation.mutate();
-            }}
-            disabled={clearTargetsMutation.isPending || !canClearTargets}
-          >
-            {clearTargetsMutation.isPending ? 'Clearing...' : 'Clear Targets'}
-          </button>
+          <div className="targets-header__buttons">
+            <button type="button" className="control-chip" onClick={() => targetsQuery.refetch()}>
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="control-chip control-chip--danger"
+              onClick={() => {
+                if (clearTargetsMutation.isPending) {
+                  return;
+                }
+                if (!canClearTargets) {
+                  window.alert('You need ADMIN privileges to clear all targets.');
+                  return;
+                }
+                const confirmed = window.confirm(
+                  'Clear all targets? This removes all promoted devices.',
+                );
+                if (!confirmed) {
+                  return;
+                }
+                clearTargetsMutation.mutate();
+              }}
+              disabled={clearTargetsMutation.isPending || !canClearTargets}
+            >
+              {clearTargetsMutation.isPending ? 'Clearing...' : 'Clear Targets'}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -398,9 +474,9 @@ export function TargetsPage() {
                             return;
                           }
                           if (tracking) {
-                            stopTrackingMutation.mutate({ target });
+                            handleStopTrackingRequest(target);
                           } else {
-                            trackMutation.mutate({ target });
+                            handleTrackRequest(target);
                           }
                         }}
                         disabled={

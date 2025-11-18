@@ -39,6 +39,7 @@ interface PreferenceDto {
     alert: string | null;
     critical: string | null;
   };
+  mapState: Record<string, unknown> | null;
 }
 
 interface SiteAccessDto {
@@ -110,6 +111,7 @@ interface PreferenceUpdateData {
   alertColorNotice?: string | null;
   alertColorAlert?: string | null;
   alertColorCritical?: string | null;
+  mapState?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
 }
 
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -694,6 +696,8 @@ export class UsersService {
           alert: preferenceRecord?.alertColorAlert ?? null,
           critical: preferenceRecord?.alertColorCritical ?? null,
         },
+        mapState:
+          (preferenceRecord?.mapState as Record<string, unknown> | null | undefined) ?? null,
       },
       permissions:
         user.permissions && user.permissions.length > 0
@@ -785,6 +789,10 @@ export class UsersService {
     }
     if (dto.alertColorCritical !== undefined) {
       preferenceData.alertColorCritical = this.normalizeColorValue(dto.alertColorCritical ?? null);
+    }
+    if (dto.mapState !== undefined) {
+      preferenceData.mapState =
+        dto.mapState === null ? Prisma.JsonNull : (dto.mapState as Prisma.InputJsonValue);
     }
 
     return {

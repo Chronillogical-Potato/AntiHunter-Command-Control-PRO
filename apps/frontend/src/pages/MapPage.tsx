@@ -19,9 +19,13 @@ import { apiClient } from '../api/client';
 import type {
   AlarmLevel,
   AppSettings,
+  AuthUser,
   Drone,
   DroneStatus,
   GeofenceVertex,
+  MapStatePreference,
+  MapViewSnapshotPreference,
+  SavedMapViewPreference,
   SiteSummary,
   Target,
 } from '../api/types';
@@ -39,8 +43,11 @@ import { type SavedMapView, useMapViewsStore } from '../stores/map-views-store';
 import { canonicalNodeId, useNodeStore } from '../stores/node-store';
 import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
+import { useTrackingSessionStore } from '../stores/tracking-session-store';
+import type { TrackingEstimate } from '../stores/tracking-session-store';
 
 const GEOFENCE_HIGHLIGHT_MS = 10_000;
+const WORLD_VIEW_FALLBACK = { lat: 25, lon: 0, zoom: 3 };
 const DRONE_STATUS_OPTIONS: { value: DroneStatus; label: string }[] = [
   { value: 'UNKNOWN', label: 'Unknown' },
   { value: 'FRIENDLY', label: 'Friendly' },
@@ -57,6 +64,7 @@ export function MapPage() {
   }));
 
   const mapRef = useRef<LeafletMap | null>(null);
+  const initialViewAppliedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
   const { commentMap, trackingMap } = useTargetStore((state) => ({
@@ -75,14 +83,25 @@ export function MapPage() {
   const savedViews = useMapViewsStore((state) => state.views);
   const addView = useMapViewsStore((state) => state.addView);
   const removeView = useMapViewsStore((state) => state.removeView);
+  const setViews = useMapViewsStore((state) => state.setViews);
 
   const [newViewName, setNewViewName] = useState('');
   const [selectedSiteId, setSelectedSiteId] = useState<string>('');
 
   const authStatus = useAuthStore((state) => state.status);
   const currentUser = useAuthStore((state) => state.user);
+  const setAuthUser = useAuthStore((state) => state.setUser);
   const isAuthenticated = authStatus === 'authenticated';
   const canManageDrones = currentUser?.role === 'ADMIN' || currentUser?.role === 'OPERATOR';
+
+  useEffect(() => {
+    if (!currentUser) {
+      setViews([]);
+      return;
+    }
+    const normalized = normalizeSavedViewsFromPreference(currentUser.preferences?.mapState ?? null);
+    setViews(normalized);
+  }, [currentUser, setViews]);
 
   const appSettingsQuery = useQuery({
     queryKey: ['appSettings'],
@@ -111,6 +130,11 @@ export function MapPage() {
   const geofenceHighlights = useGeofenceStore((state) => state.highlighted);
   const pruneGeofenceHighlights = useGeofenceStore((state) => state.pruneHighlights);
   const setGeofenceHighlighted = useGeofenceStore((state) => state.setHighlighted);
+  const trackingOverlays = useTrackingSessionStore((state) =>
+    Object.values(state.sessions)
+      .map((session) => session.estimate)
+      .filter((estimate): estimate is TrackingEstimate => Boolean(estimate)),
+  );
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -273,6 +297,46 @@ export function MapPage() {
     }
   };
 
+  const persistMapState = useCallback(
+    async ({
+      views,
+      lastView,
+    }: {
+      views?: SavedMapView[];
+      lastView?: MapViewSnapshot | null;
+    } = {}) => {
+      if (!currentUser) {
+        return;
+      }
+      const nextViews = views ?? useMapViewsStore.getState().views;
+      const existingSnapshot = normalizeSnapshot(currentUser.preferences?.mapState?.lastView);
+      let snapshotToStore: MapViewSnapshot | null;
+      if (lastView === undefined) {
+        snapshotToStore = existingSnapshot ?? null;
+      } else {
+        snapshotToStore = lastView;
+      }
+      const mapStatePayload: Record<string, unknown> = {
+        views: nextViews.slice(0, 20).map(serializeViewForPreference),
+      };
+      if (snapshotToStore === null) {
+        mapStatePayload.lastView = null;
+      } else if (snapshotToStore) {
+        mapStatePayload.lastView = snapshotToStore;
+      }
+      try {
+        const response = await apiClient.put<AuthUser>('/users/me', {
+          mapState: mapStatePayload,
+        });
+        setAuthUser(response);
+      } catch (error) {
+        console.error('Failed to persist map view', error);
+        window.alert('Unable to save map view. Check your connection and try again.');
+      }
+    },
+    [currentUser, setAuthUser],
+  );
+
   const handleSaveView = () => {
     if (!mapReady || !mapRef.current) {
       return;
@@ -280,21 +344,40 @@ export function MapPage() {
     const center = mapRef.current.getCenter();
     const zoom = mapRef.current.getZoom();
     const trimmed = newViewName.trim();
-    addView({
+    const createdView = addView({
       name: trimmed.length > 0 ? trimmed : undefined,
       lat: center.lat,
       lon: center.lng,
       zoom,
     });
     setNewViewName('');
+    const snapshot = viewToSnapshot(createdView);
+    const latestViews = useMapViewsStore.getState().views;
+    void persistMapState({ views: latestViews, lastView: snapshot });
   };
 
-  const handleApplyView = useCallback((view: SavedMapView) => {
-    if (!mapRef.current) {
-      return;
-    }
-    mapRef.current.flyTo([view.lat, view.lon], view.zoom, { duration: 1.1 });
-  }, []);
+  const handleApplyView = useCallback(
+    (view: SavedMapView) => {
+      if (!mapRef.current) {
+        return;
+      }
+      mapRef.current.flyTo([view.lat, view.lon], view.zoom, { duration: 1.1 });
+      void persistMapState({ lastView: viewToSnapshot(view) });
+    },
+    [persistMapState],
+  );
+
+  const handleRemoveView = useCallback(
+    (view: SavedMapView) => {
+      removeView(view.id);
+      const updatedViews = useMapViewsStore.getState().views;
+      const currentSnapshot = normalizeSnapshot(currentUser?.preferences?.mapState?.lastView);
+      const nextLastView =
+        currentSnapshot && currentSnapshot.id && currentSnapshot.id === view.id ? null : undefined;
+      void persistMapState({ views: updatedViews, lastView: nextLastView });
+    },
+    [currentUser?.preferences?.mapState?.lastView, persistMapState, removeView],
+  );
 
   useEffect(() => {
     if (!fitEnabled || !mapReady) {
@@ -321,6 +404,29 @@ export function MapPage() {
     }
     consumeTarget();
   }, [pendingTarget, consumeTarget, setGeofenceHighlighted, mapReady]);
+
+  useEffect(() => {
+    initialViewAppliedRef.current = false;
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) {
+      return;
+    }
+    if (initialViewAppliedRef.current) {
+      return;
+    }
+    const preferredView = normalizeSnapshot(currentUser?.preferences?.mapState?.lastView);
+    if (preferredView) {
+      mapRef.current.setView([preferredView.lat, preferredView.lon], preferredView.zoom);
+    } else {
+      mapRef.current.setView(
+        [WORLD_VIEW_FALLBACK.lat, WORLD_VIEW_FALLBACK.lon],
+        WORLD_VIEW_FALLBACK.zoom,
+      );
+    }
+    initialViewAppliedRef.current = true;
+  }, [mapReady, currentUser?.preferences?.mapState?.lastView]);
 
   const geofenceHighlightCount = useMemo(
     () => Object.keys(geofenceHighlights).length,
@@ -580,6 +686,7 @@ export function MapPage() {
             followEnabled={followEnabled}
             showCoverage={coverageEnabled}
             mapStyle={mapStyle}
+            trackingOverlays={trackingOverlays}
             onMapStyleChange={setMapStyle}
             geofences={geofences}
             geofenceHighlights={geofenceHighlights}
@@ -634,7 +741,7 @@ export function MapPage() {
                     <button
                       type="button"
                       className="control-chip control-chip--danger"
-                      onClick={() => removeView(view.id)}
+                      onClick={() => handleRemoveView(view)}
                       aria-label={`Remove ${view.name}`}
                     >
                       <MdClose />
@@ -745,4 +852,106 @@ function calculatePolygonCentroid(points: GeofenceVertex[]): GeofenceVertex {
     lat: sumLat / points.length,
     lon: sumLon / points.length,
   };
+}
+
+type MapViewSnapshot = {
+  id?: string;
+  name?: string;
+  lat: number;
+  lon: number;
+  zoom: number;
+  updatedAt?: number;
+};
+
+function normalizeSavedViewsFromPreference(mapState: MapStatePreference | null): SavedMapView[] {
+  if (!mapState?.views || !Array.isArray(mapState.views)) {
+    return [];
+  }
+  return mapState.views
+    .map((view, index) => {
+      if (!view) {
+        return null;
+      }
+      const lat = toFiniteNumber(view.lat);
+      const lon = toFiniteNumber(view.lon);
+      const zoom = toFiniteNumber(view.zoom);
+      if (lat == null || lon == null || zoom == null) {
+        return null;
+      }
+      const id =
+        typeof view.id === 'string' && view.id.trim().length > 0
+          ? view.id
+          : `view_${index}_${Date.now()}`;
+      const name =
+        typeof view.name === 'string' && view.name.trim().length > 0
+          ? view.name.trim()
+          : `View ${index + 1}`;
+      const createdAt =
+        typeof view.createdAt === 'number' && Number.isFinite(view.createdAt)
+          ? view.createdAt
+          : Date.now();
+      return { id, name, lat, lon, zoom, createdAt };
+    })
+    .filter((value): value is SavedMapView => value !== null);
+}
+
+function serializeViewForPreference(view: SavedMapView): SavedMapViewPreference {
+  return {
+    id: view.id,
+    name: view.name,
+    lat: Number(view.lat),
+    lon: Number(view.lon),
+    zoom: Number(view.zoom),
+    createdAt: view.createdAt,
+  };
+}
+
+function normalizeSnapshot(snapshot?: MapViewSnapshotPreference | null): MapViewSnapshot | null {
+  if (!snapshot) {
+    return null;
+  }
+  const lat = toFiniteNumber(snapshot.lat);
+  const lon = toFiniteNumber(snapshot.lon);
+  const zoom = toFiniteNumber(snapshot.zoom);
+  if (lat == null || lon == null || zoom == null) {
+    return null;
+  }
+  return {
+    id: typeof snapshot.id === 'string' && snapshot.id.trim().length > 0 ? snapshot.id : undefined,
+    name:
+      typeof snapshot.name === 'string' && snapshot.name.trim().length > 0
+        ? snapshot.name.trim()
+        : undefined,
+    lat,
+    lon,
+    zoom,
+    updatedAt:
+      typeof snapshot.updatedAt === 'number' && Number.isFinite(snapshot.updatedAt)
+        ? snapshot.updatedAt
+        : undefined,
+  };
+}
+
+function viewToSnapshot(view: SavedMapView): MapViewSnapshot {
+  return {
+    id: view.id,
+    name: view.name,
+    lat: view.lat,
+    lon: view.lon,
+    zoom: view.zoom,
+    updatedAt: Date.now(),
+  };
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
 }

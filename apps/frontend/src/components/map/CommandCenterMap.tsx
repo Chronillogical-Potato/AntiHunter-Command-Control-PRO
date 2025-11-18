@@ -24,6 +24,7 @@ import type { AlertColorConfig } from '../../constants/alert-colors';
 import type { DroneMarker, DroneTrailPoint } from '../../stores/drone-store';
 import { canonicalNodeId, type NodeHistoryPoint, type NodeSummary } from '../../stores/node-store';
 import type { TargetMarker } from '../../stores/target-store';
+import type { TrackingEstimate } from '../../stores/tracking-session-store';
 
 const FALLBACK_CENTER: LatLngExpression = [0, 0];
 const FALLBACK_ZOOM = 2;
@@ -323,6 +324,13 @@ function withAlpha(color: string, alpha: number): string {
   return color;
 }
 
+const trackingEstimateIcon = divIcon({
+  className: 'tracking-marker',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  html: '<span class="tracking-marker__pulse"></span>',
+});
+
 interface CommandCenterMapProps {
   nodes: NodeSummary[];
   trails: Record<string, NodeHistoryPoint[]>;
@@ -350,6 +358,7 @@ interface CommandCenterMapProps {
   onReady?: (map: LeafletMap) => void;
   onMapStyleChange?: (style: string) => void;
   onDroneSelect?: (droneId: string) => void;
+  trackingOverlays?: TrackingEstimate[];
 }
 
 export function CommandCenterMap({
@@ -373,6 +382,7 @@ export function CommandCenterMap({
   onReady,
   onMapStyleChange,
   onDroneSelect,
+  trackingOverlays = [],
 }: CommandCenterMapProps) {
   const mapRef = useRef<LeafletMap | null>(null);
   const baseLayerKeys = useMemo(() => BASE_LAYERS.map((layer) => layer.key), []);
@@ -653,6 +663,22 @@ export function CommandCenterMap({
             </Fragment>
           );
         })}
+      {trackingOverlays.map((overlay) => (
+        <Fragment key={`tracking-${overlay.targetId}`}>
+          <Marker position={[overlay.lat, overlay.lon]} icon={trackingEstimateIcon}>
+            <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
+              <div className="tracking-tooltip">
+                <strong>{overlay.label ?? overlay.mac}</strong>
+                <div>Tracking estimate</div>
+                <div>
+                  Position: {overlay.lat.toFixed(5)}, {overlay.lon.toFixed(5)}
+                </div>
+                <div>Confidence: {(overlay.confidence * 100).toFixed(0)}%</div>
+              </div>
+            </Tooltip>
+          </Marker>
+        </Fragment>
+      ))}
 
       {drones.map((drone) => {
         const dronePosition: LatLngExpression = [drone.lat, drone.lon];

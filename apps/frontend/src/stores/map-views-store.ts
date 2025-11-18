@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 export interface SavedMapView {
   id: string;
@@ -12,7 +11,8 @@ export interface SavedMapView {
 
 interface MapViewStore {
   views: SavedMapView[];
-  addView: (view: { name?: string; lat: number; lon: number; zoom: number }) => void;
+  setViews: (views: SavedMapView[]) => void;
+  addView: (view: { name?: string; lat: number; lon: number; zoom: number }) => SavedMapView;
   removeView: (id: string) => void;
 }
 
@@ -23,32 +23,28 @@ function generateId(): string {
   return `view_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export const useMapViewsStore = create<MapViewStore>()(
-  persist(
-    (set) => ({
-      views: [],
-      addView: ({ name, lat, lon, zoom }) =>
-        set((state) => {
-          const viewName =
-            (name ?? '').trim() || `View ${state.views.length > 0 ? state.views.length + 1 : 1}`;
-          const nextView: SavedMapView = {
-            id: generateId(),
-            name: viewName,
-            lat,
-            lon,
-            zoom,
-            createdAt: Date.now(),
-          };
-          return { views: [nextView, ...state.views].slice(0, 20) };
-        }),
-      removeView: (id) =>
-        set((state) => ({
-          views: state.views.filter((view) => view.id !== id),
-        })),
-    }),
-    {
-      name: 'map-views',
-      version: 1,
-    },
-  ),
-);
+export const useMapViewsStore = create<MapViewStore>((set) => ({
+  views: [],
+  setViews: (views) => set({ views }),
+  addView: ({ name, lat, lon, zoom }) => {
+    let createdView: SavedMapView | null = null;
+    set((state) => {
+      const viewName =
+        (name ?? '').trim() || `View ${state.views.length > 0 ? state.views.length + 1 : 1}`;
+      createdView = {
+        id: generateId(),
+        name: viewName,
+        lat,
+        lon,
+        zoom,
+        createdAt: Date.now(),
+      };
+      return { views: [createdView, ...state.views].slice(0, 20) };
+    });
+    return createdView!;
+  },
+  removeView: (id) =>
+    set((state) => ({
+      views: state.views.filter((view) => view.id !== id),
+    })),
+}));

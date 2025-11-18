@@ -21,6 +21,14 @@ interface PreferencesResponse {
   timeFormat: string;
   themePreset: string;
   notifications: Record<string, unknown> | null;
+  alertColors: {
+    idle: string | null;
+    info: string | null;
+    notice: string | null;
+    alert: string | null;
+    critical: string | null;
+  };
+  mapState: Record<string, unknown> | null;
 }
 
 interface SiteAccessResponse {
@@ -614,6 +622,15 @@ export class AuthService {
         language: user.preferences?.language ?? 'en',
         timeFormat: user.preferences?.timeFormat ?? '24h',
         notifications: (user.preferences?.notifications as Record<string, unknown> | null) ?? null,
+        alertColors: {
+          idle: user.preferences?.alertColorIdle ?? null,
+          info: user.preferences?.alertColorInfo ?? null,
+          notice: user.preferences?.alertColorNotice ?? null,
+          alert: user.preferences?.alertColorAlert ?? null,
+          critical: user.preferences?.alertColorCritical ?? null,
+        },
+        mapState:
+          (user.preferences?.mapState as Record<string, unknown> | null | undefined) ?? null,
       },
       permissions:
         user.permissions && user.permissions.length > 0

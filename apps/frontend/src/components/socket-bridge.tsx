@@ -17,6 +17,7 @@ import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
 import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
+import { useTrackingSessionStore } from '../stores/tracking-session-store';
 
 const NOTIFICATION_CATEGORIES = new Set(['gps', 'status', 'console']);
 const DEVICE_LINE_REGEX =
@@ -303,6 +304,10 @@ export function SocketBridge() {
       }
 
       const alertDetails = extractAlertDetails(payload);
+      const trackingSample = extractTrackingSample(payload);
+      if (trackingSample) {
+        useTrackingSessionStore.getState().recordSample(trackingSample);
+      }
       if (alertDetails && alertDetails.nodeId) {
         const level = (alertDetails.level ?? 'NOTICE').toUpperCase() as AlarmLevel;
         triggerAlert({
@@ -883,4 +888,60 @@ function alarmLevelToTerminal(level: AlarmLevel | undefined): TerminalLevel {
     default:
       return 'info';
   }
+}
+
+function extractTrackingSample(payload: unknown): {
+  mac: string;
+  nodeId: string;
+  rssi: number;
+  band?: string;
+  timestamp: number;
+} | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const base = payload as {
+    type?: string;
+    category?: string;
+    nodeId?: string;
+    data?: Record<string, unknown>;
+    timestamp?: string;
+  };
+  if (base.type !== 'event.alert') {
+    return null;
+  }
+  const category = typeof base.category === 'string' ? base.category.toLowerCase() : '';
+  if (category !== 'triangulation') {
+    return null;
+  }
+  if (typeof base.nodeId !== 'string') {
+    return null;
+  }
+  const data = base.data ?? {};
+  const macValue = (data as Record<string, unknown>).mac;
+  const rssiValue = (data as Record<string, unknown>).rssi;
+  if (typeof macValue !== 'string') {
+    return null;
+  }
+  const rssi =
+    typeof rssiValue === 'number'
+      ? rssiValue
+      : typeof rssiValue === 'string'
+        ? Number(rssiValue)
+        : NaN;
+  if (!Number.isFinite(rssi)) {
+    return null;
+  }
+  const timestamp = typeof base.timestamp === 'string' ? Date.parse(base.timestamp) : Date.now();
+  const band =
+    typeof (data as Record<string, unknown>).type === 'string'
+      ? ((data as Record<string, unknown>).type as string)
+      : undefined;
+  return {
+    mac: macValue,
+    nodeId: base.nodeId,
+    rssi,
+    band,
+    timestamp,
+  };
 }
