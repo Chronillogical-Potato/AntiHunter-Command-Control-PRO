@@ -1,4 +1,4 @@
-﻿import type { ComponentType } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import {
   MdMap,
   MdSensors,
@@ -12,8 +12,21 @@ import {
   MdPerson,
   MdHub,
   MdExtension,
+  MdNotificationsActive,
 } from 'react-icons/md';
 import { NavLink } from 'react-router-dom';
+
+import {
+  ALERTS_ADDON_EVENT,
+  ALERTS_ADDON_STORAGE_KEY,
+  SCHEDULER_ADDON_EVENT,
+  SCHEDULER_ADDON_STORAGE_KEY,
+  STRATEGY_ADDON_EVENT,
+  STRATEGY_ADDON_STORAGE_KEY,
+  getAlertsAddonEnabled,
+  getSchedulerAddonEnabled,
+  getStrategyAddonEnabled,
+} from '../constants/addons';
 
 interface NavItem {
   to: string;
@@ -26,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/map', label: 'Map', icon: MdMap },
   { to: '/console', label: 'Console', icon: MdTerminal },
   { to: '/inventory', label: 'Inventory', icon: MdWifiTethering },
+  { to: '/alerts', label: 'Alerts', icon: MdNotificationsActive },
   { to: '/targets', label: 'Targets', icon: MdMyLocation },
   { to: '/geofences', label: 'Geofences', icon: MdOutlineAreaChart },
   { to: '/nodes', label: 'Nodes', icon: MdSensors },
@@ -38,9 +52,60 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export function SidebarNav() {
+  const [strategyEnabled, setStrategyEnabled] = useState<boolean>(() => getStrategyAddonEnabled());
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => getAlertsAddonEnabled());
+  const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(() =>
+    getSchedulerAddonEnabled(),
+  );
+
+  useEffect(() => {
+    const syncStrategy = () => setStrategyEnabled(getStrategyAddonEnabled());
+    const syncAlerts = () => setAlertsEnabled(getAlertsAddonEnabled());
+    const syncScheduler = () => setSchedulerEnabled(getSchedulerAddonEnabled());
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === STRATEGY_ADDON_STORAGE_KEY) {
+        syncStrategy();
+      }
+      if (event.key === ALERTS_ADDON_STORAGE_KEY) {
+        syncAlerts();
+      }
+      if (event.key === SCHEDULER_ADDON_STORAGE_KEY) {
+        syncScheduler();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(STRATEGY_ADDON_EVENT, syncStrategy);
+    window.addEventListener(ALERTS_ADDON_EVENT, syncAlerts);
+    window.addEventListener(SCHEDULER_ADDON_EVENT, syncScheduler);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener(STRATEGY_ADDON_EVENT, syncStrategy);
+      window.removeEventListener(ALERTS_ADDON_EVENT, syncAlerts);
+      window.removeEventListener(SCHEDULER_ADDON_EVENT, syncScheduler);
+    };
+  }, []);
+
+  const navItems = useMemo(() => {
+    return NAV_ITEMS.filter((item) => {
+      if (item.to === '/strategy') {
+        return strategyEnabled;
+      }
+      if (item.to === '/alerts') {
+        return alertsEnabled;
+      }
+      if (item.to === '/scheduler') {
+        return schedulerEnabled;
+      }
+      return true;
+    });
+  }, [strategyEnabled, alertsEnabled, schedulerEnabled]);
+
   return (
     <aside className="sidebar">
-      {NAV_ITEMS.map(({ to, label, icon: Icon, hideOnMobile }) => (
+      {navItems.map(({ to, label, icon: Icon, hideOnMobile }) => (
         <NavLink
           key={to}
           to={to}

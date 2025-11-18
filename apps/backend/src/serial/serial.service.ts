@@ -1247,6 +1247,13 @@ function sanitizeLine(value: string): string {
     cleaned = markerMatch[1];
   }
 
+  // Remove router hop prefixes like "0c58:" that precede the real node id.
+  const routerHop = /^\s*[0-9a-f]{4}:\s+(.+)$/i;
+  const hopMatch = routerHop.exec(cleaned);
+  if (hopMatch?.[1]) {
+    cleaned = hopMatch[1];
+  }
+
   // Remove ANSI color/control codes.
   cleaned = stripAnsi(cleaned);
 

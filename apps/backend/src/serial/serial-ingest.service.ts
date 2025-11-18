@@ -5,12 +5,14 @@ import { Subscription } from 'rxjs';
 
 import { SerialService } from './serial.service';
 import { SerialAlertEvent, SerialParseResult, SerialTargetDetected } from './serial.types';
+import { AlertRulesEngineService } from '../alert-rules/alert-rules-engine.service';
 import { CommandsService } from '../commands/commands.service';
 import { DronesService } from '../drones/drones.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { NodesService } from '../nodes/nodes.service';
 import { TakService } from '../tak/tak.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
+import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
 
 const QUEUE_CLEARED_MESSAGE = 'Serial ingest queue cleared';
@@ -92,8 +94,10 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly commandsService: CommandsService,
     private readonly trackingService: TargetTrackingService,
     private readonly gateway: CommandCenterGateway,
+    private readonly webhookDispatcher: WebhookDispatcherService,
     private readonly takService: TakService,
     private readonly dronesService: DronesService,
+    private readonly alertRulesEngine: AlertRulesEngineService,
     configService: ConfigService,
   ) {
     const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
@@ -187,6 +191,15 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             siteId,
             timestamp: event.timestamp ?? new Date(),
           });
+          void this.webhookDispatcher
+            .dispatchNodeTelemetry(event, siteId)
+            .catch((error) =>
+              this.logger.warn(
+                `Failed to dispatch node telemetry webhook: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+            );
         }
         break;
       case 'target-detected':
@@ -238,6 +251,17 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
               }
             : undefined;
 
+          await this.alertRulesEngine.evaluateTargetDetection({
+            event,
+            siteId,
+            nodeName: nodeSnapshot?.name ?? event.nodeId ?? undefined,
+            nodeLat: nodeSnapshot?.lat,
+            nodeLon: nodeSnapshot?.lon,
+            lat: latForRecord ?? undefined,
+            lon: lonForRecord ?? undefined,
+            timestamp: detectionTime,
+          });
+
           this.gateway.emitEvent({
             type: 'event.target',
             timestamp: detectionTime.toISOString(),
@@ -265,6 +289,19 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             message: `Device ${event.mac} discovered (RSSI ${event.rssi ?? 'n/a'})`,
             siteId,
           });
+          void this.webhookDispatcher
+            .dispatchTargetDetection(event, {
+              siteId,
+              timestamp: detectionTime,
+              tracking: trackingPayload,
+            })
+            .catch((error) =>
+              this.logger.warn(
+                `Failed to dispatch target webhook: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+            );
         }
         break;
       case 'alert':
@@ -329,6 +366,20 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             siteId,
             timestamp,
           });
+          void this.webhookDispatcher
+            .dispatchNodeAlert(event, {
+              siteId,
+              lat,
+              lon,
+              message: sanitizedMessage ?? event.message ?? '',
+            })
+            .catch((error) =>
+              this.logger.warn(
+                `Failed to dispatch node alert webhook: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+            );
         }
         break;
       case 'command-ack':
@@ -348,6 +399,15 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           siteId,
           timestamp: new Date(),
         });
+        void this.webhookDispatcher
+          .dispatchCommandAck(event, siteId)
+          .catch((error) =>
+            this.logger.warn(
+              `Failed to dispatch command ACK webhook: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ),
+          );
         break;
       case 'command-result':
         await this.commandsService.handleResult(event);
@@ -366,6 +426,15 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           result: event.payload,
           timestamp: new Date(),
         });
+        void this.webhookDispatcher
+          .dispatchCommandResult(event, siteId)
+          .catch((error) =>
+            this.logger.warn(
+              `Failed to dispatch command result webhook: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ),
+          );
         break;
       case 'drone-telemetry':
         {
@@ -441,11 +510,33 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             status: droneSnapshot.status,
             faa: droneSnapshot.faa ?? null,
           });
+          void this.webhookDispatcher
+            .dispatchDroneTelemetry(event, {
+              siteId: resolvedSiteId,
+              nodeId: reportingNodeId ?? event.nodeId ?? null,
+              timestamp,
+            })
+            .catch((error) =>
+              this.logger.warn(
+                `Failed to dispatch drone telemetry webhook: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+            );
         }
         break;
       case 'raw':
       default:
         this.gateway.emitEvent({ type: 'raw', raw: event.raw });
+        void this.webhookDispatcher
+          .dispatchRawFrame(event, siteId)
+          .catch((error) =>
+            this.logger.warn(
+              `Failed to dispatch raw serial webhook: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ),
+          );
         break;
     }
   }

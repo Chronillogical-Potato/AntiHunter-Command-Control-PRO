@@ -16,6 +16,8 @@ import {
 } from './constants/alert-colors';
 import { resolveThemePalette, type ThemePalette, type ThemePresetId } from './constants/theme';
 import { AddonPage } from './pages/AddonPage';
+import { AlertsEventLogPage } from './pages/AlertsEventLogPage';
+import { AlertsPage } from './pages/AlertsPage';
 import { CommandConsolePage } from './pages/CommandConsolePage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ExportsPage } from './pages/ExportsPage';
@@ -122,6 +124,9 @@ export default function App() {
               <Route path="/targets" element={<TargetsPage />} />
               <Route path="/strategy" element={<StrategyAdvisorPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
+              <Route path="/alerts" element={<Navigate to="/alerts/custom" replace />} />
+              <Route path="/alerts/custom" element={<AlertsPage />} />
+              <Route path="/alerts/events" element={<AlertsEventLogPage />} />
               <Route path="/console" element={<CommandConsolePage />} />
               <Route path="/terminal" element={<TerminalEventsPage />} />
               <Route path="/addon" element={<AddonPage />} />

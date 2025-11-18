@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 
+import { WebhooksSection } from './WebhooksSection';
 import { apiClient } from '../api/client';
 import type {
   AlarmConfig,
@@ -213,6 +214,7 @@ type ConfigSectionId =
   | 'map'
   | 'oui'
   | 'firewall'
+  | 'webhooks'
   | 'faa';
 
 const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: string }> = [
@@ -230,6 +232,7 @@ const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: 
   { id: 'tak', label: 'TAK Bridge', description: 'Cursor-on-Target relay' },
   { id: 'mqtt', label: 'MQTT Federation', description: 'Remote site replication' },
   { id: 'detection', label: 'Detection Defaults', description: 'Scan and alert presets' },
+  { id: 'webhooks', label: 'Webhooks', description: 'External alert destinations' },
   { id: 'map', label: 'Map & Coverage', description: 'Map viewport and coverage rings' },
   { id: 'oui', label: 'OUI Resolver', description: 'Vendor cache imports & exports' },
   { id: 'faa', label: 'FAA Registry', description: 'Aircraft registry enrichment' },
@@ -1541,32 +1544,6 @@ export function ConfigPage() {
   return renderScaffold(
     <>
       <header className="panel__header panel__header--stacked">
-        <div className="controls-row config-header-controls">
-          <button
-            type="button"
-            className="control-chip"
-            onClick={handleSerialToggle}
-            disabled={serialToggleDisabled}
-          >
-            {serialToggleLabel}
-          </button>
-          <div className="config-header-controls__pair">
-            <button
-              type="button"
-              className="control-chip"
-              onClick={handleTestSerial}
-              disabled={serialTestMutation.isPending}
-            >
-              {serialTestMutation.isPending ? 'Testing...' : 'Test Serial'}
-            </button>
-            <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
-              Import JSON
-            </button>
-          </div>
-          <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
-            Export JSON
-          </button>
-        </div>
         {configNotice ? (
           <div
             className={
@@ -2606,6 +2583,32 @@ export function ConfigPage() {
               ) : null}
             </header>
             <div className="config-card__body">
+              <div className="controls-row config-header-controls serial-card-controls">
+                <button
+                  type="button"
+                  className="control-chip"
+                  onClick={handleSerialToggle}
+                  disabled={serialToggleDisabled}
+                >
+                  {serialToggleLabel}
+                </button>
+                <div className="config-header-controls__pair">
+                  <button
+                    type="button"
+                    className="control-chip"
+                    onClick={handleTestSerial}
+                    disabled={serialTestMutation.isPending}
+                  >
+                    {serialTestMutation.isPending ? 'Testing...' : 'Test Serial'}
+                  </button>
+                  <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
+                    Import JSON
+                  </button>
+                </div>
+                <button type="button" className="control-chip" onClick={handleJsonFeatureNotice}>
+                  Export JSON
+                </button>
+              </div>
               <label className="checkbox-label">
                 <input
                   type="checkbox"
@@ -3652,6 +3655,14 @@ export function ConfigPage() {
                 Permit operators to schedule indefinite tasks (requires explicit STOP to end).
               </span>
             </div>
+          </section>
+
+          <section className={cardClass('webhooks')}>
+            <header>
+              <h2>Webhooks</h2>
+              <p>Manage outbound alert endpoints and review recent deliveries.</p>
+            </header>
+            <WebhooksSection />
           </section>
 
           <section className={cardClass('map')}>

@@ -374,25 +374,28 @@ export function SchedulerPage() {
           <div className="scheduler-dialog__body">
             <h3>{editingEvent ? 'Edit Scheduled Command' : 'Schedule Command'}</h3>
             <div className="scheduler-dialog__form">
-              <label>
-                Date
+              <label className="form-field">
+                <span>Date</span>
                 <input
+                  className="control-input"
                   type="date"
                   value={formDate}
                   onChange={(event) => setFormDate(event.target.value)}
                 />
               </label>
-              <label>
-                Time
+              <label className="form-field">
+                <span>Time</span>
                 <input
+                  className="control-input"
                   type="time"
                   value={formTime}
                   onChange={(event) => setFormTime(event.target.value)}
                 />
               </label>
-              <label>
-                Command Template
+              <label className="form-field">
+                <span>Command Template</span>
                 <select
+                  className="control-input"
                   value={formTemplateId}
                   onChange={(event) => setFormTemplateId(event.target.value)}
                 >
@@ -406,9 +409,13 @@ export function SchedulerPage() {
                   ))}
                 </select>
               </label>
-              <label>
-                Note (optional)
-                <input value={formNote} onChange={(event) => setFormNote(event.target.value)} />
+              <label className="form-field">
+                <span>Note (optional)</span>
+                <input
+                  className="control-input"
+                  value={formNote}
+                  onChange={(event) => setFormNote(event.target.value)}
+                />
               </label>
               {formError ? <span className="form-error">{formError}</span> : null}
             </div>

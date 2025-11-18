@@ -55,6 +55,118 @@ export interface AlarmSettingsResponse {
   sounds: Record<AlarmSoundKey, string | null>;
 }
 
+export type AlertRuleScope = 'PERSONAL' | 'GLOBAL';
+export type AlertRuleMatchMode = 'ANY' | 'ALL';
+
+export interface AlertRuleMapStyle {
+  showOnMap?: boolean;
+  color?: string | null;
+  icon?: string | null;
+  blink?: boolean;
+  label?: string | null;
+}
+
+export interface AlertRuleOwnerSummary {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  description?: string | null;
+  scope: AlertRuleScope;
+  severity: AlarmLevel;
+  matchMode: AlertRuleMatchMode;
+  isActive: boolean;
+  ouiPrefixes: string[];
+  ssids: string[];
+  channels: number[];
+  macAddresses: string[];
+  inventoryMacs: string[];
+  minRssi?: number | null;
+  maxRssi?: number | null;
+  notifyVisual: boolean;
+  notifyAudible: boolean;
+  notifyEmail: boolean;
+  emailRecipients: string[];
+  messageTemplate?: string | null;
+  mapStyle?: AlertRuleMapStyle | null;
+  webhookIds: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastTriggeredAt?: string | null;
+  owner?: AlertRuleOwnerSummary | null;
+}
+
+export interface AlertRulePayload {
+  name: string;
+  description?: string;
+  scope?: AlertRuleScope;
+  severity?: AlarmLevel;
+  matchMode?: AlertRuleMatchMode;
+  isActive?: boolean;
+  ouiPrefixes?: string[];
+  ssids?: string[];
+  channels?: number[];
+  macAddresses?: string[];
+  inventoryMacs?: string[];
+  minRssi?: number | null;
+  maxRssi?: number | null;
+  notifyVisual?: boolean;
+  notifyAudible?: boolean;
+  notifyEmail?: boolean;
+  emailRecipients?: string[];
+  messageTemplate?: string | null;
+  mapStyle?: AlertRuleMapStyle | null;
+  webhookIds?: string[];
+}
+
+export interface AlertRuleEvent {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  severity: AlarmLevel;
+  message?: string | null;
+  nodeId?: string | null;
+  mac?: string | null;
+  ssid?: string | null;
+  channel?: number | null;
+  rssi?: number | null;
+  matchedCriteria?: string[];
+  payload?: Record<string, unknown> | null;
+  triggeredAt: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  statusCode?: number | null;
+  success: boolean;
+  errorMessage?: string | null;
+  triggeredAt: string;
+  completedAt?: string | null;
+}
+
+export interface Webhook {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  verifyTls: boolean;
+  subscribedEvents: string[];
+  shared: boolean;
+  clientCertificate?: string | null;
+  clientKey?: string | null;
+  caBundle?: string | null;
+  lastSuccessAt?: string | null;
+  lastFailureAt?: string | null;
+  owner?: AlertRuleOwnerSummary | null;
+  linkedRuleIds: string[];
+  recentDeliveries: WebhookDelivery[];
+}
+
 export type TargetStatus = 'ACTIVE' | 'TRIANGULATING' | 'RESOLVED';
 
 export interface Target {

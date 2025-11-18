@@ -626,6 +626,25 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
       };
     }
 
+    if (base.type === 'alert.rule') {
+      const severity =
+        typeof base.level === 'string'
+          ? base.level.toUpperCase()
+          : typeof (base as { severity?: string }).severity === 'string'
+            ? ((base as { severity?: string }).severity as string).toUpperCase()
+            : 'ALERT';
+      const message =
+        base.message ??
+        `Alert rule ${typeof (base as { ruleName?: string }).ruleName === 'string' ? (base as { ruleName?: string }).ruleName : (base.ruleId ?? '')} triggered`;
+      return {
+        message,
+        level: alarmLevelToTerminal(severity as AlarmLevel),
+        source: 'alert',
+        timestamp: typeof base.timestamp === 'string' ? base.timestamp : undefined,
+        siteId: base.siteId,
+      };
+    }
+
     if (base.type === 'node.telemetry') {
       const telemetry = payload as {
         nodeId?: string;
@@ -726,12 +745,19 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
 
 function extractAlarmLevel(payload: unknown): AlarmLevel | null {
   if (payload && typeof payload === 'object' && 'type' in payload) {
-    const base = payload as { type?: string; level?: string };
+    const base = payload as { type?: string; level?: string; severity?: string };
     if (base.type === 'event.alert' && base.level) {
       return base.level.toUpperCase() as AlarmLevel;
     }
     if (base.type === 'event.target') {
       return 'NOTICE';
+    }
+    if (base.type === 'alert.rule') {
+      const level = base.level ?? base.severity;
+      if (level) {
+        return level.toUpperCase() as AlarmLevel;
+      }
+      return 'ALERT';
     }
   }
   return null;
@@ -843,17 +869,18 @@ function extractAlertDetails(payload: unknown): AlertDetails | null {
     siteId?: string;
   };
 
-  if (base.type !== 'event.alert') {
+  if (base.type !== 'event.alert' && base.type !== 'alert.rule') {
     return null;
   }
 
   const data = base.data ?? {};
+  const severityValue = base.level ?? (base as { severity?: string }).severity;
 
   return {
     nodeId: base.nodeId,
     siteId: base.siteId,
-    category: base.category,
-    level: base.level ? (base.level.toUpperCase() as AlarmLevel) : undefined,
+    category: base.type === 'alert.rule' ? 'alert-rule' : base.category,
+    level: severityValue ? (severityValue.toUpperCase() as AlarmLevel) : undefined,
     message: base.message,
     lat: toNumber(base.lat ?? (data as Record<string, unknown>).lat),
     lon: toNumber(base.lon ?? (data as Record<string, unknown>).lon),

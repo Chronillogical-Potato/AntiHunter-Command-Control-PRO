@@ -373,29 +373,38 @@ export function CommandConsolePage() {
     () => targetOptions.find((option) => option.value === form.target),
     [targetOptions, form.target],
   );
+  const selectedTargetValue = selectedTargetOption?.value ?? null;
+  const selectedTargetSiteToken = selectedTargetOption
+    ? Object.prototype.hasOwnProperty.call(selectedTargetOption, 'siteId')
+      ? (selectedTargetOption.siteId ?? '__NULL_SITE__')
+      : '__MISSING_SITE__'
+    : '__NO_TARGET__';
 
   useEffect(() => {
-    if (!selectedTargetOption) {
-      setForm((prev) =>
-        prev.target === '@ALL'
-          ? prev
-          : {
-              ...prev,
-              target: '@ALL',
-            },
-      );
+    if (selectedTargetValue) {
+      return;
     }
-  }, [selectedTargetOption]);
+    setForm((prev) =>
+      prev.target === '@ALL'
+        ? prev
+        : {
+            ...prev,
+            target: '@ALL',
+          },
+    );
+  }, [selectedTargetValue]);
 
   useEffect(() => {
     if (
-      selectedTargetOption &&
-      Object.prototype.hasOwnProperty.call(selectedTargetOption, 'siteId')
+      selectedTargetSiteToken === '__NO_TARGET__' ||
+      selectedTargetSiteToken === '__MISSING_SITE__'
     ) {
-      const nextSiteId = selectedTargetOption.siteId ?? undefined;
-      setForm((prev) => (prev.siteId === nextSiteId ? prev : { ...prev, siteId: nextSiteId }));
+      return;
     }
-  }, [selectedTargetOption]);
+    const nextSiteId =
+      selectedTargetSiteToken === '__NULL_SITE__' ? undefined : (selectedTargetSiteToken as string);
+    setForm((prev) => (prev.siteId === nextSiteId ? prev : { ...prev, siteId: nextSiteId }));
+  }, [selectedTargetSiteToken]);
 
   const paramsForCommand = useMemo(
     () => buildCommandParams(selectedCommand, form),

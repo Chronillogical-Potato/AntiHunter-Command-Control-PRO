@@ -45,6 +45,8 @@ model User {
   siteAccess          UserSiteAccess[]
   invitationsSent     UserInvitation[]     @relation("UserInvitations")
   passwordResetTokens PasswordResetToken[]
+  alertRules          AlertRule[]
+  webhooks            Webhook[]
 }
 
 enum Role {
@@ -54,11 +56,33 @@ enum Role {
   VIEWER
 }
 
+enum AlertRuleScope {
+  PERSONAL
+  GLOBAL
+}
+
+enum AlertRuleMatchMode {
+  ANY
+  ALL
+}
+
 enum AlarmLevel {
   INFO
   NOTICE
   ALERT
   CRITICAL
+}
+
+enum WebhookEventType {
+  ALERT_TRIGGERED
+  INVENTORY_UPDATED
+  NODE_TELEMETRY
+  TARGET_DETECTED
+  NODE_ALERT
+  DRONE_TELEMETRY
+  COMMAND_ACK
+  COMMAND_RESULT
+  SERIAL_RAW
 }
 
 enum FirewallPolicy {
@@ -275,6 +299,123 @@ model InventoryDevice {
   @@index([siteId])
   @@index([lastSeen])
   @@index([lastNodeId])
+}
+
+model AlertRule {
+  id              String             @id @default(cuid())
+  name            String
+  description     String?
+  scope           AlertRuleScope     @default(PERSONAL)
+  ownerId         String?
+  severity        AlarmLevel         @default(ALERT)
+  matchMode       AlertRuleMatchMode @default(ANY)
+  isActive        Boolean            @default(true)
+  ouiPrefixes     String[]           @default([])
+  ssids           String[]           @default([])
+  channels        Int[]              @default([])
+  macAddresses    String[]           @default([])
+  inventoryMacs   String[]           @default([])
+  minRssi         Int?
+  maxRssi         Int?
+  notifyVisual    Boolean            @default(true)
+  notifyAudible   Boolean            @default(true)
+  notifyEmail     Boolean            @default(false)
+  emailRecipients String[]           @default([])
+  messageTemplate String?
+  mapStyle        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  lastTriggeredAt DateTime?
+
+  owner      User?              @relation(fields: [ownerId], references: [id])
+  events     AlertEvent[]
+  webhooks   AlertRuleWebhook[]
+  deliveries WebhookDelivery[]
+
+  @@index([ownerId])
+  @@index([scope])
+  @@index([isActive])
+  @@index([lastTriggeredAt])
+}
+
+model AlertEvent {
+  id          String    @id @default(cuid())
+  ruleId      String
+  nodeId      String?
+  mac         String?
+  ssid        String?
+  channel     Int?
+  rssi        Int?
+  message     String?
+  payload     Json?
+  triggeredAt DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  rule AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@index([triggeredAt])
+}
+
+model Webhook {
+  id                String             @id @default(cuid())
+  name              String
+  url               String
+  secret            String?
+  verifyTls         Boolean            @default(true)
+  clientCert        String?
+  clientKey         String?
+  caBundle          String?
+  subscribedEvents  WebhookEventType[] @default([])
+  enabled           Boolean            @default(true)
+  ownerId           String?
+  lastSuccessAt     DateTime?
+  lastFailureAt     DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  owner      User?               @relation(fields: [ownerId], references: [id])
+  rules      AlertRuleWebhook[]
+  deliveries WebhookDelivery[]
+
+  @@index([ownerId])
+  @@index([enabled])
+}
+
+model AlertRuleWebhook {
+  id        String   @id @default(cuid())
+  ruleId    String
+  webhookId String
+  createdAt DateTime @default(now())
+
+  rule    AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  webhook Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, webhookId])
+  @@index([webhookId])
+}
+
+model WebhookDelivery {
+  id              String   @id @default(cuid())
+  webhookId       String
+  ruleId          String?
+  statusCode      Int?
+  success         Boolean  @default(false)
+  attempt         Int      @default(1)
+  requestPayload  Json?
+  responseBody    String?
+  errorMessage    String?
+  triggeredAt     DateTime @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+
+  webhook Webhook   @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  rule    AlertRule? @relation(fields: [ruleId], references: [id])
+
+  @@index([webhookId])
+  @@index([ruleId])
+  @@index([success])
+  @@index([createdAt])
 }
 
 model CommandTemplate {

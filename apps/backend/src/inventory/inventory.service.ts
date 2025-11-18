@@ -7,6 +7,7 @@ import { OuiService } from '../oui/oui.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SerialTargetDetected } from '../serial/serial.types';
 import { normalizeMac } from '../utils/mac';
+import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 
 interface ListOptions {
   search?: string;
@@ -50,6 +51,7 @@ export class InventoryService {
     private readonly prisma: PrismaService,
     private readonly ouiService: OuiService,
     private readonly dronesService: DronesService,
+    private readonly webhookDispatcher: WebhookDispatcherService,
   ) {}
 
   getUpdatesStream(): Observable<InventoryDevice> {
@@ -154,6 +156,15 @@ export class InventoryService {
     })) as InventoryDevice;
 
     this.updates$.next(record);
+    void this.webhookDispatcher
+      .dispatchInventoryUpdate(record)
+      .catch((error) =>
+        this.logger.warn(
+          `Failed to dispatch inventory webhook for ${record.mac}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
   }
 
   async syncRemoteInventory(payload: InventoryUpsertPayload): Promise<void> {
@@ -213,6 +224,15 @@ export class InventoryService {
     })) as InventoryDevice;
 
     this.updates$.next(record);
+    void this.webhookDispatcher
+      .dispatchInventoryUpdate(record)
+      .catch((error) =>
+        this.logger.warn(
+          `Failed to dispatch inventory webhook for ${record.mac}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
   }
 
   async listDevices(options: ListOptions = {}) {

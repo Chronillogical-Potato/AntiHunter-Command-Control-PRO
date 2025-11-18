@@ -27,6 +27,7 @@ export function InventoryPage() {
   const [autoRefreshMs, setAutoRefreshMs] = useState(2000);
   const [sortKey, setSortKey] = useState<InventorySortKey>('lastSeen');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [isAnalyticsOpen, setAnalyticsOpen] = useState(false);
   const queryClient = useQueryClient();
   const role = useAuthStore((state) => state.user?.role ?? null);
   const gotoOnMap = useMapCommandStore((state) => state.goto);
@@ -166,6 +167,14 @@ export function InventoryPage() {
           </button>
           <button type="button" className="control-chip">
             Export CSV
+          </button>
+          <button
+            type="button"
+            className="control-chip"
+            onClick={() => setAnalyticsOpen(true)}
+            disabled={!data || data.length === 0}
+          >
+            Inventory analytics
           </button>
           <button
             type="button"
@@ -356,8 +365,314 @@ export function InventoryPage() {
           </table>
         </div>
       )}
+      {isAnalyticsOpen && (
+        <InventoryAnalyticsDialog devices={data ?? []} onClose={() => setAnalyticsOpen(false)} />
+      )}
     </section>
   );
+}
+
+interface InventoryAnalyticsDialogProps {
+  devices: InventoryDevice[];
+  onClose: () => void;
+}
+
+function InventoryAnalyticsDialog({ devices, onClose }: InventoryAnalyticsDialogProps) {
+  const analytics = useMemo(() => computeInventoryAnalytics(devices), [devices]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div className="inventory-analytics" role="dialog" aria-modal="true">
+      <button
+        type="button"
+        className="inventory-analytics__backdrop"
+        aria-label="Dismiss analytics overlay"
+        onClick={onClose}
+      />
+      <div
+        className="inventory-analytics__modal"
+        role="document"
+        aria-labelledby="inventory-analytics-title"
+      >
+        <header className="inventory-analytics__header">
+          <div>
+            <h2 id="inventory-analytics-title">Inventory analytics</h2>
+            <p>
+              Aggregated insights generated from {analytics.totalDevices} device
+              {analytics.totalDevices === 1 ? '' : 's'} currently in inventory.
+            </p>
+          </div>
+          <button type="button" className="control-chip control-chip--ghost" onClick={onClose}>
+            Close
+          </button>
+        </header>
+
+        <div className="inventory-analytics__metrics">
+          <article>
+            <strong>Total devices</strong>
+            <span>{analytics.totalDevices}</span>
+          </article>
+          <article>
+            <strong>Vendors seen</strong>
+            <span>{analytics.uniqueVendors}</span>
+          </article>
+          <article>
+            <strong>Unique SSIDs</strong>
+            <span>{analytics.uniqueSsids}</span>
+          </article>
+          <article>
+            <strong>Last sighting</strong>
+            <span>{analytics.lastSeenLabel ?? 'N/A'}</span>
+          </article>
+          <article>
+            <strong>Avg RSSI</strong>
+            <span>{analytics.averageRssi ?? 'N/A'}</span>
+          </article>
+        </div>
+
+        <section>
+          <header className="inventory-analytics__section-header">
+            <h3>Channel utilization</h3>
+            <p>Distribution is based on the proportion of tracked devices per channel.</p>
+          </header>
+          {analytics.channelStats.length === 0 ? (
+            <p className="empty-state">No channel data available.</p>
+          ) : (
+            <ul className="inventory-analytics__channels">
+              {analytics.channelStats.map((stat) => (
+                <li key={stat.channel}>
+                  <div className="inventory-analytics__channel-meta">
+                    <span>{stat.channel}</span>
+                    <span>
+                      {stat.count} ({stat.percent.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className="inventory-analytics__progress" aria-hidden="true">
+                    <span style={{ width: `${stat.percent}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <div className="inventory-analytics__grid">
+          <section>
+            <header className="inventory-analytics__section-header">
+              <h3>Top vendors</h3>
+            </header>
+            {analytics.topVendors.length === 0 ? (
+              <p className="empty-state">No vendor data.</p>
+            ) : (
+              <ul className="inventory-analytics__list">
+                {analytics.topVendors.map((entry) => (
+                  <li key={entry.label}>
+                    <span>{entry.label}</span>
+                    <strong>{entry.value}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <header className="inventory-analytics__section-header">
+              <h3>Top SSIDs</h3>
+            </header>
+            {analytics.topSsids.length === 0 ? (
+              <p className="empty-state">No SSID data.</p>
+            ) : (
+              <ul className="inventory-analytics__list">
+                {analytics.topSsids.map((entry) => (
+                  <li key={entry.label}>
+                    <span>{entry.label}</span>
+                    <strong>{entry.value}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <header className="inventory-analytics__section-header">
+              <h3>Nodes detecting the most devices</h3>
+            </header>
+            {analytics.topNodes.length === 0 ? (
+              <p className="empty-state">No node data.</p>
+            ) : (
+              <ul className="inventory-analytics__list">
+                {analytics.topNodes.map((entry) => (
+                  <li key={entry.label}>
+                    <span>{entry.label}</span>
+                    <strong>{entry.value}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <section>
+          <header className="inventory-analytics__section-header">
+            <h3>Signal quality snapshot</h3>
+          </header>
+          <ul className="inventory-analytics__list inventory-analytics__list--inline">
+            {analytics.rssiBuckets.map((bucket) => (
+              <li key={bucket.label}>
+                <span>{bucket.label}</span>
+                <strong>
+                  {bucket.value} ({bucket.percent.toFixed(1)}%)
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section>
+          <header className="inventory-analytics__section-header">
+            <h3>Device types</h3>
+          </header>
+          {analytics.deviceTypes.length === 0 ? (
+            <p className="empty-state">No classification available.</p>
+          ) : (
+            <ul className="inventory-analytics__list inventory-analytics__list--inline">
+              {analytics.deviceTypes.map((entry) => (
+                <li key={entry.label}>
+                  <span>{entry.label}</span>
+                  <strong>
+                    {entry.value} ({entry.percent?.toFixed(1)}%)
+                  </strong>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+interface AnalyticsStat {
+  label: string;
+  value: number;
+  percent?: number;
+}
+
+function computeInventoryAnalytics(devices: InventoryDevice[]) {
+  const totalDevices = devices.length;
+  const vendorCounts = new Map<string, number>();
+  const ssidCounts = new Map<string, number>();
+  const channelCounts = new Map<string, number>();
+  const nodeCounts = new Map<string, number>();
+  const typeCounts = new Map<string, number>();
+  const rssis: number[] = [];
+  const bucketCounts = {
+    strong: 0,
+    medium: 0,
+    weak: 0,
+  };
+  let latestSeen: number | null = null;
+
+  devices.forEach((device) => {
+    const vendor = device.vendor?.trim() || 'Unknown vendor';
+    vendorCounts.set(vendor, (vendorCounts.get(vendor) ?? 0) + 1);
+
+    const ssid = device.ssid?.trim() || 'Hidden/Unknown';
+    ssidCounts.set(ssid, (ssidCounts.get(ssid) ?? 0) + 1);
+
+    const channel =
+      typeof device.channel === 'number' && Number.isFinite(device.channel)
+        ? `Channel ${device.channel}`
+        : 'Unknown';
+    channelCounts.set(channel, (channelCounts.get(channel) ?? 0) + 1);
+
+    if (device.lastNodeId) {
+      nodeCounts.set(device.lastNodeId, (nodeCounts.get(device.lastNodeId) ?? 0) + 1);
+    }
+
+    const typeLabel = device.type?.trim() || 'Unclassified';
+    typeCounts.set(typeLabel, (typeCounts.get(typeLabel) ?? 0) + 1);
+
+    if (typeof device.avgRSSI === 'number' && Number.isFinite(device.avgRSSI)) {
+      rssis.push(device.avgRSSI);
+      if (device.avgRSSI >= -50) {
+        bucketCounts.strong += 1;
+      } else if (device.avgRSSI >= -70) {
+        bucketCounts.medium += 1;
+      } else {
+        bucketCounts.weak += 1;
+      }
+    }
+
+    if (device.lastSeen) {
+      const parsed = Date.parse(device.lastSeen);
+      if (!Number.isNaN(parsed)) {
+        latestSeen = latestSeen == null ? parsed : Math.max(latestSeen, parsed);
+      }
+    }
+  });
+
+  const buildTopList = (source: Map<string, number>, limit = 5): AnalyticsStat[] =>
+    Array.from(source.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([label, value]) => ({ label, value }));
+
+  const channelStats = Array.from(channelCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([channel, count]) => ({
+      channel,
+      count,
+      percent: totalDevices ? (count / totalDevices) * 100 : 0,
+    }))
+    .slice(0, 8);
+
+  const averageRssi =
+    rssis.length > 0
+      ? `${(rssis.reduce((sum, value) => sum + value, 0) / rssis.length).toFixed(1)} dBm`
+      : null;
+
+  const rssiBuckets: AnalyticsStat[] = [
+    { key: 'strong', label: 'Strong (≥ -50 dBm)' },
+    { key: 'medium', label: 'Moderate (-70 to -51 dBm)' },
+    { key: 'weak', label: 'Weak (≤ -71 dBm)' },
+  ].map(({ key, label }) => {
+    const value = bucketCounts[key as keyof typeof bucketCounts];
+    return {
+      label,
+      value,
+      percent: totalDevices ? (value / totalDevices) * 100 : 0,
+    };
+  });
+
+  const deviceTypes: AnalyticsStat[] = Array.from(typeCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, value]) => ({
+      label,
+      value,
+      percent: totalDevices ? (value / totalDevices) * 100 : 0,
+    }));
+
+  return {
+    totalDevices,
+    uniqueVendors: vendorCounts.size,
+    uniqueSsids: ssidCounts.size,
+    lastSeenLabel: latestSeen ? new Date(latestSeen).toLocaleString() : null,
+    averageRssi,
+    channelStats,
+    topVendors: buildTopList(vendorCounts),
+    topSsids: buildTopList(ssidCounts),
+    topNodes: buildTopList(nodeCounts),
+    rssiBuckets,
+    deviceTypes,
+  };
 }
 
 function compareInventoryDevices(a: InventoryDevice, b: InventoryDevice, key: InventorySortKey) {

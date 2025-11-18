@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AlertRulesModule } from '../alert-rules/alert-rules.module';
 import { CommandsModule } from '../commands/commands.module';
 import { DronesModule } from '../drones/drones.module';
 import { InventoryModule } from '../inventory/inventory.module';
@@ -9,6 +10,7 @@ import { SerialModule } from '../serial/serial.module';
 import { TakModule } from '../tak/tak.module';
 import { TargetsModule } from '../targets/targets.module';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
+import { WebhooksModule } from '../webhooks/webhooks.module';
 import { WsModule } from '../ws/ws.module';
 
 @Module({
@@ -21,6 +23,8 @@ import { WsModule } from '../ws/ws.module';
     TargetsModule,
     TakModule,
     DronesModule,
+    AlertRulesModule,
+    WebhooksModule,
   ],
   providers: [SerialIngestService, TargetTrackingService],
 })

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 
 import { AlarmsModule } from './alarms/alarms.module';
+import { AlertRulesModule } from './alert-rules/alert-rules.module';
 import { AppConfigModule } from './app-config/app-config.module';
 import { AuthModule } from './auth/auth.module';
 import { CommandsModule } from './commands/commands.module';
@@ -28,6 +29,7 @@ import { SitesModule } from './sites/sites.module';
 import { TakModule } from './tak/tak.module';
 import { TargetsModule } from './targets/targets.module';
 import { UsersModule } from './users/users.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 import { WsModule } from './ws/ws.module';
 
 @Module({
@@ -82,6 +84,7 @@ import { WsModule } from './ws/ws.module';
     TakModule,
     TargetsModule,
     GeofencesModule,
+    AlertRulesModule,
     FirewallModule,
     FaaModule,
     OuiModule,
@@ -89,6 +92,7 @@ import { WsModule } from './ws/ws.module';
     MailModule,
     UsersModule,
     ExportsModule,
+    WebhooksModule,
   ],
 })
 export class AppModule implements NestModule {

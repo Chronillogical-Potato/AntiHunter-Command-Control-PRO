@@ -457,7 +457,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const lat = m.groups.lat ? Number(m.groups.lat) : undefined;
     const lon = m.groups.lon ? Number(m.groups.lon) : undefined;
     const hdop = m.groups.hdop ? Number(m.groups.hdop) : undefined;
-    const msgBase = hdop != null ? payload.replace(/HDOP[^\s]*/i, `HDOP=${hdop}`) : payload;
+    const msgBase = payload;
     const msg = this.stripTrailingHash(msgBase);
     const normalizedLat = Number.isFinite(lat) ? (lat as number) : Number.NaN;
     const normalizedLon = Number.isFinite(lon) ? (lon as number) : Number.NaN;
