@@ -31,6 +31,7 @@ type TerminalEntryInput = {
 
 const defaultCommand = MESH_COMMANDS[0];
 const TRIANGULATE_DEBOUNCE_MS = 3000;
+const NODE_ONLINE_THRESHOLD_MS = 11 * 60 * 1000; // match Nodes page status
 
 const createTemplateId = () => {
   if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
@@ -53,6 +54,7 @@ type NodeCommandOption = {
   label: string;
   siteId?: string | null;
   siteLabel?: string | null;
+  online?: boolean;
 };
 
 function normalizeTarget(value: string | undefined): string {
@@ -180,6 +182,18 @@ function deriveNodeTarget(node: NodeSummary): NodeTargetMeta {
     siteCountry: node.siteCountry ?? null,
     siteCity: node.siteCity ?? null,
   };
+}
+
+function isNodeOnline(node: NodeSummary): boolean {
+  const lastTimestamp = node.lastSeen ?? node.ts;
+  if (!lastTimestamp) {
+    return false;
+  }
+  const parsed = Date.parse(lastTimestamp);
+  if (Number.isNaN(parsed)) {
+    return false;
+  }
+  return Date.now() - parsed <= NODE_ONLINE_THRESHOLD_MS;
 }
 
 export function CommandConsolePage() {
@@ -363,13 +377,18 @@ export function CommandConsolePage() {
         locationTokens.length > 0
           ? locationTokens.join(' / ')
           : (target.siteName ?? target.siteId ?? null);
+      const online = isNodeOnline(node);
+      const statusLabel = online ? 'online' : 'offline';
       const dedupKey = `${target.value}::${target.siteId ?? 'local'}::${siteLabel ?? ''}`;
       if (!dedup.has(dedupKey)) {
+        const baseLabel = siteLabel ? `${target.baseLabel} (${siteLabel})` : target.baseLabel;
+        const decoratedLabel = `${baseLabel} · ${statusLabel}`;
         dedup.set(dedupKey, {
           value: target.value,
-          label: siteLabel ? `${target.baseLabel} (${siteLabel})` : target.baseLabel,
+          label: decoratedLabel,
           siteId: target.siteId ?? null,
           siteLabel: siteLabel ?? undefined,
+          online,
         });
       }
     });
