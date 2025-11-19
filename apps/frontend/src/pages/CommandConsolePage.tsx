@@ -30,6 +30,7 @@ type TerminalEntryInput = {
 };
 
 const defaultCommand = MESH_COMMANDS[0];
+const TRIANGULATE_DEBOUNCE_MS = 3000;
 
 const createTemplateId = () => {
   if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
@@ -218,6 +219,17 @@ export function CommandConsolePage() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [templateError, setTemplateError] = useState<string | null>(null);
+  const [triangulateLocked, setTriangulateLocked] = useState(false);
+  const triangulateCooldownRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (triangulateCooldownRef.current) {
+        window.clearTimeout(triangulateCooldownRef.current);
+        triangulateCooldownRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!sites || sites.length === 0) {
@@ -238,6 +250,17 @@ export function CommandConsolePage() {
     left: number;
     width: number;
   } | null>(null);
+
+  const beginTriangulateCooldown = useCallback(() => {
+    setTriangulateLocked(true);
+    if (triangulateCooldownRef.current) {
+      window.clearTimeout(triangulateCooldownRef.current);
+    }
+    triangulateCooldownRef.current = window.setTimeout(() => {
+      setTriangulateLocked(false);
+      triangulateCooldownRef.current = null;
+    }, TRIANGULATE_DEBOUNCE_MS);
+  }, []);
 
   const updateMenuPosition = useCallback(() => {
     if (typeof window === 'undefined' || !selectorRef.current) {
@@ -355,6 +378,7 @@ export function CommandConsolePage() {
 
   const singleNodeCommands = useMemo(() => new Set(['CONFIG_NODEID', 'TRIANGULATE_START']), []);
   const isSingleNodeCommand = singleNodeCommands.has(selectedCommand.name);
+  const isTriangulateCommand = selectedCommand.name === 'TRIANGULATE_START';
 
   const targetOptions = useMemo<NodeCommandOption[]>(() => {
     const options: NodeCommandOption[] = isSingleNodeCommand
@@ -494,6 +518,14 @@ export function CommandConsolePage() {
       return;
     }
 
+    if (isTriangulateCommand && triangulateLocked) {
+      setTargetError('Triangulation command recently sent. Please wait a moment.');
+      return;
+    }
+
+    if (isTriangulateCommand) {
+      beginTriangulateCooldown();
+    }
     mutation.mutate({
       target: trimmedTarget,
       name: selectedCommand.name,
@@ -841,7 +873,9 @@ export function CommandConsolePage() {
           <button
             type="submit"
             className="submit-button"
-            disabled={mutation.isPending || !canSendCommands}
+            disabled={
+              mutation.isPending || !canSendCommands || (isTriangulateCommand && triangulateLocked)
+            }
           >
             {mutation.isPending ? 'Sending...' : 'Send Command'}
           </button>

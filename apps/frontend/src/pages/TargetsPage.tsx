@@ -9,6 +9,7 @@ import { useTrackingSessionStore } from '../stores/tracking-session-store';
 
 const DEFAULT_TRIANGULATION_DURATION = 300;
 const DEFAULT_SCAN_DURATION = 60;
+const TRIANGULATE_DEBOUNCE_MS = 3000;
 
 type TargetSortKey =
   | 'name'
@@ -71,12 +72,18 @@ export function TargetsPage() {
   const startTrackingSession = useTrackingSessionStore((state) => state.startSession);
   const stopTrackingSession = useTrackingSessionStore((state) => state.stopSession);
   const trackingTimeouts = useRef<Record<string, number>>({});
+  const [triangulateLocked, setTriangulateLocked] = useState(false);
+  const triangulateCooldownRef = useRef<number | null>(null);
   useEffect(() => {
     return () => {
       Object.values(trackingTimeouts.current).forEach((timeoutId) => {
         window.clearTimeout(timeoutId);
       });
       trackingTimeouts.current = {};
+      if (triangulateCooldownRef.current) {
+        window.clearTimeout(triangulateCooldownRef.current);
+        triangulateCooldownRef.current = null;
+      }
     };
   }, []);
   const queryClient = useQueryClient();
@@ -151,6 +158,17 @@ export function TargetsPage() {
     }, duration * 1000);
   };
 
+  const beginTriangulateCooldown = () => {
+    setTriangulateLocked(true);
+    if (triangulateCooldownRef.current) {
+      window.clearTimeout(triangulateCooldownRef.current);
+    }
+    triangulateCooldownRef.current = window.setTimeout(() => {
+      setTriangulateLocked(false);
+      triangulateCooldownRef.current = null;
+    }, TRIANGULATE_DEBOUNCE_MS);
+  };
+
   const trackMutation = useMutation({
     mutationFn: async ({ target, duration = DEFAULT_SCAN_DURATION }: TrackPayload) => {
       if (!target.mac) {
@@ -188,6 +206,10 @@ export function TargetsPage() {
       window.alert('Target MAC unknown.');
       return;
     }
+    if (triangulateLocked || triangulateMutation.isPending) {
+      window.alert('Triangulation commands are cooling down. Please wait a moment.');
+      return;
+    }
     const normalizedNode = normalizeNodeTarget(target.firstNodeId);
     if (!normalizedNode || normalizedNode === '@ALL') {
       window.alert('First detecting node unknown.');
@@ -207,6 +229,7 @@ export function TargetsPage() {
     }
     const duration = Math.max(30, Math.min(1800, Math.round(parsed)));
     triangulateMutation.mutate({ target, duration });
+    beginTriangulateCooldown();
   };
 
   const handleTrackRequest = (target: Target) => {
@@ -508,6 +531,7 @@ export function TargetsPage() {
                         }}
                         disabled={
                           triangulateMutation.isPending ||
+                          triangulateLocked ||
                           !target.mac ||
                           !target.firstNodeId ||
                           !normalizeNodeTarget(target.firstNodeId) ||
