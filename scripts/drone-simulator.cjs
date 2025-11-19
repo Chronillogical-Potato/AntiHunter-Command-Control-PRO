@@ -29,6 +29,16 @@ parser.add_argument('--operator-radius', {
   default: 450,
   help: 'Radius (m) around the node where operators are positioned',
 });
+parser.add_argument('--operator-distance', {
+  type: 'float',
+  default: 5000,
+  help: 'Distance (m) between the operator and the node/target',
+});
+parser.add_argument('--drone-count', {
+  type: 'int',
+  default: 1,
+  help: 'Number of drones to simulate',
+});
 parser.add_argument('--iterations', { type: 'int', default: 60 });
 parser.add_argument('--interval', '--message-interval', {
   dest: 'legacy_interval',
@@ -114,21 +124,38 @@ async function main() {
       args.token,
     ),
   );
+  const droneCount = Math.max(1, args.drone_count ?? 1);
   console.log(
-    `Seeded node bootstrap telemetry. Simulating drone ${singleDroneId} with intervals ${intervalRange.min}-${intervalRange.max}ms and speeds ${speedRange.min}-${speedRange.max} km/h`,
+    `Seeded node bootstrap telemetry. Simulating ${droneCount} drone(s) with intervals ${intervalRange.min}-${intervalRange.max}ms and speeds ${speedRange.min}-${speedRange.max} km/h`,
   );
 
-  const drone = createDroneState({
-    id: singleDroneId,
-    mac: singleMac,
-    args,
-    speedRange,
-    intervalRange,
-  });
+  const drones = [];
+  for (let i = 0; i < droneCount; i += 1) {
+    const resolvedId = resolveDroneId(i, args, droneIds, singleDroneId);
+    const resolvedMac = resolveDroneMac(i, args, macs, singleMac);
+    drones.push(
+      createDroneState({
+        id: resolvedId,
+        mac: resolvedMac,
+        args,
+        speedRange,
+        intervalRange,
+      }),
+    );
+  }
 
-  await runDrone(drone, args, endpoint, nodeId, scheduleSend);
+  await Promise.all(
+    drones.map((drone, index) =>
+      (async () => {
+        if (index > 0) {
+          await delay(index * 250);
+        }
+        await runDrone(drone, args, endpoint, nodeId, scheduleSend);
+      })(),
+    ),
+  );
 
-  console.log('Simulation complete. Drone finished its approach.');
+  console.log('Simulation complete. All drones finished their approach.');
 }
 
 function buildNodeBootstrapLines(prefix, nodeId, lat, lon) {
@@ -168,13 +195,32 @@ function offsetFromNode(lat, lon, distanceMeters, headingDeg) {
   return { lat: lat + deltaLat, lon: lon + deltaLon };
 }
 
-function moveToward(lat, lon, targetLat, targetLon, stepMeters) {
-  const { distance, dLat, dLon } = distanceMeters(lat, lon, targetLat, targetLon);
-  if (distance <= stepMeters) {
-    return { lat: targetLat, lon: targetLon, reachedTarget: true };
-  }
-  const ratio = stepMeters / distance;
-  return { lat: lat + dLat * ratio, lon: lon + dLon * ratio, reachedTarget: false };
+function bearingBetween(lat1, lon1, lat2, lon2) {
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const θ = Math.atan2(y, x);
+  return normalizeHeading((θ * 180) / Math.PI);
+}
+
+function advanceDroneTowardTarget({ drone, targetLat, targetLon, metersPerStep }) {
+  const desiredHeading = bearingBetween(drone.lat, drone.lon, targetLat, targetLon);
+  const headingDiff = normalizeHeading(desiredHeading - drone.heading);
+  const diffMagnitude = headingDiff > 180 ? 360 - headingDiff : headingDiff;
+  const turnDirection = headingDiff > 180 ? -1 : 1;
+  const baseTurn = Math.min(diffMagnitude, drone.turnAggression) * turnDirection;
+  const jitter = randomBetween(-drone.turnJitter, drone.turnJitter);
+  drone.heading = normalizeHeading(drone.heading + baseTurn + jitter);
+  const headingForStep = drone.heading + randomBetween(-drone.curveRadius, drone.curveRadius);
+  const nextPoint = offsetFromNode(drone.lat, drone.lon, metersPerStep, headingForStep);
+  const { distance } = distanceMeters(nextPoint.lat, nextPoint.lon, targetLat, targetLon);
+  return {
+    lat: nextPoint.lat,
+    lon: nextPoint.lon,
+    reachedTarget: distance <= Math.max(20, metersPerStep * 0.75),
+  };
 }
 
 function distanceMeters(lat1, lon1, lat2, lon2) {
@@ -244,10 +290,54 @@ function generateMac(index) {
   return segments.map((segment) => segment.toUpperCase()).join(':');
 }
 
+function resolveDroneId(index, args, list, fallback) {
+  if (args.drone_id) {
+    return args.drone_count > 1 ? `${args.drone_id}-${index + 1}` : args.drone_id;
+  }
+  if (list[index]) {
+    return list[index];
+  }
+  if (index === 0 && fallback) {
+    return fallback;
+  }
+  return `SIMDRONE-${String(index + 1).padStart(3, '0')}`;
+}
+
+function resolveDroneMac(index, args, list, fallback) {
+  if (args.mac) {
+    return args.drone_count > 1 ? incrementMac(args.mac, index) : args.mac;
+  }
+  if (list[index]) {
+    return list[index];
+  }
+  if (index === 0 && fallback) {
+    return fallback;
+  }
+  return generateMac(index);
+}
+
+function incrementMac(baseMac, offset) {
+  const segments = baseMac.split(':').map((segment) => parseInt(segment, 16));
+  if (segments.length !== 6 || segments.some((value) => Number.isNaN(value))) {
+    return generateMac(offset);
+  }
+  let carry = offset;
+  for (let i = segments.length - 1; i >= 0 && carry > 0; i -= 1) {
+    const value = segments[i] + carry;
+    segments[i] = value & 0xff;
+    carry = value >> 8;
+  }
+  return segments.map((value) => value.toString(16).padStart(2, '0')).join(':').toUpperCase();
+}
+
 function createDroneState({ id, mac, args, speedRange, intervalRange }) {
   const heading = randomBetween(0, 360);
-  const operatorDistance = Math.max(args.operator_radius, args.start_distance * 1.35);
-  const operatorHeading = normalizeHeading(heading + randomBetween(-12, 12));
+  const operatorDistanceBase =
+    typeof args.operator_distance === 'number' && Number.isFinite(args.operator_distance)
+      ? Math.max(50, args.operator_distance)
+      : Math.max(args.operator_radius, args.start_distance * 1.35);
+  const operatorDistance = operatorDistanceBase * (1 + randomBetween(-args.start_spread, args.start_spread));
+  const operatorHeading = normalizeHeading(heading + randomBetween(-18, 18));
   const operatorPoint = offsetFromNode(
     args.node_lat,
     args.node_lon,
@@ -274,6 +364,9 @@ function createDroneState({ id, mac, args, speedRange, intervalRange }) {
     airSpeed: args.speed + randomBetween(-4, 4),
     altitudeStep: args.altitude_step * randomBetween(0.5, 1.25),
     speedStep: args.speed_step * randomBetween(0.5, 1.5),
+    turnAggression: randomBetween(8, 22),
+    turnJitter: randomBetween(2, 8),
+    curveRadius: randomBetween(2, 10),
   };
 }
 
@@ -286,7 +379,12 @@ async function runDrone(drone, args, endpoint, nodeId, scheduleSend) {
 
   for (let i = 0; i < args.iterations; i += 1) {
     const metersPerStep = ((drone.approachSpeedKmh * 1000) / 3600) * (drone.intervalMs / 1000);
-    const step = moveToward(drone.lat, drone.lon, args.node_lat, args.node_lon, metersPerStep);
+    const step = advanceDroneTowardTarget({
+      drone,
+      targetLat: args.node_lat,
+      targetLon: args.node_lon,
+      metersPerStep,
+    });
     drone.lat = step.lat;
     drone.lon = step.lon;
 
