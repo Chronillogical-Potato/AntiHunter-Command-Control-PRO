@@ -160,6 +160,12 @@ Adjust system defaults (alarms, detection presets, serial ports, site federation
 
 ![Configuration panel with system defaults](images/Config.png)
 
+#### Addons
+
+Enable or disable optional modules (Scheduler, Alerts, Strategy Advisor, future analytics packs) to tailor the UI for your deployment.
+
+![Addons management](images/addons.png)
+
 #### Exports
 
 Generate CSV/GeoJSON bundles for inventory, targets, commands, and audit logs.

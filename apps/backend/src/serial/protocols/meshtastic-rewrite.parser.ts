@@ -495,15 +495,29 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
   ): SerialParseResult[] | null {
     const hb = NODE_HB_REGEX.exec(payload);
     if (hb?.groups) {
+      const telemetry: SerialParseResult = {
+        kind: 'node-telemetry',
+        nodeId: nodeId ?? hb.groups.id,
+        lat: hb.groups.lat ? Number(hb.groups.lat) : 0,
+        lon: hb.groups.lon ? Number(hb.groups.lon) : 0,
+        raw,
+        lastMessage: payload,
+        temperatureC: hb.groups.tempC ? Number(hb.groups.tempC) : undefined,
+      };
       return [
+        telemetry,
         {
-          kind: 'node-telemetry',
+          kind: 'alert',
+          level: 'INFO',
+          category: 'heartbeat',
           nodeId: nodeId ?? hb.groups.id,
-          lat: hb.groups.lat ? Number(hb.groups.lat) : 0,
-          lon: hb.groups.lon ? Number(hb.groups.lon) : 0,
+          message: payload,
           raw,
-          lastMessage: payload,
-          temperatureC: hb.groups.tempC ? Number(hb.groups.tempC) : undefined,
+          data: {
+            temperatureC: hb.groups.tempC ? Number(hb.groups.tempC) : undefined,
+            lat: hb.groups.lat ? Number(hb.groups.lat) : undefined,
+            lon: hb.groups.lon ? Number(hb.groups.lon) : undefined,
+          },
         },
       ];
     }
