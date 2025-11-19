@@ -57,16 +57,38 @@ export const useDroneStore = create<DroneStoreState>()((set) => ({
   setDrones: (drones) =>
     set((state) => {
       const nextMap: Record<string, DroneMarker> = {};
-      const nextTrails: Record<string, DroneTrailPoint[]> = {};
+      let nextTrails: Record<string, DroneTrailPoint[]> = { ...state.trails };
+      const seen = new Set<string>();
       drones.forEach((drone) => {
         const normalized = normalizeDrone(drone);
         const pending = state.pendingStatus[drone.id];
         nextMap[drone.id] = pending ? { ...normalized, status: pending } : normalized;
-        nextTrails[drone.id] = [
-          { lat: normalized.lat, lon: normalized.lon, ts: normalized.lastSeen },
-        ];
+        nextTrails = appendToTrails(
+          nextTrails,
+          drone.id,
+          normalized.lat,
+          normalized.lon,
+          normalized.lastSeen,
+        );
+        seen.add(drone.id);
       });
-      return { map: nextMap, list: sortDrones(nextMap), trails: nextTrails };
+      Object.keys(nextTrails).forEach((id) => {
+        if (!seen.has(id)) {
+          delete nextTrails[id];
+        }
+      });
+      const nextPending: Record<string, DroneStatus> = {};
+      Object.entries(state.pendingStatus).forEach(([id, status]) => {
+        if (seen.has(id)) {
+          nextPending[id] = status;
+        }
+      });
+      return {
+        map: nextMap,
+        list: sortDrones(nextMap),
+        trails: nextTrails,
+        pendingStatus: nextPending,
+      };
     }),
   upsert: (drone) =>
     set((state) => {
