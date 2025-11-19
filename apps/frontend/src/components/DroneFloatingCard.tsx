@@ -67,9 +67,12 @@ export function DroneFloatingCard({
     },
   );
 
-  const sortedDrones = [...displayDrones].sort(
-    (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
-  );
+  const sortedDrones =
+    editingId != null
+      ? displayDrones
+      : [...displayDrones].sort(
+          (a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime(),
+        );
 
   const freshestDrone = sortedDrones[0];
 
