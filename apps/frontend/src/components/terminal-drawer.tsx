@@ -87,6 +87,13 @@ export function TerminalDrawer() {
                     {entry.siteId && <span>Site: {entry.siteId}</span>}
                   </div>
                   <p className="terminal-entry__message">{entry.message}</p>
+                  {entry.link ? (
+                    <p className="terminal-entry__link">
+                      <a href={entry.link} target="_blank" rel="noopener noreferrer">
+                        Open link
+                      </a>
+                    </p>
+                  ) : null}
                 </article>
               ))
             )}

@@ -2253,6 +2253,14 @@ body.theme-dark .control-chip[disabled] {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.terminal-entry__link {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+}
+.terminal-entry__link a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
 .control-chip--danger {
   color: #ef4444;
   border-color: #ef4444;
@@ -4732,4 +4740,119 @@ body.theme-dark .strategy-table__row--selected {
 .inventory-selection li button {
   font-size: 0.75rem;
   padding: 0.2rem 0.45rem;
+}
+.inventory-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.inventory-actions .control-chip {
+  width: 100%;
+  margin: 0;
+  justify-content: center;
+}
+
+.inventory-analytics__controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.inventory-analytics__controls select {
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.inventory-analytics__chart-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inventory-analytics__legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.inventory-analytics__legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.inventory-analytics__legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.sparkline-chart {
+  width: 100%;
+  max-width: 500px;
+}
+
+.sparkline-chart__line {
+  fill: none;
+  stroke: #3b82f6;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.sparkline-chart__area {
+  fill: rgba(59, 130, 246, 0.3);
+  stroke: none;
+}
+
+.inventory-analytics__sparkline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.inventory-analytics__sparkline-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.donut-chart {
+  position: relative;
+  border-radius: 50%;
+  min-width: 140px;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.donut-chart::after {
+  content: '';
+  position: absolute;
+  width: 55%;
+  height: 55%;
+  border-radius: 50%;
+  background: var(--color-panel-bg);
+}
+
+.donut-chart__label {
+  position: relative;
+  text-align: center;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.donut-chart--empty {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
 }
