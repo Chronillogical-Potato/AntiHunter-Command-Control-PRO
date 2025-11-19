@@ -38,6 +38,13 @@ export function DroneFloatingCard({
   useEffect(() => {
     if (!editingId) {
       setFrozenDrones(drones);
+    } else {
+      setFrozenDrones(
+        (prev) =>
+          prev
+            .map((existing) => drones.find((item) => item.id === existing.id) ?? existing)
+            .filter(Boolean) as DroneMarker[],
+      );
     }
   }, [drones, editingId]);
 
