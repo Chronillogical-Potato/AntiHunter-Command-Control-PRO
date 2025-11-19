@@ -708,6 +708,9 @@ export function CommandCenterMap({
           trailPoints.length > 1
             ? (trailPoints.map((point) => [point.lat, point.lon]) as LatLngTuple[])
             : null;
+        const heading = computeHeadingFromTrail(trailPoints);
+        const viewCone =
+          heading !== null ? buildViewCone(drone.lat, drone.lon, heading, 100, 20) : null;
         const hasOperator =
           typeof drone.operatorLat === 'number' &&
           Number.isFinite(drone.operatorLat) &&
@@ -726,6 +729,17 @@ export function CommandCenterMap({
                   color: getDroneStatusColor(drone.status),
                   weight: 2,
                   opacity: 0.5,
+                }}
+              />
+            ) : null}
+            {viewCone ? (
+              <Polygon
+                positions={viewCone}
+                pathOptions={{
+                  color: getDroneStatusColor(drone.status),
+                  weight: 1,
+                  opacity: 0.65,
+                  fillOpacity: 0.15,
                 }}
               />
             ) : null}
@@ -843,6 +857,81 @@ export function CommandCenterMap({
   );
 }
 
+function computeHeadingFromTrail(points: DroneTrailPoint[]): number | null {
+  if (!points || points.length < 2) {
+    return null;
+  }
+  for (let i = points.length - 2; i >= 0; i -= 1) {
+    const prev = points[i];
+    const last = points[points.length - 1];
+    if (!prev) {
+      continue;
+    }
+    if (Math.abs(prev.lat - last.lat) < 1e-6 && Math.abs(prev.lon - last.lon) < 1e-6) {
+      continue;
+    }
+    return bearingBetween(prev.lat, prev.lon, last.lat, last.lon);
+  }
+  return null;
+}
+
+function buildViewCone(
+  lat: number,
+  lon: number,
+  heading: number,
+  distanceMeters: number,
+  angleDegrees: number,
+): LatLngTuple[] | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+  const halfAngle = angleDegrees / 2;
+  const left = offsetCoordinate(lat, lon, distanceMeters, heading - halfAngle);
+  const right = offsetCoordinate(lat, lon, distanceMeters, heading + halfAngle);
+  if (!left || !right) {
+    return null;
+  }
+  return [
+    [lat, lon],
+    [left.lat, left.lon],
+    [right.lat, right.lon],
+  ];
+}
+
+function bearingBetween(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  const θ = Math.atan2(y, x);
+  const deg = (θ * 180) / Math.PI;
+  return (deg + 360) % 360;
+}
+
+function offsetCoordinate(
+  lat: number,
+  lon: number,
+  distanceMeters: number,
+  bearingDegrees: number,
+): { lat: number; lon: number } | null {
+  const R = 6_371_000;
+  const δ = distanceMeters / R;
+  const θ = (bearingDegrees * Math.PI) / 180;
+  const φ1 = (lat * Math.PI) / 180;
+  const λ1 = (lon * Math.PI) / 180;
+
+  const sinφ2 = Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ);
+  const φ2 = Math.asin(sinφ2);
+  const λ2 =
+    λ1 +
+    Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2));
+
+  if (!Number.isFinite(φ2) || !Number.isFinite(λ2)) {
+    return null;
+  }
+  return { lat: (φ2 * 180) / Math.PI, lon: (((λ2 * 180) / Math.PI + 540) % 360) - 180 };
+}
 function MapReadyBridge({ onReady }: { onReady?: (map: LeafletMap) => void }) {
   const map = useMap();
   const initializedRef = useRef(false);
