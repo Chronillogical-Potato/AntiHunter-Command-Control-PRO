@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+﻿import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { apiClient } from '../api/client';
-import { InventoryDevice } from '../api/types';
+import { InventoryDevice, SiteSummary } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
 import { useDroneStore } from '../stores/drone-store';
 import { useMapCommandStore } from '../stores/map-command-store';
@@ -22,6 +22,9 @@ type InventorySortKey =
   | 'lastNode'
   | 'lastLat';
 
+const SITE_COLORS = ['#3b82f6', '#f87171', '#34d399', '#fbbf24', '#a78bfa'];
+const RSSI_COLORS = ['#22c55e', '#f97316', '#ef4444'];
+
 export function InventoryPage() {
   const [search, setSearch] = useState('');
   const [autoRefreshMs, setAutoRefreshMs] = useState(2000);
@@ -36,6 +39,7 @@ export function InventoryPage() {
 
   const canPromote = role === 'ADMIN' || role === 'OPERATOR';
   const canClear = role === 'ADMIN';
+  const canDeleteDevice = role === 'ADMIN';
 
   const { data, isLoading, isError, refetch } = useQuery<InventoryDevice[]>({
     queryKey: ['inventory', search],
@@ -45,6 +49,11 @@ export function InventoryPage() {
     },
     refetchInterval: autoRefreshMs,
     refetchIntervalInBackground: true,
+  });
+
+  const { data: sitesData } = useQuery<SiteSummary[]>({
+    queryKey: ['sites'],
+    queryFn: async () => apiClient.get<SiteSummary[]>('/sites'),
   });
 
   useEffect(() => {
@@ -88,6 +97,24 @@ export function InventoryPage() {
           : typeof error === 'object' && error && 'message' in error
             ? String((error as { message?: unknown }).message)
             : 'Unable to clear inventory';
+      window.alert(message);
+    },
+  });
+
+  const deleteDeviceMutation = useMutation({
+    mutationFn: async (device: InventoryDevice) =>
+      apiClient.delete(`/inventory/${encodeURIComponent(device.mac)}`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      await queryClient.invalidateQueries({ queryKey: ['targets'] });
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: unknown }).message)
+            : 'Unable to remove device';
       window.alert(message);
     },
   });
@@ -325,38 +352,57 @@ export function InventoryPage() {
                         : 'N/A'}
                     </td>
                     <td>
-                      {isDrone ? (
-                        <button
-                          type="button"
-                          className="control-chip"
-                          onClick={() => handleGoToMap(device)}
-                          disabled={!locationKnown}
-                        >
-                          Go to Map
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="control-chip"
-                          onClick={() => {
-                            if (!canPromote) {
-                              window.alert(
-                                'You need OPERATOR or ADMIN privileges to promote devices.',
-                              );
-                              return;
+                      <div className="inventory-actions">
+                        {isDrone ? (
+                          <button
+                            type="button"
+                            className="control-chip"
+                            onClick={() => handleGoToMap(device)}
+                            disabled={!locationKnown}
+                          >
+                            Go to Map
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="control-chip"
+                            onClick={() => {
+                              if (!canPromote) {
+                                window.alert(
+                                  'You need OPERATOR or ADMIN privileges to promote devices.',
+                                );
+                                return;
+                              }
+                              promoteMutation.mutate(device);
+                            }}
+                            disabled={promoteMutation.isPending || !canPromote}
+                            title={
+                              !canPromote
+                                ? 'You need OPERATOR or ADMIN privileges to promote devices.'
+                                : 'Promote device to targets list'
                             }
-                            promoteMutation.mutate(device);
-                          }}
-                          disabled={promoteMutation.isPending || !canPromote}
-                          title={
-                            !canPromote
-                              ? 'You need OPERATOR or ADMIN privileges to promote devices.'
-                              : 'Promote device to targets list'
-                          }
-                        >
-                          {promoteMutation.isPending ? 'Promoting...' : 'Promote to Target'}
-                        </button>
-                      )}
+                          >
+                            {promoteMutation.isPending ? 'Promoting...' : 'Promote to Target'}
+                          </button>
+                        )}
+                        {canDeleteDevice ? (
+                          <button
+                            type="button"
+                            className="control-chip control-chip--danger"
+                            onClick={() => {
+                              if (
+                                window.confirm(`Remove device ${device.mac} from inventory list?`)
+                              ) {
+                                deleteDeviceMutation.mutate(device);
+                              }
+                            }}
+                            disabled={deleteDeviceMutation.isPending}
+                            title="Remove this device from inventory"
+                          >
+                            {deleteDeviceMutation.isPending ? 'Removing...' : 'Remove'}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -366,7 +412,11 @@ export function InventoryPage() {
         </div>
       )}
       {isAnalyticsOpen && (
-        <InventoryAnalyticsDialog devices={data ?? []} onClose={() => setAnalyticsOpen(false)} />
+        <InventoryAnalyticsDialog
+          devices={data ?? []}
+          sites={sitesData ?? []}
+          onClose={() => setAnalyticsOpen(false)}
+        />
       )}
     </section>
   );
@@ -374,11 +424,65 @@ export function InventoryPage() {
 
 interface InventoryAnalyticsDialogProps {
   devices: InventoryDevice[];
+  sites: SiteSummary[];
   onClose: () => void;
 }
 
-function InventoryAnalyticsDialog({ devices, onClose }: InventoryAnalyticsDialogProps) {
-  const analytics = useMemo(() => computeInventoryAnalytics(devices), [devices]);
+function InventoryAnalyticsDialog({ devices, sites, onClose }: InventoryAnalyticsDialogProps) {
+  const siteLookup = useMemo(() => {
+    const map = new Map<string, SiteSummary>();
+    sites.forEach((site) => {
+      map.set(site.id, site);
+    });
+    return map;
+  }, [sites]);
+  const [selectedSite, setSelectedSite] = useState<string>('__ALL__');
+  const filteredDevices = useMemo(() => {
+    if (selectedSite === '__ALL__') {
+      return devices;
+    }
+    const normalized = selectedSite === '__UNKNOWN__' ? null : selectedSite;
+    return devices.filter((device) => (device.siteId ?? null) === normalized);
+  }, [devices, selectedSite]);
+  const analytics = useMemo(() => computeInventoryAnalytics(filteredDevices), [filteredDevices]);
+  const siteStatsWithLabels = useMemo(
+    () =>
+      analytics.siteStats.map((site) => ({
+        ...site,
+        label:
+          site.id === '__UNKNOWN__'
+            ? 'Unknown site'
+            : (siteLookup.get(site.id)?.name ?? site.label ?? site.id),
+      })),
+    [analytics.siteStats, siteLookup],
+  );
+  const siteOptions = useMemo(() => {
+    if (siteStatsWithLabels.length === 0 && siteLookup.size > 0) {
+      return Array.from(siteLookup.values()).map((site) => ({
+        id: site.id,
+        label: site.name ?? site.id,
+        count: 0,
+      }));
+    }
+    return siteStatsWithLabels;
+  }, [siteLookup, siteStatsWithLabels]);
+  const rssiChartData = useMemo(
+    () =>
+      analytics.rssiBuckets.map((bucket, idx) => ({
+        label: bucket.label,
+        value: bucket.value,
+        color: RSSI_COLORS[idx % RSSI_COLORS.length],
+      })),
+    [analytics.rssiBuckets],
+  );
+  const siteChartData = useMemo(() => {
+    const nodes = siteStatsWithLabels.slice(0, 5);
+    return nodes.map((site, idx) => ({
+      label: site.label,
+      value: site.count,
+      color: SITE_COLORS[idx % SITE_COLORS.length],
+    }));
+  }, [siteStatsWithLabels]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -389,6 +493,37 @@ function InventoryAnalyticsDialog({ devices, onClose }: InventoryAnalyticsDialog
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
+
+  const handleExport = useCallback(() => {
+    const rows: string[][] = [
+      ['Metric', 'Value'],
+      ['Total devices', analytics.totalDevices.toString()],
+      ['Unique vendors', analytics.uniqueVendors.toString()],
+      ['Unique SSIDs', analytics.uniqueSsids.toString()],
+      ['Average RSSI', analytics.averageRssi ?? 'N/A'],
+      ['Last sighting', analytics.lastSeenLabel ?? 'N/A'],
+      [],
+      ['Top Vendors'],
+      ...analytics.topVendors.map((entry) => [entry.label, entry.value.toString()]),
+      [],
+      ['Top SSIDs'],
+      ...analytics.topSsids.map((entry) => [entry.label, entry.value.toString()]),
+      [],
+      ['Signal Buckets'],
+      ...analytics.rssiBuckets.map((entry) => [
+        entry.label,
+        `${entry.value} (${entry.percent?.toFixed(1) ?? '0.0'}%)`,
+      ]),
+    ];
+    const csv = rows.map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'inventory-analytics.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [analytics]);
 
   return (
     <div className="inventory-analytics" role="dialog" aria-modal="true">
@@ -415,6 +550,23 @@ function InventoryAnalyticsDialog({ devices, onClose }: InventoryAnalyticsDialog
             Close
           </button>
         </header>
+
+        <div className="inventory-analytics__controls">
+          <label>
+            Site:
+            <select value={selectedSite} onChange={(event) => setSelectedSite(event.target.value)}>
+              <option value="__ALL__">All sites ({devices.length})</option>
+              {siteOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label} ({option.count})
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="control-chip" onClick={handleExport}>
+            Export CSV
+          </button>
+        </div>
 
         <div className="inventory-analytics__metrics">
           <article>
@@ -523,19 +675,31 @@ function InventoryAnalyticsDialog({ devices, onClose }: InventoryAnalyticsDialog
           <header className="inventory-analytics__section-header">
             <h3>Signal quality snapshot</h3>
           </header>
-          <ul className="inventory-analytics__list inventory-analytics__list--inline">
-            {analytics.rssiBuckets.map((bucket) => {
-              const percent = typeof bucket.percent === 'number' ? bucket.percent : 0;
-              return (
-                <li key={bucket.label}>
-                  <span>{bucket.label}</span>
-                  <strong>
-                    {bucket.value} ({percent.toFixed(1)}%)
-                  </strong>
-                </li>
-              );
-            })}
-          </ul>
+          {analytics.rssiBuckets.length === 0 ? (
+            <p className="empty-state">No signal data available.</p>
+          ) : (
+            <div className="inventory-analytics__chart-row">
+              <DonutChart data={rssiChartData} label="RSSI" />
+              <ul className="inventory-analytics__legend">
+                {rssiChartData.map((entry) => {
+                  const percent =
+                    analytics.totalDevices > 0 ? (entry.value / analytics.totalDevices) * 100 : 0;
+                  return (
+                    <li key={entry.label}>
+                      <span
+                        className="inventory-analytics__legend-swatch"
+                        style={{ background: entry.color }}
+                      />
+                      <span>{entry.label}</span>
+                      <strong>
+                        {entry.value} ({percent.toFixed(1)}%)
+                      </strong>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
         </section>
 
         <section>
@@ -557,6 +721,64 @@ function InventoryAnalyticsDialog({ devices, onClose }: InventoryAnalyticsDialog
             </ul>
           )}
         </section>
+
+        <section>
+          <header className="inventory-analytics__section-header">
+            <h3>Hourly activity (last 12h)</h3>
+          </header>
+          {analytics.hourlyTrend.length === 0 ? (
+            <p className="empty-state">No recent activity.</p>
+          ) : (
+            <div className="inventory-analytics__sparkline">
+              <SparklineChart data={analytics.hourlyTrend} />
+              <div className="inventory-analytics__sparkline-legend">
+                <span>Now</span>
+                <span>−12h</span>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <header className="inventory-analytics__section-header">
+            <h3>Site breakdown</h3>
+          </header>
+          {siteStatsWithLabels.length === 0 ? (
+            <p className="empty-state">No site assignments available.</p>
+          ) : (
+            <>
+              <div className="inventory-analytics__chart-row">
+                <DonutChart data={siteChartData} label="Sites" totalOverride={siteLookup.size} />
+                <ul className="inventory-analytics__legend">
+                  {siteChartData.map((site) => {
+                    const percent =
+                      analytics.totalDevices > 0 ? (site.value / analytics.totalDevices) * 100 : 0;
+                    return (
+                      <li key={site.label}>
+                        <span
+                          className="inventory-analytics__legend-swatch"
+                          style={{ background: site.color }}
+                        />
+                        <span>{site.label}</span>
+                        <strong>
+                          {site.value} ({percent.toFixed(1)}%)
+                        </strong>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <ul className="inventory-analytics__list inventory-analytics__list--inline">
+                {siteStatsWithLabels.map((site) => (
+                  <li key={site.id}>
+                    <span>{site.label}</span>
+                    <strong>{site.count}</strong>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -575,6 +797,7 @@ function computeInventoryAnalytics(devices: InventoryDevice[]) {
   const channelCounts = new Map<string, number>();
   const nodeCounts = new Map<string, number>();
   const typeCounts = new Map<string, number>();
+  const siteCounts = new Map<string, number>();
   const rssis: number[] = [];
   const bucketCounts = {
     strong: 0,
@@ -582,6 +805,18 @@ function computeInventoryAnalytics(devices: InventoryDevice[]) {
     weak: 0,
   };
   let latestSeen: number | null = null;
+  const hourMs = 60 * 60 * 1000;
+  const now = Date.now();
+  const hourlyBuckets = Array.from({ length: 12 }).map((_, idx) => {
+    const start = now - (12 - idx) * hourMs;
+    const end = start + hourMs;
+    return {
+      start,
+      end,
+      label: new Date(start).toLocaleTimeString([], { hour: '2-digit' }),
+      count: 0,
+    };
+  });
 
   devices.forEach((device) => {
     const vendor = device.vendor?.trim() || 'Unknown vendor';
@@ -599,6 +834,9 @@ function computeInventoryAnalytics(devices: InventoryDevice[]) {
     if (device.lastNodeId) {
       nodeCounts.set(device.lastNodeId, (nodeCounts.get(device.lastNodeId) ?? 0) + 1);
     }
+
+    const siteKey = device.siteId ?? '__UNKNOWN__';
+    siteCounts.set(siteKey, (siteCounts.get(siteKey) ?? 0) + 1);
 
     const typeLabel = device.type?.trim() || 'Unclassified';
     typeCounts.set(typeLabel, (typeCounts.get(typeLabel) ?? 0) + 1);
@@ -618,6 +856,11 @@ function computeInventoryAnalytics(devices: InventoryDevice[]) {
       const parsed = Date.parse(device.lastSeen);
       if (!Number.isNaN(parsed)) {
         latestSeen = latestSeen == null ? parsed : Math.max(latestSeen, parsed);
+        hourlyBuckets.forEach((bucket) => {
+          if (parsed >= bucket.start && parsed < bucket.end) {
+            bucket.count += 1;
+          }
+        });
       }
     }
   });
@@ -663,6 +906,14 @@ function computeInventoryAnalytics(devices: InventoryDevice[]) {
       percent: totalDevices ? (value / totalDevices) * 100 : 0,
     }));
 
+  const siteStats = Array.from(siteCounts.entries())
+    .map(([id, count]) => ({
+      id,
+      label: id === '__UNKNOWN__' ? 'Unknown site' : id,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     totalDevices,
     uniqueVendors: vendorCounts.size,
@@ -675,9 +926,13 @@ function computeInventoryAnalytics(devices: InventoryDevice[]) {
     topNodes: buildTopList(nodeCounts),
     rssiBuckets,
     deviceTypes,
+    hourlyTrend: hourlyBuckets.map((bucket) => ({
+      label: bucket.label,
+      count: bucket.count,
+    })),
+    siteStats,
   };
 }
-
 function compareInventoryDevices(a: InventoryDevice, b: InventoryDevice, key: InventorySortKey) {
   switch (key) {
     case 'mac':
@@ -725,4 +980,87 @@ function compareNumbers(a?: number | null, b?: number | null): number {
     return 0;
   }
   return valueA < valueB ? -1 : 1;
+}
+
+type SparklineDatum = { label: string; count: number };
+
+interface SparklineChartProps {
+  data: SparklineDatum[];
+  height?: number;
+  width?: number;
+}
+
+function SparklineChart({ data, height = 140, width = 360 }: SparklineChartProps) {
+  if (!data.length) {
+    return null;
+  }
+  const max = Math.max(...data.map((item) => item.count), 1);
+  const step = data.length > 1 ? width / (data.length - 1) : 0;
+  const points = data
+    .map((item, index) => {
+      const x = step * index;
+      const ratio = max === 0 ? 0 : item.count / max;
+      const y = height - ratio * height;
+      return `${x},${y}`;
+    })
+    .join(' ');
+  const areaPoints = `${points} ${width},${height} 0,${height}`;
+
+  return (
+    <svg
+      className="sparkline-chart"
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="Hourly detections"
+    >
+      <polyline points={areaPoints} className="sparkline-chart__area" />
+      <polyline points={points} className="sparkline-chart__line" />
+    </svg>
+  );
+}
+
+interface DonutSlice {
+  label: string;
+  value: number;
+  color: string;
+}
+
+interface DonutChartProps {
+  data: DonutSlice[];
+  size?: number;
+  label?: string;
+  totalOverride?: number;
+}
+
+function DonutChart({ data, size = 160, label, totalOverride }: DonutChartProps) {
+  const computedTotal = data.reduce((sum, slice) => sum + slice.value, 0);
+  const total = typeof totalOverride === 'number' ? totalOverride : computedTotal;
+  if (total === 0) {
+    return (
+      <div className="donut-chart donut-chart--empty" style={{ width: size, height: size }}>
+        <span>No data</span>
+      </div>
+    );
+  }
+  let cumulative = 0;
+  const gradientSegments = data
+    .map((slice) => {
+      const start = cumulative;
+      cumulative += (slice.value / total) * 100;
+      return `${slice.color} ${start}% ${cumulative}%`;
+    })
+    .join(', ');
+
+  return (
+    <div
+      className="donut-chart"
+      style={{ width: size, height: size, background: `conic-gradient(${gradientSegments})` }}
+      aria-label="Donut chart"
+    >
+      <div className="donut-chart__label">
+        <strong>{total}</strong>
+        {label ? <span>{label}</span> : null}
+      </div>
+    </div>
+  );
 }

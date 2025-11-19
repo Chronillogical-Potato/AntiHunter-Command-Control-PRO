@@ -530,6 +530,7 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
       timestamp?: string;
       siteId?: string;
       category?: string;
+      data?: unknown;
     };
 
     if (base.type === 'event.alert') {

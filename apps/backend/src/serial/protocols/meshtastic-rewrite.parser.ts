@@ -13,14 +13,16 @@ const GPS_LOCK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*GPS:\s*LOCKED\s+Location[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?)(?:\s+Satellites[=:](?<sats>\d+))?(?:\s+HDOP[=:](?<hdop>-?\d+(?:\.\d+)?))?/i;
 const GPS_LOST_REGEX = /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*GPS:\s*LOST/i;
 const NODE_HB_REGEX =
-  /^\[NODE_HB\]\s*(?<id>[A-Za-z0-9_.:-]+)\s+Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
+  /^\[NODE_HB\]\s*(?<id>[A-Za-z0-9_.:-]+)\s+Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:[cCfF])?(?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
+const NODE_HB_INLINE_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):?\s*Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:[cCfF])?(?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 
 const TARGET_REGEX_TYPE_FIRST =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*Target:\s*(?<type>\w+)\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)(?:\s+Name:(?<name>[^ ]+))?(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 const TARGET_REGEX_MAC_FIRST =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*Target:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)\s+Type:(?<type>\w+)(?:\s+Name:(?<name>[^ ]+))?(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 const TRI_TARGET_DATA_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*TARGET_DATA:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+Hits=(?<hits>\d+)\s+RSSI:(?<rssi>-?\d+)\s+Type:(?<type>\w+)\s+GPS=(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?)(?:\s+HDOP=(?<hdop>-?\d+(?:\.\d+)?))?/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*TARGET_DATA:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+Hits=(?<hits>\d+)\s+RSSI:(?<rssi>-?\d+)(?:\s+Type:(?<type>\w+))?\s+GPS=(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?)(?:\s+HDOP=(?<hdop>-?\d+(?:\.\d+)?))?/i;
 const DEVICE_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*DEVICE:(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(?<band>[A-Za-z])\s+(?<rssi>-?\d+)(?:\s+C(?<channel>\d+))?(?:\s+N:(?<name>.+))?/i;
 const DRONE_REGEX =
@@ -54,6 +56,15 @@ const WIPE_TOKEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*WIPE_TOKEN:(?<token>[A-Za-
 const TRI_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_ACK:(?<target>.+)$/i;
 const TRI_STOP_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_STOP_ACK/i;
 const BASELINE_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*BASELINE_ACK:(?<status>[A-Z_]+)/i;
+const TRI_RESULTS_START_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_RESULTS_START/i;
+const TRI_RESULTS_END_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_RESULTS_END/i;
+const TRI_COMPLETE_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_COMPLETE:\s*Nodes=(?<nodes>\d+)\s*(?<rest>.+)?$/i;
+const RTC_SYNC_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*RTC_SYNC:(?<source>\S+)/i;
+const TIME_SYNC_REQ_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*TIME_SYNC_REQ:(?<time>\d+):(?<window>\d+):(?<seq>\d+):(?<offset>-?\d+)/i;
+const TIME_SYNC_RESP_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*TIME_SYNC_RESP:(?<time>\d+):(?<window>\d+):(?<seq>\d+):(?<offset>-?\d+)/i;
 
 const NODE_ID_FALLBACK = /^([A-Za-z0-9_.:-]+)/;
 
@@ -90,7 +101,9 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseRandomization(payload, sourceId, sanitized) ||
       this.parseVibration(payload, sourceId, sanitized) ||
       this.parseTamper(payload, sourceId, sanitized) ||
+      this.parseTriangulationMeta(payload, sourceId, sanitized) ||
       this.parseStatus(payload, sourceId, sanitized) ||
+      this.parseTimeSync(payload, sourceId, sanitized) ||
       this.parseStartupGpsHeartbeat(payload, sourceId, sanitized) ||
       this.parseAck(payload, sourceId, sanitized);
 
@@ -459,8 +472,8 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const hdop = m.groups.hdop ? Number(m.groups.hdop) : undefined;
     const msgBase = payload;
     const msg = this.stripTrailingHash(msgBase);
-    const normalizedLat = Number.isFinite(lat) ? (lat as number) : Number.NaN;
-    const normalizedLon = Number.isFinite(lon) ? (lon as number) : Number.NaN;
+    const normalizedLat = Number.isFinite(lat) ? (lat as number) : 0;
+    const normalizedLon = Number.isFinite(lon) ? (lon as number) : 0;
     const results: SerialParseResult[] = [];
     // Emit telemetry when we have a nodeId; allow lat/lon to be undefined if not provided.
     if (resolvedNodeId) {
@@ -493,16 +506,21 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     nodeId: string | undefined,
     raw: string,
   ): SerialParseResult[] | null {
-    const hb = NODE_HB_REGEX.exec(payload);
+    const hb = NODE_HB_REGEX.exec(payload) ?? NODE_HB_INLINE_REGEX.exec(payload);
     if (hb?.groups) {
+      const temperatureC = hb.groups.tempC ? Number(hb.groups.tempC) : undefined;
+      const temperatureF = hb.groups.tempF ? Number(hb.groups.tempF) : undefined;
+      const lat = hb.groups.lat ? Number(hb.groups.lat) : undefined;
+      const lon = hb.groups.lon ? Number(hb.groups.lon) : undefined;
       const telemetry: SerialParseResult = {
         kind: 'node-telemetry',
         nodeId: nodeId ?? hb.groups.id,
-        lat: hb.groups.lat ? Number(hb.groups.lat) : 0,
-        lon: hb.groups.lon ? Number(hb.groups.lon) : 0,
+        lat,
+        lon,
         raw,
         lastMessage: payload,
-        temperatureC: hb.groups.tempC ? Number(hb.groups.tempC) : undefined,
+        temperatureC,
+        temperatureF,
       };
       return [
         telemetry,
@@ -514,9 +532,10 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
           message: payload,
           raw,
           data: {
-            temperatureC: hb.groups.tempC ? Number(hb.groups.tempC) : undefined,
-            lat: hb.groups.lat ? Number(hb.groups.lat) : undefined,
-            lon: hb.groups.lon ? Number(hb.groups.lon) : undefined,
+            temperatureC,
+            temperatureF,
+            lat,
+            lon,
           },
         },
       ];
@@ -649,6 +668,128 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     return null;
   }
 
+  private parseTriangulationMeta(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const id = nodeId ?? this.extractNodeId(payload, undefined);
+    if (TRI_RESULTS_START_REGEX.test(payload)) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'triangulation',
+          nodeId: id,
+          message: payload,
+          raw,
+          data: { stage: 'results-start' },
+        },
+      ];
+    }
+    if (TRI_RESULTS_END_REGEX.test(payload)) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'triangulation',
+          nodeId: id,
+          message: payload,
+          raw,
+          data: { stage: 'results-end' },
+        },
+      ];
+    }
+    const complete = TRI_COMPLETE_REGEX.exec(payload);
+    if (complete?.groups) {
+      const nodes = complete.groups.nodes ? Number(complete.groups.nodes) : undefined;
+      const { lat, lon } = this.extractLatLonFromText(complete.groups.rest);
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'triangulation',
+          nodeId: id,
+          message: payload,
+          raw,
+          data: {
+            stage: 'complete',
+            nodes,
+            lat,
+            lon,
+            link: complete.groups.rest?.trim(),
+          },
+        },
+      ];
+    }
+    return null;
+  }
+
+  private parseTimeSync(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const rtc = RTC_SYNC_REGEX.exec(payload);
+    if (rtc?.groups) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'time-sync',
+          nodeId: nodeId ?? rtc.groups.id,
+          message: payload,
+          raw,
+          data: {
+            mode: 'rtc',
+            source: rtc.groups.source,
+          },
+        },
+      ];
+    }
+    const req = TIME_SYNC_REQ_REGEX.exec(payload);
+    if (req?.groups) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'time-sync',
+          nodeId: nodeId ?? req.groups.id,
+          message: payload,
+          raw,
+          data: {
+            mode: 'request',
+            time: Number(req.groups.time),
+            window: Number(req.groups.window),
+            sequence: Number(req.groups.seq),
+            offset: Number(req.groups.offset),
+          },
+        },
+      ];
+    }
+    const resp = TIME_SYNC_RESP_REGEX.exec(payload);
+    if (resp?.groups) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'time-sync',
+          nodeId: nodeId ?? resp.groups.id,
+          message: payload,
+          raw,
+          data: {
+            mode: 'response',
+            time: Number(resp.groups.time),
+            window: Number(resp.groups.window),
+            sequence: Number(resp.groups.seq),
+            offset: Number(resp.groups.offset),
+          },
+        },
+      ];
+    }
+    return null;
+  }
+
   private normalize(value: string): string {
     if (!value) return '';
     let cleaned = value.replace(ANSI_REGEX, '');
@@ -673,6 +814,23 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
 
   private stripTrailingHash(value: string): string {
     return value.replace(/#+$/, '').trim();
+  }
+
+  private extractLatLonFromText(text?: string | null): { lat?: number; lon?: number } {
+    if (!text) {
+      return {};
+    }
+    const match =
+      /q=([-0-9.]+),([-0-9.]+)/i.exec(text) ?? /GPS[:=]([-0-9.]+),([-0-9.]+)/i.exec(text);
+    if (!match) {
+      return {};
+    }
+    const lat = Number(match[1]);
+    const lon = Number(match[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return {};
+    }
+    return { lat, lon };
   }
 
   private normalizeBand(band?: string): string | undefined {

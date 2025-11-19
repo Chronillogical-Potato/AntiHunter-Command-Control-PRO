@@ -89,6 +89,43 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     ],
   },
   {
+    name: 'CONFIG_RSSI',
+    group: 'Configuration',
+    description: 'Set detection RSSI threshold (negative dBm).',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'threshold',
+        label: 'RSSI Threshold (dBm)',
+        type: 'number',
+        placeholder: '-65',
+        helper: 'Value between -120 and -1 dBm.',
+        required: true,
+        min: -120,
+        max: -1,
+        step: 1,
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['-65'] }],
+  },
+  {
+    name: 'CONFIG_NODEID',
+    group: 'Configuration',
+    description: 'Assign a new short identifier to a node.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'nodeId',
+        label: 'Node Identifier',
+        type: 'text',
+        placeholder: 'AH03',
+        helper: 'Uppercase letters/numbers, 2-6 characters.',
+        required: true,
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['AH03'] }],
+  },
+  {
     name: 'SCAN_START',
     group: 'Scanning',
     description: 'Start scanning. mode: 0=WiFi, 1=BLE, 2=Both.',

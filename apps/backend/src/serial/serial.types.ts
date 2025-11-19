@@ -10,8 +10,8 @@ export type SerialParseResult =
 export interface SerialNodeTelemetry {
   kind: 'node-telemetry';
   nodeId: string;
-  lat: number;
-  lon: number;
+  lat?: number;
+  lon?: number;
   timestamp?: Date;
   lastMessage?: string;
   raw: string;

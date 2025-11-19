@@ -364,7 +364,8 @@ export function CommandConsolePage() {
     if (
       form.target &&
       !options.some((option) => option.value === normalizeTarget(form.target)) &&
-      (!form.siteId || normalizeTarget(form.target) === '@ALL')
+      (!form.siteId || normalizeTarget(form.target) === '@ALL') &&
+      normalizeTarget(form.target) !== '@ALL'
     ) {
       const normalized = normalizeTarget(form.target);
       options.push({ value: normalized, label: normalized.replace(/^@/, '') });
@@ -389,7 +390,7 @@ export function CommandConsolePage() {
     }
     setForm((prev) => {
       if (isSingleNodeCommand) {
-        const fallback = targetOptions[0]?.value ?? '@ALL';
+        const fallback = targetOptions[0]?.value ?? '';
         return prev.target === fallback ? prev : { ...prev, target: fallback };
       }
       return prev.target === '@ALL' ? prev : { ...prev, target: '@ALL' };
@@ -475,10 +476,16 @@ export function CommandConsolePage() {
     setParamErrors(errors);
     if (!trimmedTarget) {
       setTargetError('Target is required');
+    } else if (isSingleNodeCommand && normalizeTarget(trimmedTarget) === '@ALL') {
+      setTargetError('Select a specific node for this command');
     } else {
       setTargetError(null);
     }
-    if (Object.keys(errors).length > 0 || !trimmedTarget) {
+    if (
+      Object.keys(errors).length > 0 ||
+      !trimmedTarget ||
+      (isSingleNodeCommand && normalizeTarget(trimmedTarget) === '@ALL')
+    ) {
       return;
     }
 

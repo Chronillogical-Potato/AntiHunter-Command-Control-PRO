@@ -1,0 +1,82 @@
+[
+  {
+    "Mesh Commands": "Command",
+    "": "Example"
+  },
+  {
+    "Mesh Commands": "STATUS",
+    "": "@ALL STATUS"
+  },
+  {
+    "Mesh Commands": "CONFIG_CHANNELS",
+    "": "@AH02 CONFIG_CHANNELS:1,6,11"
+  },
+  {
+    "Mesh Commands": "CONFIG_TARGETS",
+    "": "@ALL CONFIG_TARGETS:AA:BB:CC|DD:EE:FF"
+  },
+  {
+    "Mesh Commands": "CONFIG_RSSI",
+    "": "@AH02 CONFIG_RSSI:-65"
+  },
+  {
+    "Mesh Commands": "CONFIG_NODEID",
+    "": "@AH02 CONFIG_NODEID:AH03"
+  },
+  {
+    "Mesh Commands": "SCAN_START",
+    "": "@ALL SCAN_START:2:300:1..14"
+  },
+  {
+    "Mesh Commands": "DEVICE_SCAN_START",
+    "": "@ALL DEVICE_SCAN_START:2:300"
+  },
+  {
+    "Mesh Commands": "DRONE_START",
+    "": "@ALL DRONE_START:600"
+  },
+  {
+    "Mesh Commands": "DEAUTH_START",
+    "": "@ALL DEAUTH_START:300"
+  },
+  {
+    "Mesh Commands": "RANDOMIZATION_START",
+    "": "@ALL RANDOMIZATION_START:2:600"
+  },
+  {
+    "Mesh Commands": "BASELINE_START",
+    "": "@ALL BASELINE_START:300"
+  },
+  {
+    "Mesh Commands": "BASELINE_STATUS",
+    "": "@ALL BASELINE_STATUS"
+  },
+  {
+    "Mesh Commands": "STOP",
+    "": "@ALL STOP"
+  },
+  {
+    "Mesh Commands": "VIBRATION_STATUS",
+    "": "@AH02 VIBRATION_STATUS"
+  },
+  {
+    "Mesh Commands": "TRIANGULATE_START",
+    "": "@ALL TRIANGULATE_START:AA:BB:CC:DD:EE:FF:300 or @ALL TRIANGULATE_START:T-002F:300"
+  },
+  {
+    "Mesh Commands": "TRIANGULATE_STOP",
+    "": "@ALL TRIANGULATE_STOP"
+  },
+  {
+    "Mesh Commands": "TRIANGULATE_RESULTS",
+    "": "@AH02 TRIANGULATE_RESULTS"
+  },
+  {
+    "Mesh Commands": "ERASE_FORCE",
+    "": "@AH02 ERASE_FORCE:AH_12345678_87654321_00001234"
+  },
+  {
+    "Mesh Commands": "ERASE_CANCEL",
+    "": "@ALL ERASE_CANCEL"
+  }
+]

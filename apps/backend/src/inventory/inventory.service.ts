@@ -409,4 +409,23 @@ export class InventoryService {
     }
     return { deleted: result.count };
   }
+
+  async deleteDevice(mac: string) {
+    let normalizedMac: string;
+    try {
+      normalizedMac = normalizeMac(mac);
+    } catch {
+      throw new BadRequestException('mac must be a valid 6-byte address');
+    }
+    try {
+      return await this.prisma.inventoryDevice.delete({
+        where: { mac: normalizedMac },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete inventory device ${normalizedMac}: ${error instanceof Error ? error.message : error}`,
+      );
+      throw new NotFoundException(`Inventory device ${normalizedMac} not found`);
+    }
+  }
 }

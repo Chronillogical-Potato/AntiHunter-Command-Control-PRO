@@ -183,6 +183,32 @@ export function TargetsPage() {
     },
   });
 
+  const handleTriangulateRequest = (target: Target) => {
+    if (!target.mac) {
+      window.alert('Target MAC unknown.');
+      return;
+    }
+    const normalizedNode = normalizeNodeTarget(target.firstNodeId);
+    if (!normalizedNode || normalizedNode === '@ALL') {
+      window.alert('First detecting node unknown.');
+      return;
+    }
+    const input = window.prompt(
+      'Enter triangulation duration in seconds (30-1800)',
+      String(DEFAULT_TRIANGULATION_DURATION),
+    );
+    if (input == null) {
+      return;
+    }
+    const parsed = Number(input);
+    if (!Number.isFinite(parsed)) {
+      window.alert('Invalid duration.');
+      return;
+    }
+    const duration = Math.max(30, Math.min(1800, Math.round(parsed)));
+    triangulateMutation.mutate({ target, duration });
+  };
+
   const handleTrackRequest = (target: Target) => {
     if (!target.mac) {
       window.alert('Target MAC unknown.');
@@ -208,6 +234,17 @@ export function TargetsPage() {
     stopTrackingMutation.mutate({ target });
   };
 
+  const handleDeleteTarget = (target: Target) => {
+    if (!canClearTargets) {
+      window.alert('You need ADMIN privileges to delete targets.');
+      return;
+    }
+    if (!window.confirm(`Remove target ${getTargetName(target) ?? target.id}?`)) {
+      return;
+    }
+    deleteTargetMutation.mutate(target.id);
+  };
+
   const clearTargetsMutation = useMutation({
     mutationFn: async () => apiClient.delete('/targets/clear'),
     onSuccess: async () => {
@@ -221,6 +258,23 @@ export function TargetsPage() {
           : typeof error === 'object' && error && 'message' in error
             ? String((error as { message?: unknown }).message)
             : 'Unable to clear targets';
+      window.alert(message);
+    },
+  });
+
+  const deleteTargetMutation = useMutation({
+    mutationFn: async (targetId: string) =>
+      apiClient.delete(`/targets/${encodeURIComponent(targetId)}`),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['targets'] });
+    },
+    onError: (error: unknown) => {
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: unknown }).message)
+            : 'Unable to delete target';
       window.alert(message);
     },
   });
@@ -450,7 +504,7 @@ export function TargetsPage() {
                             );
                             return;
                           }
-                          triangulateMutation.mutate({ target });
+                          handleTriangulateRequest(target);
                         }}
                         disabled={
                           triangulateMutation.isPending ||
@@ -488,6 +542,17 @@ export function TargetsPage() {
                       >
                         {tracking ? 'Tracking' : 'Track'}
                       </button>
+                      {canClearTargets ? (
+                        <button
+                          type="button"
+                          className="control-chip control-chip--danger"
+                          onClick={() => handleDeleteTarget(target)}
+                          disabled={deleteTargetMutation.isPending}
+                          title="Remove this target entry"
+                        >
+                          {deleteTargetMutation.isPending ? 'Removing...' : 'Clear'}
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );

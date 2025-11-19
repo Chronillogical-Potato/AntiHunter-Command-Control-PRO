@@ -1,0 +1,258 @@
+[
+  {
+    "Mesh Alert Messages": "Detection & RF Attack Alerts",
+    "": ""
+  },
+  {
+    "Mesh Alert Messages": "Alert Type",
+    "": "Example"
+  },
+  {
+    "Mesh Alert Messages": "Target Detected",
+    "": "NODE_ABC: Target: WiFi AA:BB:CC:DD:EE:FF RSSI:-62 Name:Device GPS=40.7128,-74.0060"
+  },
+  {
+    "Mesh Alert Messages": "Device Discovered",
+    "": "NODE_ABC: DEVICE:AA:BB:CC:DD:EE:FF W -65 C6 N:MyRouter"
+  },
+  {
+    "Mesh Alert Messages": "Drone Detected",
+    "": "NODE_ABC: DRONE: AA:BB:CC:DD:EE:FF ID:1234567890ABCDEF R-65 GPS:40.712800,-74.006000 ALT:123.5 SPD:25.5 OP:40.712800,-74.006000"
+  },
+  {
+    "Mesh Alert Messages": "Baseline Anomaly - New",
+    "": "NODE_ABC: ANOMALY-NEW: WiFi AA:BB:CC:DD:EE:FF RSSI:-45 Name:Unknown"
+  },
+  {
+    "Mesh Alert Messages": "Baseline Anomaly - Return",
+    "": "NODE_ABC: ANOMALY-RETURN: BLE AA:BB:CC:DD:EE:FF RSSI:-55"
+  },
+  {
+    "Mesh Alert Messages": "Baseline Anomaly - RSSI",
+    "": "NODE_ABC: ANOMALY-RSSI: WiFi AA:BB:CC:DD:EE:FF Old:-75 New:-45 Delta:30"
+  },
+  {
+    "Mesh Alert Messages": "Deauth Attack (Long)",
+    "": "NODE_ABC: ATTACK: DEAUTH [TARGETED] SRC:AA:BB:CC:DD:EE:FF DST:11:22:33:44:55:66 RSSI:-45dBm CH:6"
+  },
+  {
+    "Mesh Alert Messages": "Deauth Attack (Short)",
+    "": "NODE_ABC: ATTACK: DEAUTH AA:BB:CC:DD:EE:FF->11:22:33:44:55:66 R-45 C6"
+  },
+  {
+    "Mesh Alert Messages": "Triangulation Data",
+    "": "NODE_ABC: TARGET_DATA: AA:BB:CC:DD:EE:FF Hits=42 RSSI:-65 GPS=40.7128,-74.0060 HDOP=1.2"
+  },
+  {
+    "Mesh Alert Messages": "Triangulation Complete",
+    "": "NODE_ABC: TRIANGULATE_COMPLETE: Nodes=5 https://www.google.com/maps?q=40.712800,-74.006000"
+  },
+  {
+    "Mesh Alert Messages": "Identification & Randomization Alerts",
+    "": ""
+  },
+  {
+    "Mesh Alert Messages": "Alert Type",
+    "": "Example"
+  },
+  {
+    "Mesh Alert Messages": "Randomization Identity",
+    "": "AH99: IDENTITY:T-002F W MACs:5 Conf:0.62 Sess:5 Anchor:02:9F:C2:3D:92:CE"
+  },
+  {
+    "Mesh Alert Messages": "Randomization Complete",
+    "": "AH99: RANDOMIZATION_DONE: Identities=14 Sessions=22 TX=14 PEND=0"
+  },
+  {
+    "Mesh Alert Messages": "Tamper, Security & Vibration Alerts",
+    "": ""
+  },
+  {
+    "Mesh Alert Messages": "Alert Type",
+    "": "Example"
+  },
+  {
+    "Mesh Alert Messages": "Vibration Alert",
+    "": "NODE_ABC: VIBRATION: Movement detected at 12:34:56 GPS:40.7128,-74.0060 TAMPER_ERASE_IN:60s"
+  },
+  {
+    "Mesh Alert Messages": "Vibration Setup Mode",
+    "": "NODE_ABC: VIBRATION: Movement in setup mode (active in 45s) GPS:40.7128,-74.0060"
+  },
+  {
+    "Mesh Alert Messages": "Setup Mode Active",
+    "": "NODE_ABC: SETUP_MODE: Auto-erase activates in 120s"
+  },
+  {
+    "Mesh Alert Messages": "Setup Complete",
+    "": "NODE_ABC: SETUP_COMPLETE: Auto-erase activated"
+  },
+  {
+    "Mesh Alert Messages": "Tamper Detected",
+    "": "NODE_ABC: TAMPER_DETECTED: Auto-erase in 60s GPS:40.7128,-74.0060"
+  },
+  {
+    "Mesh Alert Messages": "Tamper Cancelled",
+    "": "NODE_ABC: TAMPER_CANCELLED"
+  },
+  {
+    "Mesh Alert Messages": "Erase Executing",
+    "": "NODE_ABC: ERASE_EXECUTING: Tamper timeout GPS:40.7128,-74.0060"
+  },
+  {
+    "Mesh Alert Messages": "Erase Complete",
+    "": "NODE_ABC: ERASE_ACK:COMPLETE"
+  },
+  {
+    "Mesh Alert Messages": "Erase Cancelled",
+    "": "NODE_ABC: ERASE_ACK:CANCELLED"
+  },
+  {
+    "Mesh Alert Messages": "Status, Sync & System Commands",
+    "": ""
+  },
+  {
+    "Mesh Alert Messages": "Alert Type",
+    "": "Example"
+  },
+  {
+    "Mesh Alert Messages": "Startup Status",
+    "": "NODE_ABC: STARTUP: System initialized GPS:LOCKED TEMP:42.3C"
+  },
+  {
+    "Mesh Alert Messages": "Status Response",
+    "": "NODE_ABC: STATUS: Mode:WiFi+BLE Scan:ACTIVE Hits:142 Unique:87 Temp:42.3C/108.1F Up:03:24:15 GPS=40.712800,-74.006000 HDOP=1.2"
+  },
+  {
+    "Mesh Alert Messages": "Node Heartbeat",
+    "": "NODE_ABC: Time:2025-10-28_14:32:15 Temp:42.3C GPS:40.7128,-74.0060"
+  },
+  {
+    "Mesh Alert Messages": "GPS Locked",
+    "": "NODE_ABC: GPS: LOCKED Location=40.7128,-74.0060 Satellites=8 HDOP=1.23"
+  },
+  {
+    "Mesh Alert Messages": "GPS Lost",
+    "": "NODE_ABC: GPS: LOST"
+  },
+  {
+    "Mesh Alert Messages": "RTC Sync",
+    "": "NODE_ABC: RTC_SYNC: GPS"
+  },
+  {
+    "Mesh Alert Messages": "Time Sync Request",
+    "": "NODE_ABC: TIME_SYNC_REQ:1725000000:5000:123456:0"
+  },
+  {
+    "Mesh Alert Messages": "Time Sync Response",
+    "": "NODE_ABC: TIME_SYNC_RESP:1725000000:5000:123456:50"
+  },
+  {
+    "Mesh Alert Messages": "Configuration Acknowledgments",
+    "": ""
+  },
+  {
+    "Mesh Alert Messages": "Alert Type",
+    "": "Example"
+  },
+  {
+    "Mesh Alert Messages": "Channels Config ACK",
+    "": "NODE_ABC: CONFIG_ACK:CHANNELS:1,6,11"
+  },
+  {
+    "Mesh Alert Messages": "Targets Config ACK",
+    "": "NODE_ABC: CONFIG_ACK:TARGETS:OK"
+  },
+  {
+    "Mesh Alert Messages": "RSSI Config ACK (Success)",
+    "": "NODE_ABC: CONFIG_ACK:RSSI:OK"
+  },
+  {
+    "Mesh Alert Messages": "RSSI Config Error",
+    "": "NODE_ABC: CONFIG_ACK:RSSI:INVALID_RANGE"
+  },
+  {
+    "Mesh Alert Messages": "Node ID Config ACK (Success)",
+    "": "NODE_ABC: CONFIG_ACK:NODE_ID:OK"
+  },
+  {
+    "Mesh Alert Messages": "Node ID Config Error (Invalid Chars)",
+    "": "NODE_ABC: CONFIG_ACK:NODE_ID:INVALID_CHARS"
+  },
+  {
+    "Mesh Alert Messages": "Node ID Config Error (Invalid Length)",
+    "": "NODE_ABC: CONFIG_ACK:NODE_ID:INVALID_LENGTH"
+  },
+  {
+    "Mesh Alert Messages": "Operation Acknowledgments",
+    "": ""
+  },
+  {
+    "Mesh Alert Messages": "Alert Type",
+    "": "Example"
+  },
+  {
+    "Mesh Alert Messages": "Scan ACK",
+    "": "NODE_ABC: SCAN_ACK:STARTED"
+  },
+  {
+    "Mesh Alert Messages": "Device Scan ACK",
+    "": "NODE_ABC: DEVICE_SCAN_ACK:STARTED"
+  },
+  {
+    "Mesh Alert Messages": "Drone ACK",
+    "": "NODE_ABC: DRONE_ACK:STARTED"
+  },
+  {
+    "Mesh Alert Messages": "Deauth ACK",
+    "": "NODE_ABC: DEAUTH_ACK:STARTED"
+  },
+  {
+    "Mesh Alert Messages": "Randomization ACK",
+    "": "NODE_ABC: RANDOMIZATION_ACK:STARTED"
+  },
+  {
+    "Mesh Alert Messages": "Baseline ACK",
+    "": "NODE_ABC: BASELINE_ACK:STARTED"
+  },
+  {
+    "Mesh Alert Messages": "Baseline Status",
+    "": "NODE_ABC: BASELINE_STATUS: Scanning:YES Established:NO Devices:42 Anomalies:3 Phase1:ACTIVE"
+  },
+  {
+    "Mesh Alert Messages": "Triangulation ACK",
+    "": "NODE_ABC: TRIANGULATE_ACK:AA:BB:CC:DD:EE:FF or NODE_ABC: TRIANGULATE_ACK:T-0001"
+  },
+  {
+    "Mesh Alert Messages": "Triangulation Results Start",
+    "": "NODE_ABC: TRIANGULATE_RESULTS_START"
+  },
+  {
+    "Mesh Alert Messages": "Triangulation Results End",
+    "": "NODE_ABC: TRIANGULATE_RESULTS_END"
+  },
+  {
+    "Mesh Alert Messages": "Triangulation Stop ACK",
+    "": "NODE_ABC: TRIANGULATE_STOP_ACK"
+  },
+  {
+    "Mesh Alert Messages": "Stop ACK",
+    "": "NODE_ABC: STOP_ACK:OK"
+  },
+  {
+    "Mesh Alert Messages": "Erase ACK (Complete)",
+    "": "NODE_ABC: ERASE_ACK:COMPLETE"
+  },
+  {
+    "Mesh Alert Messages": "Erase ACK (Cancelled)",
+    "": "NODE_ABC: ERASE_ACK:CANCELLED"
+  },
+  {
+    "Mesh Alert Messages": "Erase Token",
+    "": "NODE_ABC: WIPE_TOKEN:AH_12AB34CD_56EF78GH_1234567890"
+  },
+  {
+    "Mesh Alert Messages": "Reboot ACK",
+    "": "NODE_ABC: REBOOT_ACK"
+  }
+]

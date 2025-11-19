@@ -4,6 +4,7 @@ const NODE_PATTERN = /^NODE_[A-Z0-9]+$/;
 const MAC_PATTERN = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 const ERASE_TOKEN_PATTERN = /^AH_[0-9]{8}_[0-9]{8}_[0-9]{8}$/;
 const TRIANGULATE_IDENTITY_PATTERN = /^T-[A-Za-z0-9_-]+$/;
+const CUSTOM_NODE_ID_PATTERN = /^[A-Z0-9]{2,6}$/;
 
 export type CommandBuildInput = {
   target: string;
@@ -24,6 +25,8 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   STATUS: expectNoParams,
   CONFIG_CHANNELS: handleConfigChannels,
   CONFIG_TARGETS: handleConfigTargets,
+  CONFIG_RSSI: handleConfigRssi,
+  CONFIG_NODEID: handleConfigNodeId,
   SCAN_START: handleScanStart,
   DEVICE_SCAN_START: handleDeviceScanStart,
   DRONE_START: handleTimedCommand,
@@ -40,9 +43,14 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   ERASE_CANCEL: expectNoParams,
 };
 
+const SINGLE_NODE_COMMANDS = new Set<string>(['CONFIG_NODEID']);
+
 export function buildCommandPayload(input: CommandBuildInput): CommandBuildOutput {
   const target = normalizeTarget(input.target);
   const name = normalizeName(input.name);
+  if (SINGLE_NODE_COMMANDS.has(name) && target === '@ALL') {
+    throw new BadRequestException(`${name} must target a single node, not @ALL.`);
+  }
   const handler = COMMAND_HANDLERS[name];
   if (!handler) {
     throw new BadRequestException(`Unsupported command ${name}`);
@@ -112,6 +120,30 @@ function handleConfigTargets(params: string[]): string[] {
     }
   });
   return [entries.join('|')];
+}
+
+function handleConfigRssi(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('CONFIG_RSSI expects a single RSSI threshold value.');
+  }
+  const parsed = Number.parseInt(params[0].trim(), 10);
+  if (!Number.isFinite(parsed) || parsed > -1 || parsed < -120) {
+    throw new BadRequestException('RSSI threshold must be between -120 and -1 dBm.');
+  }
+  return [parsed.toString()];
+}
+
+function handleConfigNodeId(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('CONFIG_NODEID expects a single node identifier value.');
+  }
+  const desiredId = params[0].trim().toUpperCase();
+  if (!CUSTOM_NODE_ID_PATTERN.test(desiredId)) {
+    throw new BadRequestException(
+      'Node identifier must be 2-6 characters long and contain only A-Z or 0-9.',
+    );
+  }
+  return [desiredId];
 }
 
 function handleScanStart(params: string[]): string[] {

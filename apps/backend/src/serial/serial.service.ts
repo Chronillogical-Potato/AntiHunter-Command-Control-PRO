@@ -1,4 +1,4 @@
-import { create, toBinary } from '@bufbuild/protobuf';
+﻿import { create, toBinary } from '@bufbuild/protobuf';
 import {
   BadRequestException,
   Injectable,
@@ -54,16 +54,21 @@ class AsyncQueue {
   private pending: Array<() => Promise<void>> = [];
   private active = false;
 
-  add<T>(task: () => Promise<T>): Promise<T> {
+  add<T>(task: () => Promise<T>, priority = false): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      this.pending.push(async () => {
+      const wrapped = async () => {
         try {
           const result = await task();
           resolve(result);
         } catch (error) {
           reject(error);
         }
-      });
+      };
+      if (priority) {
+        this.pending.unshift(wrapped);
+      } else {
+        this.pending.push(wrapped);
+      }
       void this.process();
     });
   }
@@ -525,6 +530,12 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.debug(`Queueing command line: ${line}`);
 
+    const isStopCommand = built.name === 'STOP';
+    if (isStopCommand) {
+      this.logger.warn('STOP command requested; clearing pending command queue');
+      this.commandQueue.clear();
+    }
+
     await this.commandQueue.add(async () => {
       this.ensureConnected();
       this.logger.debug({
@@ -533,8 +544,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         writeBaud: this.connectionOptions?.baudRate,
         writeOpen: this.port?.isOpen ?? false,
       });
-      this.consumeRate(this.globalRate, this.globalRateLimit);
-      this.consumeRate(this.getTargetCounter(built.target), this.perTargetRateLimit);
+      if (!isStopCommand) {
+        this.consumeRate(this.globalRate, this.globalRateLimit);
+        this.consumeRate(this.getTargetCounter(built.target), this.perTargetRateLimit);
+      }
       const protocol = this.connectionOptions?.protocol ?? 'meshtastic-rewrite';
       const sendMode =
         this.configService.get<string>('serial.sendMode')?.toLowerCase() ?? 'protobuf';
@@ -554,7 +567,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       } else {
         await this.writeLine(line);
       }
-    });
+    }, isStopCommand);
   }
 
   private cleanup(): void {

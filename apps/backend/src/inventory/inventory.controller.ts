@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
 import { PromoteTargetDto } from './dto/promote-target.dto';
@@ -24,5 +24,11 @@ export class InventoryController {
   @Roles(Role.ADMIN)
   clearInventory() {
     return this.inventoryService.clearAll();
+  }
+
+  @Delete(':mac')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  deleteDevice(@Param('mac') mac: string) {
+    return this.inventoryService.deleteDevice(mac);
   }
 }
