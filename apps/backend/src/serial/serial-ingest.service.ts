@@ -11,6 +11,7 @@ import { DronesService } from '../drones/drones.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { NodesService } from '../nodes/nodes.service';
 import { TakService } from '../tak/tak.service';
+import { TargetsService } from '../targets/targets.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
 import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
@@ -98,6 +99,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly takService: TakService,
     private readonly dronesService: DronesService,
     private readonly alertRulesEngine: AlertRulesEngineService,
+    private readonly targetsService: TargetsService,
     configService: ConfigService,
   ) {
     const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
@@ -388,6 +390,30 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
                 }`,
               ),
             );
+
+          const isTriangulationComplete =
+            event.category?.toLowerCase() === 'triangulation' &&
+            typeof event.data === 'object' &&
+            event.data !== null &&
+            (event.data as { stage?: unknown }).stage === 'complete';
+          const macFromData =
+            typeof event.data === 'object' &&
+            event.data !== null &&
+            'mac' in (event.data as Record<string, unknown>)
+              ? (event.data as { mac?: unknown }).mac
+              : undefined;
+          if (isTriangulationComplete && macFromData && lat != null && lon != null) {
+            const macString = String(macFromData);
+            void this.targetsService
+              .applyTrackingEstimate(macString, lat, lon, siteId)
+              .catch((error) =>
+                this.logger.warn(
+                  `Failed to apply triangulation estimate for ${macString}: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                ),
+              );
+          }
         }
         break;
       case 'command-ack':
