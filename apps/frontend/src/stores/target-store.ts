@@ -21,6 +21,7 @@ export interface TargetMarker {
   tracking?: boolean;
   trackingSince?: string | null;
   trackingConfidence?: number;
+  triangulatedRecent?: boolean;
   history?: TargetHistoryPoint[];
 }
 

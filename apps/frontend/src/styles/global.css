@@ -1293,6 +1293,39 @@ body.theme-dark .control-chip[disabled] {
   font-weight: 600;
   box-shadow: 0 8px 18px rgba(220, 38, 38, 0.4);
 }
+.target-marker--triangulated {
+  background: #a855f7;
+  box-shadow:
+    0 0 0 6px rgba(168, 85, 247, 0.22),
+    0 0 22px rgba(168, 85, 247, 0.7);
+  animation: targetTriangulatedPulse 0.85s ease-in-out infinite;
+}
+.target-marker--triangulated span {
+  text-transform: uppercase;
+}
+.target-marker--triangulated {
+  --target-tri-color: #a855f7;
+}
+@keyframes targetTriangulatedPulse {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 6px rgba(168, 85, 247, 0.22),
+      0 0 18px rgba(168, 85, 247, 0.65);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 0 12px rgba(168, 85, 247, 0.08),
+      0 0 26px rgba(168, 85, 247, 0.85);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 6px rgba(168, 85, 247, 0.22),
+      0 0 18px rgba(168, 85, 247, 0.65);
+  }
+}
 .target-tooltip {
   max-width: 220px;
   font-size: 0.75rem;

@@ -45,6 +45,7 @@ import { useTargetStore } from '../stores/target-store';
 import type { TargetMarker } from '../stores/target-store';
 import { useTrackingSessionStore } from '../stores/tracking-session-store';
 import type { TrackingEstimate } from '../stores/tracking-session-store';
+import { useTriangulationStore } from '../stores/triangulation-store';
 
 const GEOFENCE_HIGHLIGHT_MS = 10_000;
 const WORLD_VIEW_FALLBACK = { lat: 25, lon: 0, zoom: 3 };
@@ -135,6 +136,7 @@ export function MapPage() {
       .map((session) => session.estimate)
       .filter((estimate): estimate is TrackingEstimate => Boolean(estimate)),
   );
+  const triangulationState = useTriangulationStore((state) => state);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -147,10 +149,18 @@ export function MapPage() {
     if (!targetsQuery.data) {
       return [];
     }
+    const triMac =
+      triangulationState.status === 'success' &&
+      triangulationState.targetMac &&
+      triangulationState.lastUpdated &&
+      Date.now() - triangulationState.lastUpdated < 10_000
+        ? triangulationState.targetMac.toUpperCase()
+        : null;
     return targetsQuery.data.map<TargetMarker>((target) => {
       const trackingEntry = trackingMap[target.id];
       const comment = commentMap[target.id];
       const lastSeen = target.updatedAt ?? target.createdAt;
+      const targetMacUpper = target.mac ? target.mac.toUpperCase() : null;
       return {
         id: target.id,
         mac: target.mac ?? undefined,
@@ -166,6 +176,7 @@ export function MapPage() {
         trackingSince: trackingEntry?.since ?? null,
         trackingConfidence:
           typeof target.trackingConfidence === 'number' ? target.trackingConfidence : undefined,
+        triangulatedRecent: triMac != null && targetMacUpper === triMac,
         history: [
           {
             lat: target.lat,
@@ -175,7 +186,7 @@ export function MapPage() {
         ],
       };
     });
-  }, [targetsQuery.data, commentMap, trackingMap]);
+  }, [targetsQuery.data, commentMap, trackingMap, triangulationState]);
 
   const {
     trailsEnabled,

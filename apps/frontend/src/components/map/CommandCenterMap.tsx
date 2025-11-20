@@ -160,8 +160,9 @@ function createNodeIcon(
 function createTargetIcon(target: TargetMarker): DivIcon {
   const label = target.mac ?? target.id;
   const trackingClass = target.tracking ? ' target-marker--tracking' : '';
+  const triClass = target.triangulatedRecent ? ' target-marker--triangulated' : '';
   return divIcon({
-    html: `<div class="target-marker${trackingClass}"><span>${label}</span></div>`,
+    html: `<div class="target-marker${trackingClass}${triClass}"><span>${label}</span></div>`,
     className: 'target-marker-wrapper',
     iconSize: [30, 30],
     iconAnchor: [15, 15],
@@ -645,18 +646,24 @@ export function CommandCenterMap({
                 <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
                   <div className="target-tooltip">
                     <strong>{target.mac ?? target.id}</strong>
+                    {target.name && <div>Name: {target.name}</div>}
                     {target.deviceType && <div>Type: {target.deviceType}</div>}
-                    <div>Last seen: {new Date(target.lastSeen).toLocaleString()}</div>
                     {target.nodeId && <div>First node: {target.nodeId}</div>}
                     <div>
                       Location: {target.lat.toFixed(5)}, {target.lon.toFixed(5)}
                     </div>
+                    {typeof target.trackingConfidence === 'number' && (
+                      <div>Confidence: {(target.trackingConfidence * 100).toFixed(0)}%</div>
+                    )}
+                    <div>Last seen: {new Date(target.lastSeen).toLocaleString()}</div>
                     {target.tracking ? (
                       <div className="tracking-label">Tracking in progress</div>
                     ) : null}
                     {target.comment ? (
-                      <div className="target-comment">Comment: {target.comment}</div>
-                    ) : null}
+                      <div className="target-comment">Operator notes: {target.comment}</div>
+                    ) : (
+                      <div className="target-comment">Operator notes: (none)</div>
+                    )}
                   </div>
                 </Tooltip>
               </Marker>
