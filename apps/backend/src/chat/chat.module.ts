@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
-import { ChatController } from './chat.controller';
 import { ChatMqttService } from './chat-mqtt.service';
+import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { AuthModule } from '../auth/auth.module';
 import { MqttModule } from '../mqtt/mqtt.module';

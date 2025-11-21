@@ -1,13 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Role } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
 import { ChatMessageEvent } from './chat.types';
 import { SendChatMessageDto } from './dto/send-chat-message.dto';
+import { AuthTokenPayload } from '../auth/auth.types';
 import { MqttService } from '../mqtt/mqtt.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
-import { AuthTokenPayload } from '../auth/auth.types';
 
 @Injectable()
 export class ChatService {
