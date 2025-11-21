@@ -6,6 +6,7 @@ import { apiClient } from './api/client';
 import type { AppSettings, Drone } from './api/types';
 import { AppHeader } from './components/app-header';
 import { AuthOverlay } from './components/auth-overlay';
+import { ChatPopupHub } from './components/chat-popup-hub';
 import { SidebarNav } from './components/sidebar-nav';
 import { SocketBridge } from './components/socket-bridge';
 import { TerminalDrawer } from './components/terminal-drawer';
@@ -18,6 +19,7 @@ import { resolveThemePalette, type ThemePalette, type ThemePresetId } from './co
 import { AddonPage } from './pages/AddonPage';
 import { AlertsEventLogPage } from './pages/AlertsEventLogPage';
 import { AlertsPage } from './pages/AlertsPage';
+import { ChatPage } from './pages/ChatPage';
 import { CommandConsolePage } from './pages/CommandConsolePage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ExportsPage } from './pages/ExportsPage';
@@ -128,6 +130,7 @@ export default function App() {
               <Route path="/alerts/custom" element={<AlertsPage />} />
               <Route path="/alerts/events" element={<AlertsEventLogPage />} />
               <Route path="/console" element={<CommandConsolePage />} />
+              <Route path="/chat" element={<ChatPage />} />
               <Route path="/terminal" element={<TerminalEventsPage />} />
               <Route path="/addon" element={<AddonPage />} />
               <Route path="/config" element={<ConfigPage />} />
@@ -141,6 +144,7 @@ export default function App() {
         </div>
       </div>
       <AuthOverlay />
+      <ChatPopupHub />
     </BrowserRouter>
   );
 }
