@@ -205,7 +205,8 @@ export function CommandConsolePage() {
   const addTemplateToStore = useTemplateStore((state) => state.addTemplate);
   const updateTemplateInStore = useTemplateStore((state) => state.updateTemplate);
   const deleteTemplateFromStore = useTemplateStore((state) => state.deleteTemplate);
-  const role = useAuthStore((state) => state.user?.role ?? null);
+  const user = useAuthStore((state) => state.user);
+  const role = user?.role ?? null;
 
   const { data: sites } = useQuery({
     queryKey: ['sites'],
@@ -251,13 +252,15 @@ export function CommandConsolePage() {
     if (!sites || sites.length === 0) {
       return;
     }
+    const defaultSiteId =
+      user?.siteAccess?.find((grant) => grant.level)?.siteId ?? sites[0]?.id ?? undefined;
     setForm((prev) => {
       if (prev.siteId) {
         return prev;
       }
-      return { ...prev, siteId: sites[0]?.id };
+      return { ...prev, siteId: defaultSiteId };
     });
-  }, [sites]);
+  }, [sites, user]);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const selectorRef = useRef<HTMLButtonElement | null>(null);
