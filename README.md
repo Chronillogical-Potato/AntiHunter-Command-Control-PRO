@@ -110,10 +110,7 @@ AntiHunter Command & Control PRO turns raw radio/mesh telemetry into actionable 
 
 ### UI Modules at a Glance
 
-Each primary view ships with rich operator context. The screenshots below were refreshed for the
-November 2025 UI pass, so what you see matches the latest drone cones, triangulation overlays,
-inventory analytics, and addons layout that (a) landed in this repo and (b) shipped with the image
-assets now stored under `images/`.
+Each primary view ships with rich operator context.
 
 #### Map
 
