@@ -122,7 +122,7 @@ export function SocketBridge() {
       }
       const siteKey =
         payload.siteId && typeof payload.siteId === 'string'
-          ? useChatKeyStore.getState().getKey(payload.siteId)
+          ? useChatKeyStore.getState().getKey()
           : undefined;
       let text = payload.text ?? '';
       let decryptError = false;

@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 
-const STORAGE_KEY = 'ahcc:chatKeys';
+const STORAGE_KEY = 'ahcc:chatKey';
+const GLOBAL_KEY = 'global';
 
 type ChatKeyState = {
   keys: Record<string, string>;
-  setKey: (siteId: string, key: string) => void;
-  getKey: (siteId?: string) => string | undefined;
+  setKey: (key: string) => void;
+  getKey: () => string | undefined;
+  clearKey: () => void;
 };
 
 const loadKeys = (): Record<string, string> => {
@@ -20,19 +22,25 @@ const loadKeys = (): Record<string, string> => {
   }
 };
 
-export const useChatKeyStore = create<ChatKeyState>((set, get) => ({
+export const useChatKeyStore = create<ChatKeyState>((set, _get) => ({
   keys: loadKeys(),
-  setKey: (siteId, key) => {
-    set((state) => {
-      const next = { ...state.keys, [siteId]: key };
+  setKey: (key) => {
+    set(() => {
+      const next = { [GLOBAL_KEY]: key };
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       }
       return { keys: next };
     });
   },
-  getKey: (siteId) => {
-    if (!siteId) return undefined;
-    return get().keys[siteId];
+  getKey: () => _get().keys[GLOBAL_KEY],
+  clearKey: () => {
+    set(() => {
+      const next: Record<string, string> = {};
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      }
+      return { keys: next };
+    });
   },
 }));

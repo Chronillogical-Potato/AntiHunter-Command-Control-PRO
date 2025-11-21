@@ -13,7 +13,6 @@ export function ChatPage() {
   const { getKey } = useChatKeyStore();
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
-  const [targetSiteId, setTargetSiteId] = useState<string>('local');
 
   const sortedMessages = useMemo(() => [...messages].sort((a, b) => a.ts - b.ts), [messages]);
 
@@ -23,17 +22,13 @@ export function ChatPage() {
     }
   }, [sortedMessages.length]);
 
-  const siteOptions =
-    user?.siteAccess?.map((s) => ({ id: s.siteId, label: s.siteName ?? s.siteId })) ?? [];
-  const currentSiteId = siteOptions[0]?.id;
-  const activeKey = currentSiteId ? getKey(currentSiteId) : undefined;
+  const activeKey = getKey();
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const trimmed = text.trim();
     if (!trimmed || !user) return;
-    const siteId =
-      targetSiteId === 'all' ? '@ALL' : targetSiteId === 'local' ? currentSiteId : targetSiteId;
+    const siteId = '@ALL';
     const role = user.role;
     const useKey = activeKey;
     let cipherText: string | undefined;
@@ -63,21 +58,6 @@ export function ChatPage() {
           </p>
         </div>
         <div className="chat-controls">
-          <div className="chat-targets">
-            <select
-              className="control-input"
-              value={targetSiteId}
-              onChange={(e) => setTargetSiteId(e.target.value)}
-            >
-              <option value="local">This site ({currentSiteId ?? 'n/a'})</option>
-              <option value="all">@ALL (broadcast)</option>
-              {siteOptions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </div>
           <label className="control-chip">
             <input
               type="checkbox"
