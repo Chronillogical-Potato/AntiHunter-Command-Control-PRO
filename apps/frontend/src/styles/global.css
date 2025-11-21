@@ -1315,11 +1315,13 @@ body.theme-dark .control-chip[disabled] {
   border-radius: 0.75rem;
   margin-bottom: 0.35rem;
   background: rgba(180, 150, 60, 0.15);
-  max-width: 72%;
+  max-width: 92%;
+  align-self: flex-start;
 }
 .chat-message--self {
   background: rgba(60, 100, 210, 0.2);
   margin-left: auto;
+  align-self: flex-end;
 }
 .chat-message__meta {
   display: flex;
