@@ -642,7 +642,7 @@ body.theme-dark .control-chip[disabled] {
   vertical-align: top;
 }
 .geofence-table thead th {
-  background: var(--color-table-header);
+  background: var(--color-panel);
   font-size: 0.8rem;
   font-weight: 600;
 }
@@ -687,8 +687,8 @@ body.theme-dark .control-chip[disabled] {
 .geofence-table td select,
 .geofence-table td input[type='color'] {
   width: 100%;
-  background: var(--color-input-bg);
-  border: 1px solid var(--color-input-border);
+  background: var(--color-panel);
+  border: 1px solid var(--color-panel-border);
   border-radius: 0.6rem;
   padding: 0.35rem 0.55rem;
   color: var(--color-text);
@@ -731,12 +731,12 @@ body.theme-dark .control-chip[disabled] {
   background: rgba(239, 68, 68, 0.25);
 }
 .geofence-table .table-sort {
-  border: 1px solid var(--color-input-border);
-  background: var(--color-panel);
+  border: none;
+  background: transparent;
   color: var(--color-text);
   font: inherit;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.6rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.4rem;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -744,7 +744,7 @@ body.theme-dark .control-chip[disabled] {
 }
 .geofence-table .table-sort:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border: none;
   box-shadow: 0 0 0 2px rgba(var(--color-accent-rgb), 0.25);
 }
 .geofence-table .table-sort__icon {
