@@ -13,7 +13,6 @@ export function AddonPage() {
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(addonPrefs.alerts ?? false);
   const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(addonPrefs.scheduler ?? false);
   const [chatEnabled, setChatEnabled] = useState<boolean>(addonPrefs.chat ?? false);
-  const [saving, setSaving] = useState<boolean>(false);
 
   useEffect(() => {
     setStrategyEnabled(addonPrefs.strategy ?? false);
@@ -24,7 +23,6 @@ export function AddonPage() {
 
   const updateAddons = async (next: Partial<Record<string, boolean>>) => {
     const merged = { ...addonPrefs, ...next };
-    setSaving(true);
     try {
       const updated = await apiClient.put<AuthUser>('/users/me', { addons: merged });
       setAuthUser(updated);
@@ -32,8 +30,8 @@ export function AddonPage() {
       setAlertsEnabled(updated.preferences?.notifications?.addons?.alerts ?? false);
       setSchedulerEnabled(updated.preferences?.notifications?.addons?.scheduler ?? false);
       setChatEnabled(updated.preferences?.notifications?.addons?.chat ?? false);
-    } finally {
-      setSaving(false);
+    } catch (error) {
+      console.error('Failed to update add-ons', error);
     }
   };
 
@@ -106,7 +104,7 @@ export function AddonPage() {
           <h2>Operator Chat</h2>
           <p>Secure, encrypted operator chat over MQTT between sites.</p>
           <p className="form-hint">
-            Toggle to show/hide chat in the navigation. Keys are managed in Config → Chat.
+            Toggle to show/hide chat in the navigation. Keys are managed in Config â†’ Chat.
           </p>
           <div className="addon-card__actions">
             <button type="button" className="control-chip" onClick={handleChatToggle}>

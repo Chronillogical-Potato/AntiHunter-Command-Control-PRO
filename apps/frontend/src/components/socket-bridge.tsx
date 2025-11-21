@@ -10,7 +10,6 @@ import type {
   ChatMessage,
   Target,
 } from '../api/types';
-import { decryptText } from '../utils/chat-crypto';
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
@@ -24,6 +23,7 @@ import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/termin
 import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 import { useTrackingSessionStore } from '../stores/tracking-session-store';
 import { useTriangulationStore } from '../stores/triangulation-store';
+import { decryptText } from '../utils/chat-crypto';
 
 const NOTIFICATION_CATEGORIES = new Set(['gps', 'status', 'console']);
 const DEVICE_LINE_REGEX =
@@ -449,6 +449,7 @@ export function SocketBridge() {
     setInitialNodes,
     applyDiff,
     addEntry,
+    addChatIncoming,
     play,
     playDroneGeofence,
     playDroneTelemetry,
