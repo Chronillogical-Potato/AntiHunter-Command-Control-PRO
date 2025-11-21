@@ -345,17 +345,18 @@ export function CommandConsolePage() {
     };
   }, [menuOpen]);
 
-  const mutation = useMutation({
+  const mutation = useMutation<CommandResponse, Error, CommandRequest>({
     mutationFn: (body: CommandRequest) => apiClient.post<CommandResponse>('/commands/send', body),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       const entry: TerminalEntryInput = {
         message: `Command ${data.id} queued`,
         level: 'notice',
         source: 'command',
       };
       addEntry(entry);
+      const commandName = variables?.name ?? (data as unknown as { name?: string })?.name ?? '';
       if (
-        data.name === 'TRIANGULATE_START' &&
+        commandName === 'TRIANGULATE_START' &&
         pendingTriangulation.current?.mac &&
         Number.isFinite(pendingTriangulation.current?.duration)
       ) {
