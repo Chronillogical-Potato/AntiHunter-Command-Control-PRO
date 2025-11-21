@@ -292,6 +292,11 @@ export function ConfigPage() {
   });
   const chatAddonEnabled =
     useAuthStore((state) => state.user?.preferences?.notifications?.addons?.chat ?? false) ?? false;
+  const [activeSection, setActiveSection] = useState<ConfigSectionId>('alarms');
+  const visibleSections = useMemo(
+    () => (chatAddonEnabled ? CONFIG_SECTIONS : CONFIG_SECTIONS.filter((s) => s.id !== 'chat')),
+    [chatAddonEnabled],
+  );
   useEffect(() => {
     if (!sitesQuery.data || sitesQuery.data.length === 0) return;
     setChatSelectedSiteId((prev) => prev ?? sitesQuery.data?.[0]?.id);
@@ -381,11 +386,6 @@ export function ConfigPage() {
   const [firewallMessage, setFirewallMessage] = useState<string | null>(null);
   const [firewallError, setFirewallError] = useState<string | null>(null);
   const [firewallDirty, setFirewallDirty] = useState(false);
-  const [activeSection, setActiveSection] = useState<ConfigSectionId>('alarms');
-  const visibleSections = useMemo(
-    () => (chatAddonEnabled ? CONFIG_SECTIONS : CONFIG_SECTIONS.filter((s) => s.id !== 'chat')),
-    [chatAddonEnabled],
-  );
 
   const appSettings = appSettingsState ?? appSettingsQuery.data ?? null;
   const serialConfig = serialConfigState ?? serialConfigQuery.data ?? null;
