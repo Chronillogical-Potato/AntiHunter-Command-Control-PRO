@@ -4,16 +4,14 @@ import { sendChatMessage } from '../api/chat';
 import { useAuthStore } from '../stores/auth-store';
 import { useChatKeyStore } from '../stores/chat-key-store';
 import { useChatStore } from '../stores/chat-store';
-import { encryptText, parseKeyInput } from '../utils/chat-crypto';
+import { encryptText } from '../utils/chat-crypto';
 
 export function ChatPage() {
   const user = useAuthStore((state) => state.user);
   const { messages, sendLocal, popupEnabled, setPopupEnabled, updateStatus, clearLocal } =
     useChatStore();
-  const { getKey, setKey } = useChatKeyStore();
+  const { getKey } = useChatKeyStore();
   const [text, setText] = useState('');
-  const [keyInput, setKeyInput] = useState('');
-  const [keyError, setKeyError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [targetSiteId, setTargetSiteId] = useState<string>('local');
 
@@ -38,31 +36,21 @@ export function ChatPage() {
       targetSiteId === 'all' ? '@ALL' : targetSiteId === 'local' ? currentSiteId : targetSiteId;
     const role = user.role;
     const useKey = activeKey;
-    try {
-      setKeyError(null);
-      let cipherText: string | undefined;
-      if (useKey) {
-        cipherText = await encryptText(useKey, trimmed);
-      }
-      const tempId = sendLocal(trimmed, user.email ?? 'me', siteId, role, 'pending');
-      setText('');
-      const response = await sendChatMessage({
-        siteId,
-        encrypted: Boolean(useKey),
-        cipherText,
-        text: useKey ? undefined : trimmed,
-      });
-
-      const ts = Date.parse(response.ts);
-      updateStatus(tempId, 'sent', response.id, Number.isFinite(ts) ? ts : undefined);
-    } catch (error) {
-      setKeyError(error instanceof Error ? error.message : 'Failed to send message');
-      const now = Date.now();
-      const lastId = messages[messages.length - 1]?.id;
-      if (lastId) {
-        updateStatus(lastId, 'failed', undefined, now);
-      }
+    let cipherText: string | undefined;
+    if (useKey) {
+      cipherText = await encryptText(useKey, trimmed);
     }
+    const tempId = sendLocal(trimmed, user.email ?? 'me', siteId, role, 'pending');
+    setText('');
+    const response = await sendChatMessage({
+      siteId,
+      encrypted: Boolean(useKey),
+      cipherText,
+      text: useKey ? undefined : trimmed,
+    });
+
+    const ts = Date.parse(response.ts);
+    updateStatus(tempId, 'sent', response.id, Number.isFinite(ts) ? ts : undefined);
   };
 
   return (
@@ -98,41 +86,9 @@ export function ChatPage() {
             />
             Pop up on new messages
           </label>
-          <div className="chat-key">
-            <input
-              className="control-input"
-              placeholder="Paste 32-byte key (base64 or hex)"
-              value={keyInput}
-              onChange={(event) => setKeyInput(event.target.value.trim())}
-            />
-            <button
-              type="button"
-              className="control-chip"
-              onClick={() => {
-                if (!currentSiteId) {
-                  setKeyError('No site selected for chat key.');
-                  return;
-                }
-                try {
-                  const normalized = parseKeyInput(keyInput);
-                  setKey(currentSiteId, normalized);
-                  setKeyError(null);
-                } catch {
-                  setKeyError('Invalid key. Use 32-byte base64 or 64-char hex.');
-                }
-              }}
-            >
-              Save Key
-            </button>
-            <button
-              type="button"
-              className="control-chip control-chip--danger"
-              onClick={clearLocal}
-            >
-              Clear local
-            </button>
-          </div>
-          {keyError ? <span className="form-error">{keyError}</span> : null}
+          <button type="button" className="control-chip control-chip--danger" onClick={clearLocal}>
+            Clear local
+          </button>
         </div>
       </header>
 

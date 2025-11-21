@@ -381,6 +381,7 @@ export function ConfigPage() {
   const [chatSelectedSiteId, setChatSelectedSiteId] = useState<string | undefined>(undefined);
   const [chatKeyNotice, setChatKeyNotice] = useState<string | null>(null);
   const [chatKeyError, setChatKeyError] = useState<string | null>(null);
+  const [chatKeyHidden, setChatKeyHidden] = useState<boolean>(true);
   const [takSendPayload, setTakSendPayload] = useState('');
   const [firewallForm, setFirewallForm] = useState<FirewallFormState | null>(null);
   const [firewallMessage, setFirewallMessage] = useState<string | null>(null);
@@ -3607,12 +3608,19 @@ export function ConfigPage() {
                       <div className="config-value chat-key-controls">
                         <input
                           className="control-input"
-                          type="text"
+                          type={chatKeyHidden ? 'password' : 'text'}
                           readOnly
                           value={(chatSelectedSiteId ? getChatKey(chatSelectedSiteId) : '') ?? ''}
                           placeholder="No key set"
                         />
                         <div className="controls-row">
+                          <button
+                            type="button"
+                            className="control-chip"
+                            onClick={() => setChatKeyHidden((prev) => !prev)}
+                          >
+                            {chatKeyHidden ? 'Show' : 'Hide'}
+                          </button>
                           <button
                             type="button"
                             className="control-chip"

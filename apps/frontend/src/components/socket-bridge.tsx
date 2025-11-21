@@ -14,6 +14,7 @@ import type {
 import { useAlarm } from '../providers/alarm-provider';
 import { useSocket } from '../providers/socket-provider';
 import { useAlertStore } from '../stores/alert-store';
+import { useAuthStore } from '../stores/auth-store';
 import { useChatKeyStore } from '../stores/chat-key-store';
 import { useChatStore } from '../stores/chat-store';
 import { useDroneStore } from '../stores/drone-store';
@@ -53,6 +54,8 @@ export function SocketBridge() {
     if (!socket) {
       return;
     }
+
+    const currentUser = useAuthStore.getState().user;
 
     const handleInit = (payload: unknown) => {
       if (isInitPayload(payload)) {
@@ -109,6 +112,12 @@ export function SocketBridge() {
 
     const handleChatEvent = async (payload: unknown) => {
       if (!isChatMessage(payload)) {
+        return;
+      }
+      const isFromSelf =
+        (currentUser?.id && payload.fromUserId === currentUser.id) ||
+        (currentUser?.email && payload.fromEmail === currentUser.email);
+      if (isFromSelf) {
         return;
       }
       const siteKey =

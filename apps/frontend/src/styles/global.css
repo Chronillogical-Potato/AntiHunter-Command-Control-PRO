@@ -1314,10 +1314,12 @@ body.theme-dark .control-chip[disabled] {
   padding: 0.55rem 0.65rem;
   border-radius: 0.75rem;
   margin-bottom: 0.35rem;
-  background: rgba(var(--color-accent-rgb), 0.06);
+  background: rgba(180, 150, 60, 0.15);
+  max-width: 72%;
 }
 .chat-message--self {
-  background: rgba(34, 197, 94, 0.12);
+  background: rgba(60, 100, 210, 0.2);
+  margin-left: auto;
 }
 .chat-message__meta {
   display: flex;
