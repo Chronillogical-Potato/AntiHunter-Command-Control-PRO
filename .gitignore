@@ -19,3 +19,24 @@ npm-debug.log*
 .vscode/
 .idea/
 tmp/
+
+# Local scratch/test assets not tracked
+MeshCommands.json
+meshMessagesUpdated.json
+kill-port-3000.ps1
+inspect-codes.js
+inspect-line.js
+segment-codes.js
+test-mode.js
+test-parser.ts
+test-prefix.js
+test-regex.js
+test-segment.js
+test-simple-pattern.js
+test-simple.js
+test-start.js
+test-status-part.js
+test-status-regex.js
+architecture-overview.svg
+temp_alert.tsx
+tmp_AlertsPage.tsx
