@@ -29,7 +29,6 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/map', label: 'Map', icon: MdMap },
   { to: '/console', label: 'Console', icon: MdTerminal },
-  { to: '/chat', label: 'Chat', icon: MdChat },
   { to: '/inventory', label: 'Inventory', icon: MdWifiTethering },
   { to: '/alerts', label: 'Alerts', icon: MdNotificationsActive },
   { to: '/targets', label: 'Targets', icon: MdMyLocation },
@@ -37,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/nodes', label: 'Nodes', icon: MdSensors },
   { to: '/scheduler', label: 'Scheduler', icon: MdEventNote },
   { to: '/strategy', label: 'Strategy Advisor', icon: MdHub, hideOnMobile: true },
+  { to: '/chat', label: 'Chat', icon: MdChat },
   { to: '/addon', label: 'Addon', icon: MdExtension },
   { to: '/config', label: 'Config', icon: MdSettings },
   { to: '/exports', label: 'Exports', icon: MdDownload },
