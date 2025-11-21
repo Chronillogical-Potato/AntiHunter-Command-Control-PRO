@@ -5,9 +5,9 @@ import { apiClient } from '../api/client';
 import type { CommandRequest, InventoryDevice, Target } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
 import { useTargetStore } from '../stores/target-store';
+import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 import { useTrackingSessionStore } from '../stores/tracking-session-store';
 import { useTriangulationStore } from '../stores/triangulation-store';
-import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 
 const DEFAULT_TRIANGULATION_DURATION = 300;
 const DEFAULT_SCAN_DURATION = 60;
@@ -242,7 +242,7 @@ export function TargetsPage() {
     const duration = Math.max(30, Math.min(1800, Math.round(parsed)));
     triangulateMutation.mutate(
       { target, duration },
-      { onSuccess: (res) => startTriangulationCountdown(target.mac!, duration) },
+      { onSuccess: () => startTriangulationCountdown(target.mac!, duration) },
     );
     // fallback if mutate doesn't call onSuccess (e.g., network error handled by mutation)
     beginTriangulateCooldown();

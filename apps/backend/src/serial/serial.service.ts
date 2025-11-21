@@ -1212,9 +1212,17 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         { line: part },
         source === 'serial' ? 'Serial line received' : 'Simulated serial line',
       );
+      const lower = part.toLowerCase();
+      // Skip router debug lines that mirror the payload as "msg=..." to avoid duplicate parsing.
+      if (lower.includes('msg=')) {
+        this.parsed$.next({ kind: 'raw', raw: part });
+        continue;
+      }
       this.incoming$.next(part);
       try {
-        const parsed = this.protocolParser.parseLine(part);
+        const msgIndex = part.toLowerCase().indexOf('msg=');
+        const parseCandidate = msgIndex >= 0 ? part.slice(msgIndex + 4).trim() : part;
+        const parsed = this.protocolParser.parseLine(parseCandidate || part);
         if (!parsed.length) {
           this.logger.debug({ line: part }, 'Serial line ignored by parser');
           continue;

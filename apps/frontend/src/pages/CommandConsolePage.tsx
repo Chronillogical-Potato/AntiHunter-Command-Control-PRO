@@ -142,13 +142,12 @@ function normalizeParamValue(param: CommandParameter, raw: string): string {
   switch (param.type) {
     case 'duration':
     case 'number': {
-      const digits = raw.replace(/[^\d]/g, '');
-      if (!digits) {
+      const numeric = Number(raw.trim());
+      if (!Number.isFinite(numeric)) {
         return '';
       }
-      const numeric = Number(digits);
-      const min = param.min ?? 0;
-      const max = param.max ?? Number.MAX_SAFE_INTEGER;
+      const min = param.min ?? (param.type === 'duration' ? 0 : Number.NEGATIVE_INFINITY);
+      const max = param.max ?? Number.POSITIVE_INFINITY;
       const clamped = Math.min(Math.max(numeric, min), max);
       return clamped.toString();
     }

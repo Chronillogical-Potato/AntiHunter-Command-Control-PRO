@@ -329,11 +329,7 @@ export function InventoryPage() {
                   </button>
                 </th>
                 <th aria-sort={ariaSort('site')}>
-                  <button
-                    type="button"
-                    className="table-sort"
-                    onClick={() => handleSort('site')}
-                  >
+                  <button type="button" className="table-sort" onClick={() => handleSort('site')}>
                     Site {renderSortIcon('site')}
                   </button>
                 </th>

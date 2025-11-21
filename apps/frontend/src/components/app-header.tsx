@@ -7,8 +7,8 @@ import type { AuthUser } from '../api/types';
 import { useSocketConnected } from '../providers/socket-provider';
 import { useTheme } from '../providers/theme-provider';
 import { useAuthStore } from '../stores/auth-store';
-import { useTriangulationStore } from '../stores/triangulation-store';
 import { useTrackingBannerStore } from '../stores/tracking-banner-store';
+import { useTriangulationStore } from '../stores/triangulation-store';
 
 export function AppHeader() {
   const isConnected = useSocketConnected();

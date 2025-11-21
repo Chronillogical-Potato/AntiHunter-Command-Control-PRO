@@ -17,9 +17,9 @@ import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
 import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
+import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 import { useTrackingSessionStore } from '../stores/tracking-session-store';
 import { useTriangulationStore } from '../stores/triangulation-store';
-import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 
 const NOTIFICATION_CATEGORIES = new Set(['gps', 'status', 'console']);
 const DEVICE_LINE_REGEX =
