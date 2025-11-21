@@ -34,7 +34,7 @@ export function ChatPopupHub() {
       const next: Toast = {
         id: latest.id,
         message: latest,
-        expiresAt: Date.now() + 8000,
+        expiresAt: Date.now() + 5000,
       };
       return [...prev.slice(-3), next];
     });
