@@ -1,6 +1,5 @@
 ﻿import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { apiClient } from './api/client';
@@ -16,11 +15,6 @@ import {
   extractAlertColors,
   applyAlertOverrides,
 } from './constants/alert-colors';
-import {
-  CHAT_ADDON_EVENT,
-  CHAT_ADDON_STORAGE_KEY,
-  getChatAddonEnabled,
-} from './constants/addons';
 import { resolveThemePalette, type ThemePalette, type ThemePresetId } from './constants/theme';
 import { AddonPage } from './pages/AddonPage';
 import { AlertsEventLogPage } from './pages/AlertsEventLogPage';
@@ -48,9 +42,10 @@ export default function App() {
   const status = useAuthStore((state) => state.status);
   const isAuthenticated = status === 'authenticated';
   const user = useAuthStore((state) => state.user);
+  const chatEnabled =
+    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.chat ?? false) ?? false;
   const { setTheme } = useTheme();
   const setDrones = useDroneStore((state) => state.setDrones);
-  const [chatEnabled, setChatEnabled] = useState<boolean>(() => getChatAddonEnabled());
 
   const appSettingsQuery = useQuery({
     queryKey: ['appSettings'],
@@ -116,21 +111,6 @@ export default function App() {
     user?.preferences?.alertColors,
     user?.preferences?.themePreset,
   ]);
-
-  useEffect(() => {
-    const syncChat = () => setChatEnabled(getChatAddonEnabled());
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === CHAT_ADDON_STORAGE_KEY) {
-        syncChat();
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener(CHAT_ADDON_EVENT, syncChat);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener(CHAT_ADDON_EVENT, syncChat);
-    };
-  }, []);
 
   return (
     <BrowserRouter>

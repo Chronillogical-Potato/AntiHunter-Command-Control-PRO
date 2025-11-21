@@ -85,4 +85,8 @@ export class UpdateCurrentUserDto {
   @IsOptional()
   @IsObject()
   mapState?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  addons?: Record<string, boolean>;
 }

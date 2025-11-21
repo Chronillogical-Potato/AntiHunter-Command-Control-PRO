@@ -633,7 +633,10 @@ export interface UserPreferences {
   themePreset?: 'classic' | 'tactical_ops';
   language: string;
   timeFormat: '12h' | '24h';
-  notifications?: Record<string, unknown> | null;
+  notifications?: {
+    addons?: Record<string, boolean>;
+    [key: string]: unknown;
+  } | null;
   alertColors?: UserAlertColors | null;
   mapState?: MapStatePreference | null;
 }

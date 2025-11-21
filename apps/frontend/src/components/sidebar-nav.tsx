@@ -17,20 +17,7 @@ import {
 } from 'react-icons/md';
 import { NavLink } from 'react-router-dom';
 
-import {
-  ALERTS_ADDON_EVENT,
-  ALERTS_ADDON_STORAGE_KEY,
-  CHAT_ADDON_EVENT,
-  CHAT_ADDON_STORAGE_KEY,
-  SCHEDULER_ADDON_EVENT,
-  SCHEDULER_ADDON_STORAGE_KEY,
-  STRATEGY_ADDON_EVENT,
-  STRATEGY_ADDON_STORAGE_KEY,
-  getAlertsAddonEnabled,
-  getChatAddonEnabled,
-  getSchedulerAddonEnabled,
-  getStrategyAddonEnabled,
-} from '../constants/addons';
+import { useAuthStore } from '../stores/auth-store';
 
 interface NavItem {
   to: string;
@@ -57,48 +44,20 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export function SidebarNav() {
-  const [strategyEnabled, setStrategyEnabled] = useState<boolean>(() => getStrategyAddonEnabled());
-  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => getAlertsAddonEnabled());
-  const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(() =>
-    getSchedulerAddonEnabled(),
+  const addons = useAuthStore(
+    (state) => state.user?.preferences?.notifications?.addons ?? ({} as Record<string, boolean>),
   );
-  const [chatEnabled, setChatEnabled] = useState<boolean>(() => getChatAddonEnabled());
+  const [strategyEnabled, setStrategyEnabled] = useState<boolean>(addons.strategy ?? false);
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(addons.alerts ?? false);
+  const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(addons.scheduler ?? false);
+  const [chatEnabled, setChatEnabled] = useState<boolean>(addons.chat ?? false);
 
   useEffect(() => {
-    const syncStrategy = () => setStrategyEnabled(getStrategyAddonEnabled());
-    const syncAlerts = () => setAlertsEnabled(getAlertsAddonEnabled());
-    const syncScheduler = () => setSchedulerEnabled(getSchedulerAddonEnabled());
-    const syncChat = () => setChatEnabled(getChatAddonEnabled());
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === STRATEGY_ADDON_STORAGE_KEY) {
-        syncStrategy();
-      }
-      if (event.key === ALERTS_ADDON_STORAGE_KEY) {
-        syncAlerts();
-      }
-      if (event.key === SCHEDULER_ADDON_STORAGE_KEY) {
-        syncScheduler();
-      }
-      if (event.key === CHAT_ADDON_STORAGE_KEY) {
-        syncChat();
-      }
-    };
-
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener(STRATEGY_ADDON_EVENT, syncStrategy);
-    window.addEventListener(ALERTS_ADDON_EVENT, syncAlerts);
-    window.addEventListener(SCHEDULER_ADDON_EVENT, syncScheduler);
-    window.addEventListener(CHAT_ADDON_EVENT, syncChat);
-
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener(STRATEGY_ADDON_EVENT, syncStrategy);
-      window.removeEventListener(ALERTS_ADDON_EVENT, syncAlerts);
-      window.removeEventListener(SCHEDULER_ADDON_EVENT, syncScheduler);
-      window.removeEventListener(CHAT_ADDON_EVENT, syncChat);
-    };
-  }, []);
+    setStrategyEnabled(addons.strategy ?? false);
+    setAlertsEnabled(addons.alerts ?? false);
+    setSchedulerEnabled(addons.scheduler ?? false);
+    setChatEnabled(addons.chat ?? false);
+  }, [addons.alerts, addons.chat, addons.scheduler, addons.strategy]);
 
   const navItems = useMemo(() => {
     return NAV_ITEMS.filter((item) => {

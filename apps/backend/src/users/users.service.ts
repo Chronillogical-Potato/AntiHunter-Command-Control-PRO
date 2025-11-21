@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, Role, SiteAccessLevel } from '@prisma/client';
+import { Prisma, Role, SiteAccessLevel, UserPreference } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
 
@@ -211,7 +211,10 @@ export class UsersService {
 
   // #region Mutations
   async updateCurrentUser(userId: string, dto: UpdateCurrentUserDto): Promise<UserDto> {
-    const { userData, preferenceData } = this.extractProfileUpdate(dto);
+    const existingPreferences = await this.prisma.userPreference.findUnique({
+      where: { userId },
+    });
+    const { userData, preferenceData } = this.extractProfileUpdate(dto, existingPreferences);
 
     if (userData.email) {
       const nextEmail = userData.email as string;
@@ -734,7 +737,10 @@ export class UsersService {
     return `#${prefixed.slice(1).toUpperCase()}`;
   }
 
-  private extractProfileUpdate(dto: UpdateCurrentUserDto): {
+  private extractProfileUpdate(
+    dto: UpdateCurrentUserDto,
+    existingPreferences?: UserPreference | null,
+  ): {
     userData: Prisma.UserUpdateInput;
     preferenceData?: PreferenceUpdateData;
   } {
@@ -772,8 +778,22 @@ export class UsersService {
     if (dto.themePreset !== undefined) {
       preferenceData.themePreset = dto.themePreset;
     }
+    const existingNotifications =
+      (existingPreferences?.notifications as Prisma.InputJsonValue | null | undefined) ?? null;
+
     if (dto.notifications !== undefined) {
       preferenceData.notifications = dto.notifications as Prisma.InputJsonValue;
+    }
+    if (dto.addons !== undefined) {
+      const base =
+        preferenceData.notifications ??
+        existingNotifications ??
+        (dto.notifications as Prisma.InputJsonValue | undefined) ??
+        {};
+      const merged =
+        base && typeof base === 'object' ? { ...(base as Record<string, unknown>) } : {};
+      merged.addons = dto.addons as Prisma.InputJsonValue;
+      preferenceData.notifications = merged as Prisma.InputJsonValue;
     }
     if (dto.alertColorIdle !== undefined) {
       preferenceData.alertColorIdle = this.normalizeColorValue(dto.alertColorIdle ?? null);

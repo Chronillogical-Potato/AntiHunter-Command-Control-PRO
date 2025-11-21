@@ -1,89 +1,46 @@
 import { useEffect, useState } from 'react';
 import { MdChat, MdEventNote, MdHub, MdNotificationsActive } from 'react-icons/md';
 
-import {
-  ALERTS_ADDON_EVENT,
-  ALERTS_ADDON_STORAGE_KEY,
-  SCHEDULER_ADDON_EVENT,
-  SCHEDULER_ADDON_STORAGE_KEY,
-  STRATEGY_ADDON_EVENT,
-  STRATEGY_ADDON_STORAGE_KEY,
-  CHAT_ADDON_EVENT,
-  CHAT_ADDON_STORAGE_KEY,
-  getAlertsAddonEnabled,
-  getChatAddonEnabled,
-  getSchedulerAddonEnabled,
-  getStrategyAddonEnabled,
-  setAlertsAddonEnabled,
-  setChatAddonEnabled,
-  setSchedulerAddonEnabled,
-  setStrategyAddonEnabled,
-} from '../constants/addons';
+import { apiClient } from '../api/client';
+import type { AuthUser } from '../api/types';
+import { useAuthStore } from '../stores/auth-store';
 
 export function AddonPage() {
-  const [strategyEnabled, setStrategyEnabled] = useState<boolean>(() => getStrategyAddonEnabled());
-  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => getAlertsAddonEnabled());
-  const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(() =>
-    getSchedulerAddonEnabled(),
-  );
-  const [chatEnabled, setChatEnabled] = useState<boolean>(() => getChatAddonEnabled());
+  const authUser = useAuthStore((state) => state.user);
+  const setAuthUser = useAuthStore((state) => state.setUser);
+  const addonPrefs = authUser?.preferences?.notifications?.addons ?? {};
+  const [strategyEnabled, setStrategyEnabled] = useState<boolean>(addonPrefs.strategy ?? false);
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(addonPrefs.alerts ?? false);
+  const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(addonPrefs.scheduler ?? false);
+  const [chatEnabled, setChatEnabled] = useState<boolean>(addonPrefs.chat ?? false);
+  const [saving, setSaving] = useState<boolean>(false);
 
   useEffect(() => {
-    const syncStrategy = () => setStrategyEnabled(getStrategyAddonEnabled());
-    const syncAlerts = () => setAlertsEnabled(getAlertsAddonEnabled());
-    const syncScheduler = () => setSchedulerEnabled(getSchedulerAddonEnabled());
-    const syncChat = () => setChatEnabled(getChatAddonEnabled());
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === STRATEGY_ADDON_STORAGE_KEY) {
-        syncStrategy();
-      }
-      if (event.key === ALERTS_ADDON_STORAGE_KEY) {
-        syncAlerts();
-      }
-      if (event.key === SCHEDULER_ADDON_STORAGE_KEY) {
-        syncScheduler();
-      }
-      if (event.key === CHAT_ADDON_STORAGE_KEY) {
-        syncChat();
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener(STRATEGY_ADDON_EVENT, syncStrategy);
-    window.addEventListener(ALERTS_ADDON_EVENT, syncAlerts);
-    window.addEventListener(SCHEDULER_ADDON_EVENT, syncScheduler);
-    window.addEventListener(CHAT_ADDON_EVENT, syncChat);
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener(STRATEGY_ADDON_EVENT, syncStrategy);
-      window.removeEventListener(ALERTS_ADDON_EVENT, syncAlerts);
-      window.removeEventListener(SCHEDULER_ADDON_EVENT, syncScheduler);
-      window.removeEventListener(CHAT_ADDON_EVENT, syncChat);
-    };
-  }, []);
+    setStrategyEnabled(addonPrefs.strategy ?? false);
+    setAlertsEnabled(addonPrefs.alerts ?? false);
+    setSchedulerEnabled(addonPrefs.scheduler ?? false);
+    setChatEnabled(addonPrefs.chat ?? false);
+  }, [addonPrefs.alerts, addonPrefs.chat, addonPrefs.scheduler, addonPrefs.strategy]);
 
-  const handleStrategyToggle = () => {
-    const next = !strategyEnabled;
-    setStrategyAddonEnabled(next);
-    setStrategyEnabled(next);
+  const updateAddons = async (next: Partial<Record<string, boolean>>) => {
+    const merged = { ...addonPrefs, ...next };
+    setSaving(true);
+    try {
+      const updated = await apiClient.put<AuthUser>('/users/me', { addons: merged });
+      setAuthUser(updated);
+      setStrategyEnabled(updated.preferences?.notifications?.addons?.strategy ?? false);
+      setAlertsEnabled(updated.preferences?.notifications?.addons?.alerts ?? false);
+      setSchedulerEnabled(updated.preferences?.notifications?.addons?.scheduler ?? false);
+      setChatEnabled(updated.preferences?.notifications?.addons?.chat ?? false);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleAlertsToggle = () => {
-    const next = !alertsEnabled;
-    setAlertsAddonEnabled(next);
-    setAlertsEnabled(next);
-  };
-
-  const handleSchedulerToggle = () => {
-    const next = !schedulerEnabled;
-    setSchedulerAddonEnabled(next);
-    setSchedulerEnabled(next);
-  };
-
-  const handleChatToggle = () => {
-    const next = !chatEnabled;
-    setChatAddonEnabled(next);
-    setChatEnabled(next);
-  };
+  const handleStrategyToggle = () => updateAddons({ strategy: !strategyEnabled });
+  const handleAlertsToggle = () => updateAddons({ alerts: !alertsEnabled });
+  const handleSchedulerToggle = () => updateAddons({ scheduler: !schedulerEnabled });
+  const handleChatToggle = () => updateAddons({ chat: !chatEnabled });
 
   return (
     <div className="page addon-page">
