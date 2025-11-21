@@ -405,8 +405,15 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
 
   private async connectInternal(options?: Partial<SerialConnectionOptions>): Promise<void> {
     if (this.port) {
+      // Already connected in this process. If caller requests the same path (or no path), return silently.
+      const requestedPath = options?.path?.trim();
+      const currentPath = this.port.path ?? this.connectionOptions?.path;
+      if (!requestedPath || requestedPath === currentPath) {
+        this.logger.debug('Serial port already connected; returning existing connection state');
+        return;
+      }
       throw new BadRequestException(
-        'Serial port already connected to this backend; if another service has the port locked, restart the backend.',
+        `Serial port already connected (${currentPath ?? 'unknown path'}). Disconnect first or restart backend.`,
       );
     }
 
