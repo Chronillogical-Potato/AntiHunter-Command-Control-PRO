@@ -284,6 +284,7 @@ export function SocketBridge() {
 
       const targetDetails = extractTargetDetails(payload);
       if (targetDetails) {
+        let targetChanged = false;
         if (
           targetDetails.mac &&
           typeof targetDetails.lat === 'number' &&
@@ -319,6 +320,7 @@ export function SocketBridge() {
                 updatedAt !== target.updatedAt
               ) {
                 changed = true;
+                targetChanged = true;
                 return {
                   ...target,
                   lat,
@@ -346,6 +348,9 @@ export function SocketBridge() {
             lon: targetDetails.lon,
             link: undefined,
           });
+          if (targetChanged) {
+            void queryClient.invalidateQueries({ queryKey: ['targets'] });
+          }
         }
 
         const nodeState = useNodeStore.getState();
