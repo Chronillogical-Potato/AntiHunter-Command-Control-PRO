@@ -643,8 +643,9 @@ function parseEventPayload(payload: unknown): TerminalEntryInput {
         levelRaw === 'NOTICE' ||
         (category ? NOTIFICATION_CATEGORIES.has(category) : false);
 
-      const isVibration = category === 'vibration' || messageUpper.includes('VIBRATION');
-      if (isVibration) {
+      const isVibrationStatus =
+        category === 'vibration' && messageUpper.includes('VIBRATION_STATUS');
+      if (isVibrationStatus) {
         terminalLevel = 'notice';
         isNotification = true;
       } else if (isNotification && terminalLevel === 'info') {
