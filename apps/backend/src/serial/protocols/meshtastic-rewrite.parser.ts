@@ -43,6 +43,7 @@ const RANDOM_DONE_REGEX =
 
 const VIBRATION_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*VIBRATION:\s*(?<msg>.+?)(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+TAMPER_ERASE_IN:(?<erase>\d+)s)?/i;
+const VIBRATION_STATUS_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*VIBRATION_STATUS:\s*(?<msg>.+)$/i;
 const SETUP_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*SETUP_(?<kind>MODE|COMPLETE):\s*(?<msg>.+)$/i;
 const TAMPER_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*TAMPER_(?<kind>DETECTED|CANCELLED):?(?:\s*(?<msg>.+))?/i;
@@ -384,6 +385,22 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
             lat: vib.groups.lat ? Number(vib.groups.lat) : undefined,
             lon: vib.groups.lon ? Number(vib.groups.lon) : undefined,
             eraseIn: vib.groups.erase ? Number(vib.groups.erase) : undefined,
+          },
+          raw,
+        },
+      ];
+    }
+    const vibStatus = VIBRATION_STATUS_REGEX.exec(payload);
+    if (vibStatus?.groups) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'vibration',
+          nodeId: nodeId ?? vibStatus.groups.id,
+          message: payload,
+          data: {
+            status: vibStatus.groups.msg?.trim(),
           },
           raw,
         },
