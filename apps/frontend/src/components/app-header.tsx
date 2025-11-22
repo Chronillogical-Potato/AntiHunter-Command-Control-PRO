@@ -69,6 +69,7 @@ export function AppHeader() {
 
   let bannerText: string | null = null;
   let bannerCountdown: string | null = null;
+  const triBannerEnabled = false;
 
   const triExpired =
     triangulation.lastUpdated != null &&
@@ -100,7 +101,7 @@ export function AppHeader() {
     bannerText = 'Tracking completed';
   } else if (trackingBanner.status === 'failed' && !trackingExpired) {
     bannerText = 'Tracking failed';
-  } else if (!triExpired) {
+  } else if (!triExpired && triBannerEnabled) {
     if (triangulation.status === 'running' && triangulation.endsAt) {
       const remainingMs = Math.max(0, triangulation.endsAt - clock);
       const remainingSec = Math.ceil(remainingMs / 1000);
