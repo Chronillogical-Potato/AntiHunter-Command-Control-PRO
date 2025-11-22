@@ -1278,7 +1278,7 @@ function sanitizeLine(value: string): string {
   if (markerMatch?.[1]) {
     cleaned = markerMatch[1];
   } else {
-    // Some firmwares prefix text frames with a single-letter marker like "C :" or "P :". Strip it.
+    // Some firmwares prefix text frames with a single-letter marker (any case) like "C :" or "p :".
     const alphaMarker = /^\s*[A-Za-z]\s*:\s*(.+)$/;
     const alphaMatch = alphaMarker.exec(cleaned);
     if (alphaMatch?.[1]) {
