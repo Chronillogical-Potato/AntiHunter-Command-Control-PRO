@@ -240,6 +240,9 @@ export function CommandConsolePage() {
   const startTriangulationCountdown = useTriangulationStore((state) => state.setCountdown);
   const pendingTriangulation = useRef<{ mac?: string; duration?: number } | null>(null);
   const consumePreferredTarget = useMapCommandStore((state) => state.consumePreferredTarget);
+  const consumePreferredCustomCommand = useMapCommandStore(
+    (state) => state.consumePreferredCustomCommand,
+  );
 
   useEffect(() => {
     return () => {
@@ -269,7 +272,11 @@ export function CommandConsolePage() {
     if (preferred) {
       setForm((prev) => ({ ...prev, target: normalizeTarget(preferred) }));
     }
-  }, [consumePreferredTarget]);
+    const preferredCustom = consumePreferredCustomCommand();
+    if (preferredCustom) {
+      setCustomCommand((prev) => (prev.trim().length ? prev : preferredCustom));
+    }
+  }, [consumePreferredTarget, consumePreferredCustomCommand]);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
   const selectorRef = useRef<HTMLButtonElement | null>(null);

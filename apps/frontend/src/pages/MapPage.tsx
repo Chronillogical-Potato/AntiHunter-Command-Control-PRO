@@ -83,6 +83,7 @@ export function MapPage() {
   const consumeTarget = useMapCommandStore((state) => state.consume);
   const goto = useMapCommandStore((state) => state.goto);
   const setPreferredTarget = useMapCommandStore((state) => state.setPreferredTarget);
+  const setPreferredCustomCommand = useMapCommandStore((state) => state.setPreferredCustomCommand);
 
   const savedViews = useMapViewsStore((state) => state.views);
   const addView = useMapViewsStore((state) => state.addView);
@@ -722,6 +723,7 @@ export function MapPage() {
             onDroneSelect={handleDroneSelect}
             onNodeCommand={(node) => {
               setPreferredTarget(`@${canonicalNodeId(node.id)}`);
+              setPreferredCustomCommand(`@${canonicalNodeId(node.id)} `);
               navigate('/console');
             }}
           />

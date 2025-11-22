@@ -18,15 +18,19 @@ interface MapTarget {
 interface MapCommandState {
   target: MapTarget | null;
   preferredTarget: string | null;
+  preferredCustomCommand: string | null;
   goto: (target: Omit<MapTarget, 'timestamp'>) => void;
   consume: () => void;
   setPreferredTarget: (target: string | null) => void;
   consumePreferredTarget: () => string | null;
+  setPreferredCustomCommand: (command: string | null) => void;
+  consumePreferredCustomCommand: () => string | null;
 }
 
 export const useMapCommandStore = create<MapCommandState>((set, get) => ({
   target: null,
   preferredTarget: null,
+  preferredCustomCommand: null,
   goto: ({ lat, lon, zoom, nodeId, geofenceId, bounds }) =>
     set({
       target: {
@@ -44,6 +48,12 @@ export const useMapCommandStore = create<MapCommandState>((set, get) => ({
   consumePreferredTarget: () => {
     const current = get().preferredTarget;
     set({ preferredTarget: null });
+    return current;
+  },
+  setPreferredCustomCommand: (command) => set({ preferredCustomCommand: command }),
+  consumePreferredCustomCommand: () => {
+    const current = get().preferredCustomCommand;
+    set({ preferredCustomCommand: null });
     return current;
   },
 }));
