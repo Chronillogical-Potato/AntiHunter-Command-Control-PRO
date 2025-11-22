@@ -76,6 +76,7 @@ export function TargetsPage() {
   const trackingTimeouts = useRef<Record<string, number>>({});
   const [triangulateLocked, setTriangulateLocked] = useState(false);
   const triangulateCooldownRef = useRef<number | null>(null);
+  const triangulateGuardRef = useRef<boolean>(false);
   const startTriangulationCountdown = useTriangulationStore((state) => state.setCountdown);
   const requestTrackingCountdown = useTrackingBannerStore((state) => state.requestCountdown);
   useEffect(() => {
@@ -127,6 +128,13 @@ export function TargetsPage() {
         params: [target.mac, String(duration)],
       });
     },
+    onSuccess: (_data, variables) => {
+      const duration = variables.duration ?? DEFAULT_TRIANGULATION_DURATION;
+      if (variables.target.mac) {
+        startTriangulationCountdown(variables.target.mac, duration);
+      }
+      void queryClient.invalidateQueries({ queryKey: ['targets'] });
+    },
   });
 
   const clearAutoStop = (targetId: string) => {
@@ -161,11 +169,13 @@ export function TargetsPage() {
 
   const beginTriangulateCooldown = () => {
     setTriangulateLocked(true);
+    triangulateGuardRef.current = true;
     if (triangulateCooldownRef.current) {
       window.clearTimeout(triangulateCooldownRef.current);
     }
     triangulateCooldownRef.current = window.setTimeout(() => {
       setTriangulateLocked(false);
+      triangulateGuardRef.current = false;
       triangulateCooldownRef.current = null;
     }, TRIANGULATE_DEBOUNCE_MS);
   };
@@ -215,13 +225,8 @@ export function TargetsPage() {
       window.alert('Target MAC unknown.');
       return;
     }
-    if (triangulateLocked || triangulateMutation.isPending) {
+    if (triangulateLocked || triangulateGuardRef.current || triangulateMutation.isPending) {
       window.alert('Triangulation commands are cooling down. Please wait a moment.');
-      return;
-    }
-    const normalizedNode = normalizeNodeTarget(target.firstNodeId);
-    if (!normalizedNode || normalizedNode === '@ALL') {
-      window.alert('First detecting node unknown.');
       return;
     }
     const input = window.prompt(
@@ -237,12 +242,13 @@ export function TargetsPage() {
       return;
     }
     const duration = Math.max(60, Math.min(300, Math.round(parsed)));
-    triangulateMutation.mutate(
-      { target, duration },
-      { onSuccess: () => startTriangulationCountdown(target.mac!, duration) },
-    );
-    // fallback if mutate doesn't call onSuccess (e.g., network error handled by mutation)
     beginTriangulateCooldown();
+    void triangulateMutation
+      .mutateAsync({ target, duration })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Failed to start triangulation.';
+        window.alert(message);
+      });
   };
 
   const handleTrackRequest = (target: Target) => {

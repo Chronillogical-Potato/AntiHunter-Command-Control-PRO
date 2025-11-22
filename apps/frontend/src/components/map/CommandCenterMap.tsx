@@ -642,7 +642,7 @@ export function CommandCenterMap({
             target.history?.map((point) => [point.lat, point.lon] as LatLngTuple) ?? [];
           const hasTrail = historyPositions.length > 1;
           return (
-            <Fragment key={target.id}>
+            <Fragment key={`${target.id}-${target.lat}-${target.lon}`}>
               {hasTrail ? (
                 <Polyline
                   positions={historyPositions}
