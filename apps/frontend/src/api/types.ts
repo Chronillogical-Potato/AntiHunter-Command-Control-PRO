@@ -205,7 +205,6 @@ export interface Target {
   deviceType?: string | null;
   trackingConfidence?: number | null;
   uncertainty?: number | null;
-  coordinatingNode?: string | null;
   firstNodeId?: string | null;
   status: TargetStatus;
   createdAt: string;

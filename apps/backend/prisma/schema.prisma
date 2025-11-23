@@ -268,7 +268,6 @@ model Target {
   createdBy          String?
   trackingConfidence Float?
   uncertainty        Float?
-  coordinatingNode   String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 

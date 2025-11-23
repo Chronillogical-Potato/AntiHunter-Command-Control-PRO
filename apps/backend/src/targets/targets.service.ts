@@ -205,7 +205,6 @@ export class TargetsService {
     options?: {
       confidence?: number;
       uncertainty?: number;
-      coordinatingNode?: string;
     },
   ): Promise<boolean> {
     let normalizedMac: string;
@@ -227,9 +226,6 @@ export class TargetsService {
     }
     if (options?.uncertainty !== undefined) {
       data.uncertainty = options.uncertainty;
-    }
-    if (options?.coordinatingNode !== undefined) {
-      data.coordinatingNode = options.coordinatingNode;
     }
 
     const where: Prisma.TargetWhereInput = { mac: normalizedMac };

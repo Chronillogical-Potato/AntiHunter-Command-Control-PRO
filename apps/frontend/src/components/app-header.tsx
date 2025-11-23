@@ -146,9 +146,6 @@ export function AppHeader() {
       if (triangulation.uncertainty != null) {
         details.push(`Uncertainty: ±${triangulation.uncertainty.toFixed(1)}m`);
       }
-      if (triangulation.coordinatingNode) {
-        details.push(`Coord: ${triangulation.coordinatingNode}`);
-      }
       if (details.length > 0) {
         bannerDetails = details.join(' | ');
       }

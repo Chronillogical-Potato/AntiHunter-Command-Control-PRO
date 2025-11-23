@@ -524,8 +524,7 @@ export function TargetsPage() {
                     <td>{location}</td>
                     <td>
                       {target.trackingConfidence != null ||
-                      target.uncertainty != null ||
-                      target.coordinatingNode ? (
+                      target.uncertainty != null ? (
                         <div style={{ fontSize: '0.85em', whiteSpace: 'nowrap' }}>
                           {target.trackingConfidence != null && (
                             <div>Conf: {target.trackingConfidence.toFixed(1)}%</div>
@@ -533,7 +532,6 @@ export function TargetsPage() {
                           {target.uncertainty != null && (
                             <div>Unc: ±{target.uncertainty.toFixed(1)}m</div>
                           )}
-                          {target.coordinatingNode && <div>Node: {target.coordinatingNode}</div>}
                         </div>
                       ) : (
                         'N/A'

@@ -410,16 +410,11 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
               typeof dataRecord.confidence === 'number' ? dataRecord.confidence : undefined;
             const uncertainty =
               typeof dataRecord.uncertainty === 'number' ? dataRecord.uncertainty : undefined;
-            const coordinatingNode =
-              typeof dataRecord.coordinatingNode === 'string'
-                ? dataRecord.coordinatingNode
-                : undefined;
 
             void this.targetsService
               .applyTrackingEstimate(macString, lat, lon, siteId, {
                 confidence,
-                uncertainty,
-                coordinatingNode,
+                uncertainty
               })
               .catch((error) =>
                 this.logger.warn(
