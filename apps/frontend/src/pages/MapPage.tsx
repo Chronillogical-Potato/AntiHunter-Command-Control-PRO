@@ -282,20 +282,41 @@ export function MapPage() {
     if (!mapReady || !mapRef.current) {
       return false;
     }
-    const positions = nodeList
-      .map((node) =>
-        typeof node.lat === 'number' && typeof node.lon === 'number'
-          ? ([node.lat, node.lon] as [number, number])
-          : null,
-      )
-      .filter((value): value is [number, number] => value !== null);
+
+    const positions: [number, number][] = [];
+
+    // Nodes
+    nodeList.forEach((node) => {
+      if (
+        typeof node.lat === 'number' &&
+        typeof node.lon === 'number' &&
+        Number.isFinite(node.lat) &&
+        Number.isFinite(node.lon)
+      ) {
+        positions.push([node.lat, node.lon]);
+      }
+    });
+
+    // Targets
+    targetMarkers.forEach((target) => {
+      if (
+        typeof target.lat === 'number' &&
+        typeof target.lon === 'number' &&
+        Number.isFinite(target.lat) &&
+        Number.isFinite(target.lon)
+      ) {
+        positions.push([target.lat, target.lon]);
+      }
+    });
+
     if (positions.length === 0) {
       return false;
     }
+
     const bounds = latLngBounds(positions);
     mapRef.current.fitBounds(bounds.pad(0.25));
     return true;
-  }, [mapReady, nodeList]);
+  }, [mapReady, nodeList, targetMarkers]);
 
   const handleFitClick = () => {
     if (fitEnabled) {
@@ -395,7 +416,7 @@ export function MapPage() {
       return;
     }
     performFit();
-  }, [fitEnabled, performFit, nodeList.length, mapReady]);
+  }, [fitEnabled, performFit, nodeList.length, targetMarkers.length, mapReady]);
 
   useEffect(() => {
     if (!pendingTarget || !mapReady || !mapRef.current) {
