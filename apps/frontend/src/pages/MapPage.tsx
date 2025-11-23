@@ -156,11 +156,20 @@ export function MapPage() {
       Date.now() - triangulationState.lastUpdated < 10_000
         ? triangulationState.targetMac.toUpperCase()
         : null;
-    return targetsQuery.data.map<TargetMarker>((target) => {
+
+    const validTargets = targetsQuery.data.filter((target) => {
+      if (typeof target.lat !== 'number' || typeof target.lon !== 'number') {
+        return false;
+      }
+      return !(target.lat === 0 && target.lon === 0);
+    });
+
+    return validTargets.map<TargetMarker>((target) => {
       const trackingEntry = trackingMap[target.id];
       const comment = commentMap[target.id];
       const lastSeen = target.updatedAt ?? target.createdAt;
       const targetMacUpper = target.mac ? target.mac.toUpperCase() : null;
+
       return {
         id: target.id,
         mac: target.mac ?? undefined,
