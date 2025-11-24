@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { WebhooksSection } from './WebhooksSection';
 import { apiClient } from '../api/client';
@@ -492,11 +492,51 @@ export function ConfigPage() {
     unblockJailedMutation.mutate(id);
   };
 
+  const alarmDebounceTimerRef = useRef<number | null>(null);
+  const isAlarmInitializedRef = useRef(false);
+
+  // Initialize localAlarm from server data
   useEffect(() => {
     if (alarmSettings?.config) {
       setLocalAlarm(alarmSettings.config);
+      isAlarmInitializedRef.current = true;
     }
   }, [alarmSettings?.config]);
+
+  // Debounce alarm config updates to prevent race conditions when sliding
+  useEffect(() => {
+    // Skip if not initialized yet
+    if (!isAlarmInitializedRef.current || !alarmSettings?.config) {
+      return;
+    }
+
+    // Clear any pending timer
+    if (alarmDebounceTimerRef.current !== null) {
+      window.clearTimeout(alarmDebounceTimerRef.current);
+    }
+
+    // Don't send updates if nothing changed
+    if (JSON.stringify(localAlarm) === JSON.stringify(alarmSettings.config)) {
+      return;
+    }
+
+    console.log('Alarm config changed, scheduling update in 500ms...');
+
+    // Set a new timer to update after 500ms of no changes
+    alarmDebounceTimerRef.current = window.setTimeout(() => {
+      console.log('Sending alarm config update:', localAlarm);
+      updateAlarmConfig(localAlarm);
+      alarmDebounceTimerRef.current = null;
+    }, 500);
+
+    // Cleanup on unmount
+    return () => {
+      if (alarmDebounceTimerRef.current !== null) {
+        window.clearTimeout(alarmDebounceTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localAlarm]);
 
   useEffect(() => {
     if (appSettingsQuery.data) {
@@ -1414,7 +1454,6 @@ export function ConfigPage() {
       const value = Number(event.target.value);
       const next = { ...localAlarm, [key]: value } as AlarmConfig;
       setLocalAlarm(next);
-      updateAlarmConfig(next);
     };
 
   const handleDroneVolumeChange =
@@ -1424,7 +1463,6 @@ export function ConfigPage() {
       const value = Number(event.target.value);
       const next = { ...localAlarm, [key]: value } as AlarmConfig;
       setLocalAlarm(next);
-      updateAlarmConfig(next);
     };
 
   const handleGapChange = (key: keyof AlarmConfig) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -1432,14 +1470,12 @@ export function ConfigPage() {
     const value = Number(event.target.value);
     const next = { ...localAlarm, [key]: value } as AlarmConfig;
     setLocalAlarm(next);
-    updateAlarmConfig(next);
   };
 
   const handleAudioPackChange = (event: ChangeEvent<HTMLSelectElement>) => {
     if (!localAlarm) return;
     const next = { ...localAlarm, audioPack: event.target.value };
     setLocalAlarm(next);
-    updateAlarmConfig(next);
   };
 
   const handleDndChange =
@@ -1448,14 +1484,12 @@ export function ConfigPage() {
       const value = event.target.value || null;
       const next = { ...localAlarm, [key]: value };
       setLocalAlarm(next);
-      updateAlarmConfig(next);
     };
 
   const handleBackgroundToggle = (event: ChangeEvent<HTMLInputElement>) => {
     if (!localAlarm) return;
     const next = { ...localAlarm, backgroundAllowed: event.target.checked };
     setLocalAlarm(next);
-    updateAlarmConfig(next);
   };
 
   const userAlertOverrides = authUser?.preferences?.alertColors ?? null;

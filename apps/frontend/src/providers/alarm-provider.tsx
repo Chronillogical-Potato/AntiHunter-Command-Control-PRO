@@ -142,24 +142,21 @@ export function AlarmProvider({ children }: PropsWithChildren) {
   }, [settingsQuery.data]);
 
   const updateConfigMutation = useMutation({
-    mutationFn: (body: AlarmConfig) => apiClient.put<AlarmSettingsResponse>('/alarms', body),
+    mutationFn: (body: AlarmConfig) => {
+      // eslint-disable-next-line no-console
+      console.log('Alarm mutation called with:', body);
+      return apiClient.put<AlarmSettingsResponse>('/alarms', body);
+    },
     onMutate: async (body: AlarmConfig) => {
       const previous = queryClient.getQueryData<AlarmSettingsResponse>(['alarms']);
-      if (previous) {
-        const mergedConfig = { ...previous.config, ...body };
-        queryClient.setQueryData<AlarmSettingsResponse>(['alarms'], {
-          config: mergedConfig,
-          sounds: previous.sounds,
-        });
-        configRef.current = mergedConfig;
-        applyAudioVolumes(mergedConfig);
-      } else {
-        configRef.current = { ...(configRef.current ?? body), ...body };
-        applyAudioVolumes(configRef.current);
-      }
+      // Don't do optimistic updates - wait for server confirmation
       return { previous };
     },
-    onError: (_error, _body, context) => {
+    onError: (error, body, context) => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to update alarm config:', error);
+      // eslint-disable-next-line no-console
+      console.error('Body that failed:', body);
       if (context?.previous) {
         queryClient.setQueryData(['alarms'], context.previous);
         configRef.current = context.previous.config;
@@ -167,6 +164,8 @@ export function AlarmProvider({ children }: PropsWithChildren) {
       }
     },
     onSuccess: (data) => {
+      // eslint-disable-next-line no-console
+      console.log('Alarm config update succeeded:', data);
       queryClient.setQueryData(['alarms'], data);
       configRef.current = data.config;
       applyAudioVolumes(data.config);
