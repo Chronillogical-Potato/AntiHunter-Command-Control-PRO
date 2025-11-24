@@ -17,6 +17,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TargetsModule } from '../targets/targets.module';
+import { WebhooksModule } from '../webhooks/webhooks.module';
 import { WsModule } from '../ws/ws.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { WsModule } from '../ws/ws.module';
     GeofencesModule,
     WsModule,
     DronesModule,
+    WebhooksModule,
   ],
   providers: [
     MqttService,

@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DroneStatus } from '@prisma/client';
+import { AlarmLevel, DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { MqttService, SiteMqttContext } from './mqtt.service';
@@ -263,11 +263,12 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      const eventAny = event as any;
       const alertId =
-        typeof (event as { id?: unknown }).id === 'string'
-          ? (event as { id: string }).id
-          : `${originSiteId}-${event.nodeId ?? 'unknown'}-${event.timestamp ?? Date.now()}-${
-              event.message ?? ''
+        typeof eventAny.id === 'string'
+          ? eventAny.id
+          : `${originSiteId}-${eventAny.nodeId ?? 'unknown'}-${eventAny.timestamp ?? Date.now()}-${
+              eventAny.message ?? ''
             }`;
 
       const now = Date.now();
@@ -287,15 +288,15 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
         await this.webhookDispatcher.dispatchExternalAlert({
           event: 'alert.remote',
           eventType: 'ALERT_TRIGGERED',
-          timestamp: event.timestamp ? new Date(event.timestamp as string) : new Date(),
-          message: typeof event.message === 'string' ? event.message : undefined,
+          timestamp: eventAny.timestamp ? new Date(eventAny.timestamp as string) : new Date(),
+          message: typeof eventAny.message === 'string' ? eventAny.message : undefined,
           severity:
-            typeof (event as { level?: unknown }).level === 'string'
-              ? ((event as { level?: string }).level as string)
+            typeof eventAny.level === 'string'
+              ? (eventAny.level as AlarmLevel)
               : undefined,
           siteId: originSiteId,
-          nodeId: typeof event.nodeId === 'string' ? event.nodeId : null,
-          payload: (event as { data?: Record<string, unknown> }).data ?? undefined,
+          nodeId: typeof eventAny.nodeId === 'string' ? eventAny.nodeId : null,
+          payload: eventAny.data as Record<string, unknown> | undefined,
         });
       } catch (error) {
         this.logger.warn(
