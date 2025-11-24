@@ -395,7 +395,8 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             event.category?.toLowerCase() === 'triangulation' &&
             typeof event.data === 'object' &&
             event.data !== null &&
-            (event.data as { stage?: unknown }).stage === 'complete';
+            ((event.data as { stage?: unknown }).stage === 'complete' ||
+              (event.data as { stage?: unknown }).stage === 'final');
           const macFromData =
             typeof event.data === 'object' &&
             event.data !== null &&
@@ -404,8 +405,17 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
               : undefined;
           if (isTriangulationComplete && macFromData && lat != null && lon != null) {
             const macString = String(macFromData);
+            const dataRecord = event.data as Record<string, unknown>;
+            const confidence =
+              typeof dataRecord.confidence === 'number' ? dataRecord.confidence : undefined;
+            const uncertainty =
+              typeof dataRecord.uncertainty === 'number' ? dataRecord.uncertainty : undefined;
+
             void this.targetsService
-              .applyTrackingEstimate(macString, lat, lon, siteId)
+              .applyTrackingEstimate(macString, lat, lon, siteId, {
+                confidence,
+                uncertainty
+              })
               .catch((error) =>
                 this.logger.warn(
                   `Failed to apply triangulation estimate for ${macString}: ${
