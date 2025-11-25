@@ -725,6 +725,19 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
         },
       ];
     }
+    if (TRI_RESULTS_NO_DATA_REGEX.test(payload)) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'triangulation',
+          nodeId: id,
+          message: payload,
+          raw,
+          data: { stage: 'no-data' },
+        },
+      ];
+    }
     const complete = TRI_COMPLETE_REGEX.exec(payload);
     if (complete?.groups) {
       const nodes = complete.groups.nodes ? Number(complete.groups.nodes) : undefined;
