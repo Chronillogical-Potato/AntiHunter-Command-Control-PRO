@@ -255,6 +255,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   >();
   private clusterMessageListener?: (message: unknown) => void;
   private replicaState: SerialState = { connected: false };
+  private readonly recentMessageCache = new Map<string, { timestamp: number; content: string; rawLine: string }>(); // dedupe key -> {timestamp, content, rawLine}
+  private readonly MESSAGE_CACHE_TTL_MS = 15000; // 15 seconds for mesh rebroadcasts
+  private readonly MESSAGE_DEDUPE_WAIT_MS = 250; // Wait 250ms for better version before emitting
 
   constructor(
     private readonly configService: ConfigService,
@@ -593,6 +596,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.globalRate.count = 0;
     this.globalRate.resetAt = 0;
     this.targetRates.clear();
+    this.recentMessageCache.clear();
     this.packetIdCounter = Math.floor(Math.random() * 0xffff);
     this.broadcastState();
   }
@@ -1205,6 +1209,126 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private processAndEmitLine(part: string): void {
+    this.incoming$.next(part);
+    try {
+      const parsed = this.protocolParser.parseLine(part);
+      if (parsed.length > 0) {
+        this.logger.debug({ parsed }, 'Parsed serial events');
+        parsed.forEach((event) => this.parsed$.next(event));
+        this.broadcastParsedEvents(parsed);
+      }
+    } catch (err) {
+      this.logger.error(`Failed to parse buffered line: ${part}`, err as Error);
+      this.parsed$.next({ kind: 'raw', raw: part });
+    }
+  }
+
+  private extractDedupeKey(content: string): string | null {
+    // Extract a stable key from the message that ignores variable fields (RSSI, GPS, HDOP, temps, etc.)
+    // This catches duplicates from Meshtastic 2.6 double-sends (SerialConsole + Router rebroadcast)
+
+    // Extract node ID (first token before colon)
+    const nodeMatch = /^([A-Za-z0-9_.:-]+):/.exec(content);
+    const nodeId = nodeMatch ? nodeMatch[1] : '';
+
+    // Extract message type (STATUS, TARGET, ATTACK, etc.)
+    const typeMatch = /:\s*([A-Z_]+)[:|\s]/.exec(content);
+    const msgType = typeMatch ? typeMatch[1] : '';
+
+    if (!nodeId || !msgType) {
+      return null;
+    }
+
+    // Extract stable fields based on message type
+    switch (msgType) {
+      case 'STATUS': {
+        const mode = /Mode:([^\s]+)/.exec(content)?.[1] || '';
+        const scan = /Scan:([^\s]+)/.exec(content)?.[1] || '';
+        const hits = /Hits:(\d+)/.exec(content)?.[1] || '';
+        const unique = /Unique:(\d+)/.exec(content)?.[1] || '';
+        return `${nodeId}:STATUS:${mode}:${scan}:${hits}:${unique}`;
+      }
+
+      case 'TARGET': {
+        const mac = /(?:Target:\s*)?(?:[A-Z]+\s+)?((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        const type = /Type:([^\s]+)/i.exec(content)?.[1] || '';
+        return `${nodeId}:TARGET:${mac.toUpperCase()}:${type}`;
+      }
+
+      case 'TARGET_DATA': {
+        const mac = /((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        const hits = /Hits=(\d+)/.exec(content)?.[1] || '';
+        return `${nodeId}:TARGET_DATA:${mac.toUpperCase()}:${hits}`;
+      }
+
+      case 'DEVICE': {
+        const mac = /((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        const band = /\s([WB])\s/.exec(content)?.[1] || '';
+        return `${nodeId}:DEVICE:${mac.toUpperCase()}:${band}`;
+      }
+
+      case 'DRONE': {
+        const mac = /((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        const droneId = /ID:([^\s]+)/.exec(content)?.[1] || '';
+        return `${nodeId}:DRONE:${mac.toUpperCase()}:${droneId}`;
+      }
+
+      case 'ATTACK': {
+        const kind = /ATTACK:\s*(DEAUTH|DISASSOC)/i.exec(content)?.[1] || '';
+        const src = /SRC:((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] ||
+                    /([0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2}:[0-9A-F]{2})->/i.exec(content)?.[1] || '';
+        const dst = /DST:((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] ||
+                    /->((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        const chan = /C(?:H:|hannel:)?(\d+)/i.exec(content)?.[1] || '';
+        return `${nodeId}:ATTACK:${kind}:${src.toUpperCase()}:${dst.toUpperCase()}:${chan}`;
+      }
+
+      case 'ANOMALY': {
+        const kind = /ANOMALY-([A-Z]+)/i.exec(content)?.[1] || '';
+        const type = /ANOMALY-[A-Z]+:\s*([^\s]+)/i.exec(content)?.[1] || '';
+        const mac = /((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        return `${nodeId}:ANOMALY:${kind}:${type}:${mac.toUpperCase()}`;
+      }
+
+      case 'IDENTITY': {
+        const tag = /IDENTITY:([^\s]+)/.exec(content)?.[1] || '';
+        const band = /\s([WB])\s/.exec(content)?.[1] || '';
+        const anchor = /Anchor:((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        return `${nodeId}:IDENTITY:${tag}:${band}:${anchor.toUpperCase()}`;
+      }
+
+      case 'GPS': {
+        // GPS messages are tricky - coords can drift slightly. Use rough location.
+        const latMatch = /Location[:=]([-\d.]+)/i.exec(content);
+        const lat = latMatch ? Math.round(Number(latMatch[1]) * 1000) : '';
+        const lonMatch = /,([-\d.]+)/i.exec(content);
+        const lon = lonMatch ? Math.round(Number(lonMatch[1]) * 1000) : '';
+        return `${nodeId}:GPS:${lat}:${lon}`;
+      }
+
+      case 'TRIANGULATE_COMPLETE':
+      case 'TRIANGULATION_FINAL': {
+        const mac = /((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        return `${nodeId}:${msgType}:${mac.toUpperCase()}`;
+      }
+
+      default: {
+        // For unknown types, normalize by removing variable fields
+        const normalized = content
+          .replace(/RSSI[:=]?-?\d+/gi, '')
+          .replace(/HDOP[:=][\d.]+/gi, '')
+          .replace(/Temp:[\d.]+[CF]/gi, '')
+          .replace(/Up:[\d:]+/gi, '')
+          .replace(/GPS[:=][-\d.,]+/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 60);
+        return `${nodeId}:${msgType}:${normalized}`;
+      }
+    }
+  }
+
   private processIncomingLine(line: string, source: 'serial' | 'simulation'): void {
     const sanitized = sanitizeLine(line);
     if (!sanitized) {
@@ -1215,26 +1339,67 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       .split(/\r?\n/)
       .map((p) => p.trim())
       .filter(Boolean);
+
+    const now = Date.now();
+
+    // Clean up expired entries from the message cache periodically
+    if (this.recentMessageCache.size > 0) {
+      for (const [key, entry] of this.recentMessageCache.entries()) {
+        if (now - entry.timestamp > this.MESSAGE_CACHE_TTL_MS) {
+          this.recentMessageCache.delete(key);
+        }
+      }
+    }
+
     for (const part of parts) {
       this.logger.debug(
         { line: part },
         source === 'serial' ? 'Serial line received' : 'Simulated serial line',
       );
-      const lower = part.toLowerCase();
-      // Skip router debug lines that mirror the payload as "msg=..." to avoid duplicate parsing.
-      if (lower.includes('msg=')) {
-        this.parsed$.next({ kind: 'raw', raw: part });
-        continue;
+
+      // Extract the core message content for deduplication
+      const msgIndex = part.lastIndexOf('msg=');
+      const coreContent = msgIndex >= 0 ? part.slice(msgIndex + 4).trim() : part;
+
+      // Universal deduplication: check if we've seen this message recently
+      // This catches Meshtastic 2.6 duplicates (SerialConsole + Router rebroadcast)
+      const dedupeKey = this.extractDedupeKey(coreContent);
+
+      if (dedupeKey) {
+        const cached = this.recentMessageCache.get(dedupeKey);
+        if (cached !== undefined) {
+          const timeDiff = now - cached.timestamp;
+          this.logger.debug(
+            { line: part, dedupeKey, timeDiff },
+            'Skipping duplicate message (Meshtastic 2.6 compat)',
+          );
+          continue;
+        }
       }
+
       this.incoming$.next(part);
       try {
-        const msgIndex = part.toLowerCase().indexOf('msg=');
-        const parseCandidate = msgIndex >= 0 ? part.slice(msgIndex + 4).trim() : part;
-        const parsed = this.protocolParser.parseLine(parseCandidate || part);
+        const parsed = this.protocolParser.parseLine(part);
         if (!parsed.length) {
           this.logger.debug({ line: part }, 'Serial line ignored by parser');
           continue;
         }
+
+        // Store this message in the cache to prevent duplicates
+        if (dedupeKey) {
+          this.recentMessageCache.set(dedupeKey, { timestamp: now, content: coreContent, rawLine: part });
+        }
+
+        // Log STATUS messages with full details for debugging
+        if (coreContent.includes('STATUS:')) {
+          this.logger.log({
+            rawLine: part,
+            coreContent,
+            hasHdop: /HDOP[:=]/.test(coreContent),
+            parsed: parsed.map(p => ({ kind: p.kind, data: 'data' in p ? p.data : null }))
+          }, 'STATUS message parsed');
+        }
+
         this.logger.debug({ parsed }, 'Parsed serial events');
         parsed.forEach((event) => this.parsed$.next(event));
         this.broadcastParsedEvents(parsed);

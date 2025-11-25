@@ -81,12 +81,29 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       return [];
     }
 
+    // Check if this is a Meshtastic 2.6+/2.7+ Router/SerialConsole echo with msg= format
     const msgIndex = sanitized.lastIndexOf('msg=');
     const hasMsgSegment = msgIndex >= 0;
-    const isRouterEcho =
-      hasMsgSegment && /\[Router\]/i.test(sanitized) && /Received text msg/i.test(sanitized);
-    const payloadRaw =
-      hasMsgSegment && !isRouterEcho ? sanitized.slice(msgIndex + 4).trim() : sanitized;
+    // Meshtastic 2.6 uses "textmessage msg=...", 2.7+ uses "[Router] Received text msg ... msg=..."
+    const isMeshtasticEcho =
+      hasMsgSegment &&
+      (/\[(Router|SerialConsole)\]/i.test(sanitized) ||
+        /^textmessage\s+msg=/i.test(sanitized) ||
+        /\btextmessage\s+msg=/i.test(sanitized)) &&
+      (/Received text msg/i.test(sanitized) ||
+        /textmessage/i.test(sanitized));
+
+    // Extract payload: for Mesh echoes, get text after msg=; otherwise use msg= content or full line
+    let payloadRaw: string;
+    if (isMeshtasticEcho) {
+      // Extract everything after "msg=" for Meshtastic 2.6+/2.7 format
+      payloadRaw = sanitized.slice(msgIndex + 4).trim();
+    } else if (hasMsgSegment) {
+      // Standard msg= format from other sources
+      payloadRaw = sanitized.slice(msgIndex + 4).trim();
+    } else {
+      payloadRaw = sanitized;
+    }
     const normalizedPayloadRaw = payloadRaw
       .replace(/\r?\n\s*Type:/g, ' Type:')
       .replace(/\r?\n\s*RSSI:/g, ' RSSI:')
@@ -111,8 +128,10 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseAck(payload, sourceId, sanitized);
 
     if (parsed) return parsed;
-    const shouldEmitRaw = !hasMsgSegment || isRouterEcho;
-    return shouldEmitRaw ? [{ kind: 'raw', raw: sanitized }] : [];
+
+    // For unparsed lines, only emit as raw if not a Meshtastic echo
+    // (Mesh echoes that don't parse are typically commands/noise, not data)
+    return isMeshtasticEcho ? [] : [{ kind: 'raw', raw: sanitized }];
   }
 
   reset(): void {
@@ -494,20 +513,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const normalizedLat = Number.isFinite(lat) ? (lat as number) : 0;
     const normalizedLon = Number.isFinite(lon) ? (lon as number) : 0;
     const results: SerialParseResult[] = [];
-    // Emit telemetry when we have a nodeId; allow lat/lon to be undefined if not provided.
-    if (resolvedNodeId) {
-      const telemetry: SerialParseResult = {
-        kind: 'node-telemetry',
-        nodeId: resolvedNodeId,
-        lat: normalizedLat,
-        lon: normalizedLon,
-        raw,
-        lastMessage: msg,
-        temperatureC: m.groups.tempC ? Number(m.groups.tempC) : undefined,
-        temperatureF: m.groups.tempF ? Number(m.groups.tempF) : undefined,
-      };
-      results.push(telemetry);
-    }
+    // Only emit a single alert for STATUS messages (don't duplicate with telemetry)
     results.push({
       kind: 'alert',
       level: 'NOTICE',
@@ -515,7 +521,13 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       nodeId: resolvedNodeId,
       message: msg,
       raw,
-      data: { hdop },
+      data: {
+        hdop,
+        lat: normalizedLat,
+        lon: normalizedLon,
+        temperatureC: m.groups.tempC ? Number(m.groups.tempC) : undefined,
+        temperatureF: m.groups.tempF ? Number(m.groups.tempF) : undefined,
+      },
     });
     // If firmware prefixes an alias (e.g., "ah02: AH902: STATUS ..."), normalize the raw payload
     // so downstream UI doesn't display the duplicate leading token.
