@@ -39,6 +39,7 @@ const COMMAND_HANDLERS: Record<string, CommandHandler> = {
   TRIANGULATE_START: handleTriangulateStart,
   TRIANGULATE_STOP: expectNoParams,
   TRIANGULATE_RESULTS: expectNoParams,
+  ERASE_REQUEST: expectNoParams,
   ERASE_FORCE: handleEraseForce,
   ERASE_CANCEL: expectNoParams,
 };

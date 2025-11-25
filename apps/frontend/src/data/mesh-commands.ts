@@ -369,6 +369,17 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     parameters: [],
   },
   {
+    name: 'ERASE_REQUEST',
+    group: 'Security',
+    description: 'Request erase token from headless/radio device during tamper event.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [
+      { target: '@NODE_22', params: [], label: 'Request token' },
+      { target: '@ALL', params: [], label: 'Broadcast request' },
+    ],
+  },
+  {
     name: 'ERASE_FORCE',
     group: 'Security',
     description: 'Force emergency erase (requires admin token).',
