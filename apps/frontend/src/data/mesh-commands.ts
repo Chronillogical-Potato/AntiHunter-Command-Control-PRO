@@ -465,7 +465,11 @@ export const MESH_COMMANDS: CommandDefinition[] = [
       },
     ],
     examples: [
-      { target: '@NODE_22', params: [], label: 'Use defaults (120s setup, 30s erase, 3 vibs, 20s window, 300s cooldown)' },
+      {
+        target: '@NODE_22',
+        params: [],
+        label: 'Use defaults (120s setup, 30s erase, 3 vibs, 20s window, 300s cooldown)',
+      },
       { target: '@NODE_22', params: ['60', '30', '3', '20', '300'], label: 'Custom parameters' },
     ],
   },
