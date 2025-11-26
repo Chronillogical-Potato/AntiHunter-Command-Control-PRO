@@ -1,12 +1,13 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DroneStatus } from '@prisma/client';
+import { AlarmLevel, DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { MqttService, SiteMqttContext } from './mqtt.service';
 import { DronesService } from '../drones/drones.service';
 import { EventBusService, CommandCenterEvent } from '../events/event-bus.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
+import { WebhookDispatcherService } from '../webhooks/webhook-dispatcher.service';
 
 type EventBroadcastMessage = {
   type: 'event.broadcast';
@@ -56,8 +57,11 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttEventsService.name);
   private readonly localSiteId: string;
   private readonly enabled: boolean;
+  private readonly processRemoteAlerts: boolean;
   private subscription?: Subscription;
   private readonly inboundHandlers = new Map<string, (topic: string, payload: Buffer) => void>();
+  private readonly seenAlertIds = new Map<string, number>();
+  private static readonly ALERT_DEDUPE_MS = 5 * 60 * 1000;
 
   constructor(
     configService: ConfigService,
@@ -65,9 +69,11 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
     private readonly mqttService: MqttService,
     private readonly gateway: CommandCenterGateway,
     private readonly dronesService: DronesService,
+    private readonly webhookDispatcher: WebhookDispatcherService,
   ) {
     this.localSiteId = configService.get<string>('site.id', 'default');
     this.enabled = configService.get<boolean>('mqtt.enabled', true);
+    this.processRemoteAlerts = configService.get<boolean>('mqtt.processRemoteAlerts', true);
   }
 
   onModuleInit(): void {
@@ -182,6 +188,7 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
     const event = {
       ...message.payload,
       siteId: message.payload.siteId ?? originSiteId,
+      originSiteId,
     };
 
     if (isDroneTelemetryEvent(event)) {
@@ -250,6 +257,55 @@ export class MqttEventsService implements OnModuleInit, OnModuleDestroy {
           }`,
         );
       }
+    } else if (event.type === 'event.alert') {
+      if (!this.processRemoteAlerts) {
+        this.gateway.emitEvent(event, { skipBus: true });
+        return;
+      }
+
+      const eventAny = event as any;
+      const alertId =
+        typeof eventAny.id === 'string'
+          ? eventAny.id
+          : `${originSiteId}-${eventAny.nodeId ?? 'unknown'}-${eventAny.timestamp ?? Date.now()}-${
+              eventAny.message ?? ''
+            }`;
+
+      const now = Date.now();
+      this.seenAlertIds.forEach((ts, key) => {
+        if (now - ts > MqttEventsService.ALERT_DEDUPE_MS) {
+          this.seenAlertIds.delete(key);
+        }
+      });
+      if (this.seenAlertIds.has(alertId)) {
+        return;
+      }
+      this.seenAlertIds.set(alertId, now);
+
+      this.gateway.emitEvent(event, { skipBus: true });
+
+      try {
+        await this.webhookDispatcher.dispatchExternalAlert({
+          event: 'alert.remote',
+          eventType: 'ALERT_TRIGGERED',
+          timestamp: eventAny.timestamp ? new Date(eventAny.timestamp as string) : new Date(),
+          message: typeof eventAny.message === 'string' ? eventAny.message : undefined,
+          severity:
+            typeof eventAny.level === 'string'
+              ? (eventAny.level as AlarmLevel)
+              : undefined,
+          siteId: originSiteId,
+          nodeId: typeof eventAny.nodeId === 'string' ? eventAny.nodeId : null,
+          payload: eventAny.data as Record<string, unknown> | undefined,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to process remote alert ${alertId} from ${originSiteId}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+      return;
     }
 
     this.gateway.emitEvent(event, { skipBus: true });
