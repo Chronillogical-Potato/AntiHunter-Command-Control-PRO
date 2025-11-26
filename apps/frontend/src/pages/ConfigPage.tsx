@@ -523,10 +523,7 @@ export function ConfigPage() {
   const handleToggleMuteAll = () => {
     if (!localAlarm) return;
     if (!muteAllAlarms) {
-      const snapshot: Partial<AlarmConfig> = {};
-      volumeKeys.forEach((key) => {
-        snapshot[key] = localAlarm[key];
-      });
+      const snapshot: Partial<AlarmConfig> = { ...localAlarm };
       savedVolumesRef.current = snapshot;
       const muted = volumeKeys.reduce(
         (acc, key) => ({ ...acc, [key]: 0 }),
