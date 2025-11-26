@@ -47,18 +47,26 @@ const VIBRATION_STATUS_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*VIBRATION_STATUS:\s*
 const SETUP_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*SETUP_(?<kind>MODE|COMPLETE):\s*(?<msg>.+)$/i;
 const TAMPER_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*TAMPER_(?<kind>DETECTED|CANCELLED):?(?:\s*(?<msg>.+))?/i;
-const ERASE_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_(?<kind>EXECUTING|ACK):(?<msg>.+)?/i;
+const ERASE_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_(?<kind>EXECUTING|ACK|CANCELLED|COMPLETE):(?<msg>.+)?/i;
+const AUTOERASE_ACK_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*AUTOERASE_ACK:(?<status>ENABLED|DISABLED)(?:\s+Setup:(?<setup>\d+)s)?(?:\s+Erase:(?<erase>\d+)s)?(?:\s+Vibs:(?<vibs>\d+))?(?:\s+Window:(?<window>\d+)s)?(?:\s+Cooldown:(?<cooldown>\d+)s)?/i;
+const AUTOERASE_STATUS_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*AUTOERASE_STATUS:\s*Enabled:(?<enabled>YES|NO)(?:\s+SetupMode:(?<setupMode>\S+))?(?:\s+TamperActive:(?<tamperActive>YES|NO))?(?:\s+Setup:(?<setup>\d+)s)?(?:\s+Erase:(?<erase>\d+)s)?(?:\s+Vibs:(?<vibs>\d+))?(?:\s+Window:(?<window>\d+)s)?(?:\s+Cooldown:(?<cooldown>\d+)s)?/i;
 const BASELINE_STATUS_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*BASELINE_STATUS:\s*Scanning:(?<scanning>YES|NO)\s+Established:(?<est>YES|NO)\s+Devices:(?<dev>\d+)\s+Anomalies:(?<anom>\d+)\s+Phase1:(?<phase>[A-Z]+)/i;
 
 const ACK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|STOP|REBOOT)_ACK):(?<status>[A-Z_]+)/i;
 const WIPE_TOKEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*WIPE_TOKEN:(?<token>[A-Za-z0-9_:-]+)/i;
+const ERASE_TOKEN_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_TOKEN:(?<token>[A-Za-z0-9_:-]+|\w+)(?:\s+Time:(?<time>\d+)s)?/i;
 const TRI_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_ACK:(?<target>.+)$/i;
 const TRI_STOP_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_STOP_ACK/i;
 const BASELINE_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*BASELINE_ACK:(?<status>[A-Z_]+)/i;
 const TRI_RESULTS_START_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_RESULTS_START/i;
 const TRI_RESULTS_END_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_RESULTS_END/i;
+const TRI_RESULTS_NO_DATA_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_RESULTS:NO_DATA/i;
 const TRI_COMPLETE_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*TRIANGULATE_COMPLETE:\s*(?:MAC=(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+)?Nodes=(?<nodes>\d+)\s*(?<rest>.+)?$/i;
 const RTC_SYNC_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*RTC_SYNC:(?<source>\S+)/i;
@@ -690,6 +698,97 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
         },
       ];
     }
+    const eraseToken = ERASE_TOKEN_REGEX.exec(payload);
+    if (eraseToken?.groups) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'erase',
+          nodeId: nodeId ?? eraseToken.groups.id,
+          message: payload,
+          raw,
+          data: {
+            token: eraseToken.groups.token,
+            time: eraseToken.groups.time ? Number(eraseToken.groups.time) : undefined,
+          },
+        },
+      ];
+    }
+    const autoEraseAck = AUTOERASE_ACK_REGEX.exec(payload);
+    if (autoEraseAck?.groups) {
+      return [
+        {
+          kind: 'command-ack',
+          nodeId: nodeId ?? autoEraseAck.groups.id,
+          ackType: 'AUTOERASE_ACK',
+          status: autoEraseAck.groups.status,
+          raw,
+        },
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'erase',
+          nodeId: nodeId ?? autoEraseAck.groups.id,
+          message: payload,
+          raw,
+          data: {
+            status: autoEraseAck.groups.status,
+            setupDelay: autoEraseAck.groups.setup ? Number(autoEraseAck.groups.setup) : undefined,
+            eraseDelay: autoEraseAck.groups.erase ? Number(autoEraseAck.groups.erase) : undefined,
+            vibrationsRequired: autoEraseAck.groups.vibs
+              ? Number(autoEraseAck.groups.vibs)
+              : undefined,
+            detectionWindow: autoEraseAck.groups.window
+              ? Number(autoEraseAck.groups.window)
+              : undefined,
+            autoEraseCooldown: autoEraseAck.groups.cooldown
+              ? Number(autoEraseAck.groups.cooldown)
+              : undefined,
+          },
+        },
+      ];
+    }
+    const autoEraseStatus = AUTOERASE_STATUS_REGEX.exec(payload);
+    if (autoEraseStatus?.groups) {
+      return [
+        {
+          kind: 'command-ack',
+          nodeId: nodeId ?? autoEraseStatus.groups.id,
+          ackType: 'AUTOERASE_STATUS_ACK',
+          status: 'OK',
+          raw,
+        },
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'erase',
+          nodeId: nodeId ?? autoEraseStatus.groups.id,
+          message: payload,
+          raw,
+          data: {
+            enabled: autoEraseStatus.groups.enabled === 'YES',
+            setupMode: autoEraseStatus.groups.setupMode,
+            tamperActive: autoEraseStatus.groups.tamperActive === 'YES',
+            setupDelay: autoEraseStatus.groups.setup
+              ? Number(autoEraseStatus.groups.setup)
+              : undefined,
+            eraseDelay: autoEraseStatus.groups.erase
+              ? Number(autoEraseStatus.groups.erase)
+              : undefined,
+            vibrationsRequired: autoEraseStatus.groups.vibs
+              ? Number(autoEraseStatus.groups.vibs)
+              : undefined,
+            detectionWindow: autoEraseStatus.groups.window
+              ? Number(autoEraseStatus.groups.window)
+              : undefined,
+            autoEraseCooldown: autoEraseStatus.groups.cooldown
+              ? Number(autoEraseStatus.groups.cooldown)
+              : undefined,
+          },
+        },
+      ];
+    }
     return null;
   }
 
@@ -722,6 +821,19 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
           message: payload,
           raw,
           data: { stage: 'results-end' },
+        },
+      ];
+    }
+    if (TRI_RESULTS_NO_DATA_REGEX.test(payload)) {
+      return [
+        {
+          kind: 'alert',
+          level: 'NOTICE',
+          category: 'triangulation',
+          nodeId: id,
+          message: payload,
+          raw,
+          data: { stage: 'no-data' },
         },
       ];
     }
