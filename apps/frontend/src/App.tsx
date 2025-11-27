@@ -17,6 +17,7 @@ import {
 } from './constants/alert-colors';
 import { resolveThemePalette, type ThemePalette, type ThemePresetId } from './constants/theme';
 import { AddonPage } from './pages/AddonPage';
+import { AdsbPage } from './pages/AdsbPage';
 import { AlertsEventLogPage } from './pages/AlertsEventLogPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { ChatPage } from './pages/ChatPage';
@@ -124,6 +125,7 @@ export default function App() {
               <Route path="/" element={<Navigate to="/map" replace />} />
               <Route path="/map" element={<MapPage />} />
               <Route path="/geofences" element={<GeofencePage />} />
+              <Route path="/adsb" element={<AdsbPage />} />
               <Route path="/nodes" element={<NodesPage />} />
               <Route path="/targets" element={<TargetsPage />} />
               <Route path="/strategy" element={<StrategyAdvisorPage />} />
