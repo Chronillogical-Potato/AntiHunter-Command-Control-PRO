@@ -4024,7 +4024,7 @@ export function ConfigPage() {
                   disabled={faaInProgress || faaSyncMutation.isPending}
                   onClick={() => faaSyncMutation.mutate()}
                 >
-                  {faaInProgress ? 'Sync in progress¦' : 'Download & Parse'}
+                  {faaInProgress ? 'Sync in progress' : 'Download & Parse'}
                 </button>
                 <button
                   type="button"
