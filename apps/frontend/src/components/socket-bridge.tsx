@@ -21,6 +21,7 @@ import { useChatStore } from '../stores/chat-store';
 import { useDroneStore } from '../stores/drone-store';
 import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
+import { useMapPreferences } from '../stores/map-store';
 import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
 import { useTrackingBannerStore } from '../stores/tracking-banner-store';
@@ -156,8 +157,21 @@ export function SocketBridge() {
 
     const handleEvent = (payload: unknown) => {
       if (isAdsbTracksEvent(payload)) {
+        addEntry({
+          message: `ADS-B tracks updated: ${payload.tracks.length} aircraft`,
+          level: 'info',
+          source: 'adsb',
+          timestamp: new Date().toISOString(),
+        });
         queryClient.setQueryData(['adsb', 'tracks'], payload.tracks);
         return;
+      }
+      if (isGeofenceAlertEvent(payload)) {
+        const data = (payload as { data?: { geofenceId?: string } }).data;
+        const geofenceId = (payload as { geofenceId?: string }).geofenceId ?? data?.geofenceId;
+        if (geofenceId && useMapPreferences.getState().adsbGeofenceEnabled) {
+          useGeofenceStore.getState().setHighlighted(geofenceId, 5000);
+        }
       }
       if (isChatClearEvent(payload)) {
         useChatStore.getState().clearAllRemote();
@@ -1109,6 +1123,23 @@ function isAdsbTracksEvent(
   }
   const base = payload as { type?: string; tracks?: unknown };
   return base.type === 'adsb.tracks' && Array.isArray(base.tracks);
+}
+
+function isGeofenceAlertEvent(payload: unknown): payload is {
+  type: string;
+  category?: string;
+  geofenceId?: string;
+  data?: { geofenceId?: string };
+} {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const base = payload as { type?: string; category?: string };
+  if (base.type !== 'event.alert') {
+    return false;
+  }
+  const category = typeof base.category === 'string' ? base.category.toLowerCase() : '';
+  return category === 'geofence';
 }
 
 function toNumber(value: unknown): number | undefined {

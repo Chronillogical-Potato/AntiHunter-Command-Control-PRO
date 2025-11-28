@@ -23,6 +23,7 @@ tmp/
 # Local scratch/test assets not tracked
 MeshCommands.json
 meshMessagesUpdated.json
+ouibug.txt
 kill-port-3000.ps1
 inspect-codes.js
 inspect-line.js

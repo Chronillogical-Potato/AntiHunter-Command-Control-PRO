@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 import { AdsbService } from './adsb.service';
 
@@ -23,6 +32,7 @@ export class AdsbController {
       enabled?: boolean;
       feedUrl?: string;
       intervalMs?: number;
+      geofencesEnabled?: boolean;
     },
   ) {
     return this.adsbService.updateConfig(body);
@@ -36,5 +46,21 @@ export class AdsbController {
       throw new Error(`Proxy fetch failed: ${response.status} ${response.statusText}`);
     }
     return response.json();
+  }
+
+  @Post('database/upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAircraftDatabase(@UploadedFile() file?: Express.Multer.File) {
+    if (!file || !file.buffer || !file.originalname) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.adsbService.saveAircraftDatabase(file.originalname, file.buffer);
+  }
+
+  // Alias endpoint for convenience (same upload handler)
+  @Post('database')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAircraftDatabaseAlias(@UploadedFile() file?: Express.Multer.File) {
+    return this.uploadAircraftDatabase(file);
   }
 }

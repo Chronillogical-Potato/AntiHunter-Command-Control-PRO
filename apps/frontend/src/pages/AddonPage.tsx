@@ -1,5 +1,5 @@
-﻿import { useEffect, useState } from 'react';
-import { MdChat, MdEventNote, MdHub, MdNotificationsActive } from 'react-icons/md';
+import { useEffect, useState } from 'react';
+import { MdChat, MdEventNote, MdHub, MdNotificationsActive, MdRadar } from 'react-icons/md';
 
 import { apiClient } from '../api/client';
 import type { AuthUser } from '../api/types';
@@ -13,6 +13,7 @@ export function AddonPage() {
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(addonPrefs.alerts ?? false);
   const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(addonPrefs.scheduler ?? false);
   const [chatEnabled, setChatEnabled] = useState<boolean>(addonPrefs.chat ?? false);
+  const [adsbEnabled, setAdsbEnabled] = useState<boolean>(addonPrefs.adsb ?? true);
 
   useEffect(() => {
     setStrategyEnabled(addonPrefs.strategy ?? false);
@@ -30,6 +31,7 @@ export function AddonPage() {
       setAlertsEnabled(updated.preferences?.notifications?.addons?.alerts ?? false);
       setSchedulerEnabled(updated.preferences?.notifications?.addons?.scheduler ?? false);
       setChatEnabled(updated.preferences?.notifications?.addons?.chat ?? false);
+      setAdsbEnabled(updated.preferences?.notifications?.addons?.adsb ?? true);
     } catch (error) {
       console.error('Failed to update add-ons', error);
     }
@@ -39,6 +41,7 @@ export function AddonPage() {
   const handleAlertsToggle = () => updateAddons({ alerts: !alertsEnabled });
   const handleSchedulerToggle = () => updateAddons({ scheduler: !schedulerEnabled });
   const handleChatToggle = () => updateAddons({ chat: !chatEnabled });
+  const handleAdsbToggle = () => updateAddons({ adsb: !adsbEnabled });
 
   return (
     <div className="page addon-page">
@@ -124,6 +127,29 @@ export function AddonPage() {
           <div className="addon-card__actions">
             <button type="button" className="control-chip" onClick={handleChatToggle}>
               {chatEnabled ? 'Deactivate add-on' : 'Activate add-on'}
+            </button>
+          </div>
+        </article>
+
+        <article className="config-card addon-card">
+          <div className="addon-card__logo">
+            <MdRadar size={42} />
+          </div>
+          <h2>ADS-B Ingest</h2>
+          <div className="addon-card__body">
+            <p>
+              Pull live sky traffic from dump1090/readsb and overlay it on the map with geofence
+              triggers.
+            </p>
+            <div className="addon-card__notice">This addon is under development.</div>
+            <p className="form-hint">
+              Shows ADS-B overlays on the map and triggers geofences when enabled. Configure feed
+              and database under ADS-B.
+            </p>
+          </div>
+          <div className="addon-card__actions">
+            <button type="button" className="control-chip" onClick={handleAdsbToggle}>
+              {adsbEnabled ? 'Deactivate add-on' : 'Activate add-on'}
             </button>
           </div>
         </article>

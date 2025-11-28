@@ -9,12 +9,20 @@ export interface AdsbTrack {
   heading?: number | null;
   onGround?: boolean | null;
   lastSeen: string;
+  siteId?: string | null;
+  category?: string | null;
+  typeCode?: string | null;
+  model?: string | null;
+  manufacturer?: string | null;
+  aircraftType?: string | null;
+  categoryDescription?: string | null;
 }
 
 export interface AdsbStatus {
   enabled: boolean;
   feedUrl: string;
   intervalMs: number;
+  geofencesEnabled: boolean;
   lastPollAt?: string | null;
   lastError?: string | null;
   trackCount: number;

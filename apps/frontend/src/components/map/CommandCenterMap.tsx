@@ -168,13 +168,46 @@ function createTargetIcon(target: TargetMarker): DivIcon {
 
 function createAdsbIcon(track: AdsbTrack): DivIcon {
   const label = escapeHtml(track.callsign ?? track.icao);
-  const color = '#06b6d4';
+  const isHelicopter = isHelicopterCategory(
+    track.category,
+    track.aircraftType,
+    track.typeCode,
+    track.categoryDescription,
+  );
+  const color = isHelicopter ? '#a855f7' : '#06b6d4';
+  const iconGlyph = isHelicopter ? '🚁' : '✈';
+  const markerClass = isHelicopter ? 'adsb-marker--heli' : 'adsb-marker--plane';
+  const rotation = typeof track.heading === 'number' ? track.heading : null;
   return divIcon({
-    html: `<div class="adsb-marker" style="--adsb-color:${color};"><span>${label}</span></div>`,
+    html: `<div class="adsb-marker ${markerClass}" style="--adsb-color:${color};${
+      rotation != null ? `--adsb-rotation:${rotation}deg;` : ''
+    }"><span class="adsb-marker__icon">${iconGlyph}</span><span class="adsb-marker__label">${label}</span></div>`,
     className: 'adsb-marker-wrapper',
     iconSize: [28, 28],
     iconAnchor: [14, 14],
   });
+}
+
+function isHelicopterCategory(
+  category?: string | null,
+  aircraftType?: string | null,
+  typeCode?: string | null,
+  categoryDescription?: string | null,
+): boolean {
+  const tokens = [category, aircraftType, typeCode, categoryDescription]
+    .map((token) => token?.trim().toUpperCase())
+    .filter((token): token is string => Boolean(token));
+
+  if (tokens.length === 0) return false;
+
+  return tokens.some(
+    (token) =>
+      token.startsWith('B') ||
+      token.startsWith('H') ||
+      token.includes('HELI') ||
+      token.includes('ROTOR') ||
+      token.includes('ROTARY'),
+  );
 }
 
 function createDroneIcon(drone: DroneMarker): DivIcon {
@@ -712,10 +745,22 @@ export function CommandCenterMap({
           <Marker key={`adsb-${track.id}`} position={position} icon={createAdsbIcon(track)}>
             <Tooltip direction="top" offset={[0, -10]} opacity={0.95} className="tooltip--drone">
               <div className="drone-tooltip">
+                <div className="badge badge--inline">Source: ADS-B</div>
                 <strong>{track.callsign ?? track.icao}</strong>
                 <div className="muted">{track.icao}</div>
                 <div>
                   Location: {track.lat.toFixed(5)}, {track.lon.toFixed(5)}
+                </div>
+                <div>
+                  Type:{' '}
+                  {isHelicopterCategory(
+                    track.category,
+                    track.aircraftType,
+                    track.typeCode,
+                    track.categoryDescription,
+                  )
+                    ? 'Helicopter'
+                    : 'Fixed wing'}
                 </div>
                 {track.alt != null ? <div>Altitude: {track.alt.toFixed(0)} ft</div> : null}
                 {track.speed != null ? <div>Speed: {track.speed.toFixed(0)} kt</div> : null}

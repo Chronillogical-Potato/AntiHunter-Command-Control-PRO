@@ -16,6 +16,7 @@ import {
   MdRadar,
 } from 'react-icons/md';
 
+import { getAdsbTracksViaProxy } from '../api/adsb';
 import { apiClient } from '../api/client';
 import type {
   AlarmLevel,
@@ -29,7 +30,6 @@ import type {
   SavedMapViewPreference,
   SiteSummary,
   Target,
-  AdsbTrack,
 } from '../api/types';
 import { DroneFloatingCard } from '../components/DroneFloatingCard';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
@@ -195,6 +195,9 @@ export function MapPage() {
     });
   }, [targetsQuery.data, commentMap, trackingMap, triangulationState]);
 
+  const adsbAddonEnabled =
+    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.adsb ?? true) ?? true;
+
   const {
     trailsEnabled,
     radiusEnabled,
@@ -202,20 +205,22 @@ export function MapPage() {
     targetsEnabled,
     coverageEnabled,
     adsbEnabled,
+    adsbGeofenceEnabled,
     mapStyle,
     toggleTrails,
     toggleRadius,
     toggleFollow,
     toggleTargets,
     toggleAdsb,
+    toggleAdsbGeofence,
   } = useMapPreferences();
   const fitEnabled = useMapPreferences((state) => state.fitEnabled);
   const setMapStyle = useMapPreferences((state) => state.setMapStyle);
   const setFitEnabled = useMapPreferences((state) => state.setFitEnabled);
   const adsbTracksQuery = useQuery({
     queryKey: ['adsb', 'tracks'],
-    queryFn: async () => apiClient.get<AdsbTrack[]>('/adsb/tracks'),
-    enabled: isAuthenticated && adsbEnabled,
+    queryFn: getAdsbTracksViaProxy,
+    enabled: isAuthenticated && adsbAddonEnabled && adsbEnabled,
     refetchInterval: 15_000,
   });
 
@@ -226,11 +231,16 @@ export function MapPage() {
   );
   const adsbTracks = useMemo(
     () =>
-      adsbEnabled && adsbTracksQuery.data
+      adsbAddonEnabled && adsbEnabled && adsbTracksQuery.data
         ? adsbTracksQuery.data.filter((track) => hasValidPosition(track.lat, track.lon))
         : [],
-    [adsbEnabled, adsbTracksQuery.data],
+    [adsbAddonEnabled, adsbEnabled, adsbTracksQuery.data],
   );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => pruneGeofenceHighlights(), 1000);
+    return () => window.clearInterval(timer);
+  }, [geofenceHighlights, pruneGeofenceHighlights]);
 
   const onlineCount = useMemo(
     () => nodeList.filter((node) => Boolean(node?.lastSeen)).length,
@@ -715,13 +725,24 @@ export function MapPage() {
             >
               <MdVisibility /> Targets
             </button>
-            <button
-              type="button"
-              className={`control-chip ${adsbEnabled ? 'is-active' : ''}`}
-              onClick={toggleAdsb}
-            >
-              <MdRadar /> ADS-B
-            </button>
+            {adsbAddonEnabled ? (
+              <>
+                <button
+                  type="button"
+                  className={`control-chip ${adsbEnabled ? 'is-active' : ''}`}
+                  onClick={toggleAdsb}
+                >
+                  <MdRadar /> ADS-B
+                </button>
+                <button
+                  type="button"
+                  className={`control-chip ${adsbGeofenceEnabled ? 'is-active' : ''}`}
+                  onClick={toggleAdsbGeofence}
+                >
+                  <MdRadar /> ADS-B Geofence
+                </button>
+              </>
+            ) : null}
           </div>
         </header>
         <div className="map-canvas">
@@ -737,7 +758,7 @@ export function MapPage() {
             showRadius={radiusEnabled}
             showTrails={trailsEnabled}
             showTargets={targetsEnabled}
-            adsbTracks={adsbEnabled ? adsbTracks : []}
+            adsbTracks={adsbAddonEnabled && adsbEnabled ? adsbTracks : []}
             followEnabled={followEnabled}
             showCoverage={coverageEnabled}
             mapStyle={mapStyle}

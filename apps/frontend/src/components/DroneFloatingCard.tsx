@@ -122,6 +122,7 @@ export function DroneFloatingCard({
                   <th>Heading</th>
                   <th>RID Data</th>
                   <th>Last Seen</th>
+                  <th>Source</th>
                   <th>Go To</th>
                 </tr>
               </thead>
@@ -198,6 +199,11 @@ export function DroneFloatingCard({
                       <td>{formatHeading(drone)}</td>
                       <td>{renderRidInfo(drone.faa)}</td>
                       <td>{formatRelativeTime(drone.lastSeen)}</td>
+                      <td>
+                        <span className="badge badge--inline">
+                          {drone.mac ? 'RID/RF' : 'ADS-B'}
+                        </span>
+                      </td>
                       <td>
                         <button
                           type="button"

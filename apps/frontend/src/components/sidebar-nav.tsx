@@ -33,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/inventory', label: 'Inventory', icon: MdWifiTethering },
   { to: '/alerts', label: 'Alerts', icon: MdNotificationsActive },
   { to: '/targets', label: 'Targets', icon: MdMyLocation },
-  { to: '/adsb', label: 'ADSB', icon: MdRadar },
+  { to: '/adsb', label: 'ADS-B', icon: MdRadar },
   { to: '/geofences', label: 'Geofences', icon: MdOutlineAreaChart },
   { to: '/nodes', label: 'Nodes', icon: MdSensors },
   { to: '/scheduler', label: 'Scheduler', icon: MdEventNote },
@@ -53,13 +53,15 @@ export function SidebarNav() {
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(addons.alerts ?? false);
   const [schedulerEnabled, setSchedulerEnabled] = useState<boolean>(addons.scheduler ?? false);
   const [chatEnabled, setChatEnabled] = useState<boolean>(addons.chat ?? false);
+  const [adsbEnabled, setAdsbEnabled] = useState<boolean>(addons.adsb ?? true);
 
   useEffect(() => {
     setStrategyEnabled(addons.strategy ?? false);
     setAlertsEnabled(addons.alerts ?? false);
     setSchedulerEnabled(addons.scheduler ?? false);
     setChatEnabled(addons.chat ?? false);
-  }, [addons.alerts, addons.chat, addons.scheduler, addons.strategy]);
+    setAdsbEnabled(addons.adsb ?? true);
+  }, [addons.alerts, addons.chat, addons.scheduler, addons.strategy, addons.adsb]);
 
   const navItems = useMemo(() => {
     return NAV_ITEMS.filter((item) => {
@@ -75,9 +77,12 @@ export function SidebarNav() {
       if (item.to === '/chat') {
         return chatEnabled;
       }
+      if (item.to === '/adsb') {
+        return adsbEnabled;
+      }
       return true;
     });
-  }, [strategyEnabled, alertsEnabled, schedulerEnabled, chatEnabled]);
+  }, [strategyEnabled, alertsEnabled, schedulerEnabled, chatEnabled, adsbEnabled]);
 
   return (
     <aside className="sidebar">

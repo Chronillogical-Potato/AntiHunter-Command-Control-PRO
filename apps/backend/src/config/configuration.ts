@@ -170,5 +170,6 @@ export default () => ({
     enabled: process.env.ADSB_ENABLED === 'true',
     feedUrl: process.env.ADSB_FEED_URL ?? 'http://127.0.0.1:8080/data/aircraft.json',
     pollIntervalMs: parseNumberEnv(process.env.ADSB_POLL_INTERVAL_MS, 15000),
+    geofencesEnabled: process.env.ADSB_GEOFENCES_ENABLED === 'true',
   },
 });
