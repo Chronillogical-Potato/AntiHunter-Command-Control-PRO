@@ -16,6 +16,8 @@ type LogEntry = {
   id: string;
   icao: string;
   callsign?: string | null;
+  reg?: string | null;
+  country?: string | null;
   category?: string | null;
   dep?: string | null;
   dest?: string | null;
@@ -24,6 +26,7 @@ type LogEntry = {
   alt?: number | null;
   speed?: number | null;
   heading?: number | null;
+  messages?: number | null;
   firstSeen: string;
   lastSeen: string;
   hits: number;
@@ -92,9 +95,10 @@ export function AdsbPage() {
 
   useEffect(() => {
     if (!tracksQuery.data) return;
-    const filtered = tracksQuery.data.filter((track) =>
-      Boolean(track.callsign && track.callsign.trim()),
-    );
+    const filtered = tracksQuery.data.filter((track) => {
+      const hasId = (track.callsign && track.callsign.trim()) || (track.reg && track.reg.trim());
+      return Boolean(hasId);
+    });
     setLog((prev) => {
       const next = new Map(prev);
       filtered.forEach((track) => {
@@ -104,6 +108,8 @@ export function AdsbPage() {
           next.set(track.icao, {
             ...existing,
             callsign: track.callsign ?? existing.callsign,
+            reg: track.reg ?? existing.reg,
+            country: track.country ?? existing.country,
             category: track.category ?? existing.category,
             dep: track.dep ?? existing.dep,
             dest: track.dest ?? existing.dest,
@@ -112,6 +118,7 @@ export function AdsbPage() {
             alt: track.alt ?? existing.alt,
             speed: track.speed ?? existing.speed,
             heading: track.heading ?? existing.heading,
+            messages: track.messages ?? existing.messages,
             lastSeen: track.lastSeen ?? now,
             hits: existing.hits + 1,
           });
@@ -120,6 +127,8 @@ export function AdsbPage() {
             id: track.id,
             icao: track.icao,
             callsign: track.callsign ?? null,
+            reg: track.reg ?? null,
+            country: track.country ?? null,
             category: track.category ?? null,
             dep: track.dep ?? null,
             dest: track.dest ?? null,
@@ -128,6 +137,7 @@ export function AdsbPage() {
             alt: track.alt ?? null,
             speed: track.speed ?? null,
             heading: track.heading ?? null,
+            messages: track.messages ?? null,
             firstSeen: track.lastSeen ?? now,
             lastSeen: track.lastSeen ?? now,
             hits: 1,
@@ -148,6 +158,8 @@ export function AdsbPage() {
     const header = [
       'ICAO',
       'Callsign',
+      'Registration',
+      'Country',
       'Category',
       'Departure',
       'Destination',
@@ -156,6 +168,7 @@ export function AdsbPage() {
       'Alt',
       'Speed',
       'Heading',
+      'Messages',
       'First Seen',
       'Last Seen',
       'Hits',
@@ -163,6 +176,8 @@ export function AdsbPage() {
     const rows = logEntries.map((entry) => [
       entry.icao,
       entry.callsign ?? '',
+      entry.reg ?? '',
+      entry.country ?? '',
       entry.category ?? '',
       entry.dep ?? '',
       entry.dest ?? '',
@@ -171,6 +186,7 @@ export function AdsbPage() {
       entry.alt ?? '',
       entry.speed ?? '',
       entry.heading ?? '',
+      entry.messages ?? '',
       entry.firstSeen,
       entry.lastSeen,
       entry.hits,
@@ -462,6 +478,14 @@ export function AdsbPage() {
                       </div>
                     </li>
                     <li>
+                      <strong>Set home position</strong>
+                      <div className="config-hint">
+                        In <code>dump1090-8090.cfg</code>, set your <code>homepos</code> to your
+                        location (e.g. Levanger: <code>homepos = 63.7500000,11.3000000</code>) to
+                        avoid the global-distance check failing.
+                      </div>
+                    </li>
+                    <li>
                       <strong>macOS</strong>
                       <div className="config-hint">
                         Repo:{' '}
@@ -543,6 +567,8 @@ export function AdsbPage() {
                       <tr>
                         <th>ICAO</th>
                         <th>Callsign</th>
+                        <th>Registration</th>
+                        <th>Country</th>
                         <th>Category</th>
                         <th>Departure</th>
                         <th>Destination</th>
@@ -551,6 +577,7 @@ export function AdsbPage() {
                         <th>Alt</th>
                         <th>Speed</th>
                         <th>Heading</th>
+                        <th>Messages</th>
                         <th>First Seen</th>
                         <th>Last Seen</th>
                         <th>Hits</th>
@@ -561,6 +588,8 @@ export function AdsbPage() {
                         <tr key={entry.icao}>
                           <td data-label="ICAO">{entry.icao}</td>
                           <td data-label="Callsign">{entry.callsign ?? '—'}</td>
+                          <td data-label="Registration">{entry.reg ?? '—'}</td>
+                          <td data-label="Country">{entry.country ?? '—'}</td>
                           <td data-label="Category">{entry.category ?? '—'}</td>
                           <td data-label="Departure">{entry.dep ?? '—'}</td>
                           <td data-label="Destination">{entry.dest ?? '—'}</td>
@@ -573,6 +602,9 @@ export function AdsbPage() {
                           <td data-label="Heading">
                             {entry.heading != null ? entry.heading.toFixed(0) : '—'}
                           </td>
+                          <td data-label="Messages">
+                            {entry.messages != null ? entry.messages.toString() : '—'}
+                          </td>
                           <td data-label="First Seen">
                             {new Date(entry.firstSeen).toLocaleString()}
                           </td>
@@ -584,7 +616,7 @@ export function AdsbPage() {
                       ))}
                       {logEntries.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="muted">
+                          <td colSpan={15} className="muted">
                             No aircraft seen yet. Log populates as ADS-B tracks arrive.
                           </td>
                         </tr>

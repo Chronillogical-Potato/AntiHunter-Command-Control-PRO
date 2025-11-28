@@ -13,8 +13,14 @@ export interface Dump1090Aircraft {
   seen?: number;
   nav_heading?: number;
   category?: string;
+  reg?: string;
+  reg_num?: string;
+  r?: string;
   dep?: string;
   dest?: string;
+  cntry?: string;
+  country?: string;
+  messages?: number;
 }
 
 export interface Dump1090AircraftResponse {
@@ -73,8 +79,23 @@ export function normalizeDump1090Response(payload: Dump1090AircraftResponse): Ad
         lastSeen: new Date(now - (entry.seen ?? 0) * 1000).toISOString(),
         siteId: null,
         category: typeof entry.category === 'string' ? entry.category.trim() || null : null,
+        reg:
+          typeof entry.reg === 'string' && entry.reg.trim()
+            ? entry.reg.trim()
+            : typeof entry.r === 'string' && entry.r.trim()
+              ? entry.r.trim()
+              : typeof entry.reg_num === 'string' && entry.reg_num.trim()
+                ? entry.reg_num.trim()
+                : null,
         dep: typeof entry.dep === 'string' ? entry.dep.trim() || null : null,
         dest: typeof entry.dest === 'string' ? entry.dest.trim() || null : null,
+        country:
+          typeof entry.cntry === 'string' && entry.cntry.trim()
+            ? entry.cntry.trim()
+            : typeof entry.country === 'string' && entry.country.trim()
+              ? entry.country.trim()
+              : null,
+        messages: typeof entry.messages === 'number' ? entry.messages : null,
       } as AdsbTrack;
     })
     .filter((track): track is AdsbTrack => track !== null);

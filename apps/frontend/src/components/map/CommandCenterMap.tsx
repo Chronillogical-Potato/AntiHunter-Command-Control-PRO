@@ -186,7 +186,7 @@ function createTargetIcon(target: TargetMarker): DivIcon {
 }
 
 function createAdsbIcon(track: AdsbTrack): DivIcon {
-  const label = escapeHtml(track.callsign ?? track.icao);
+  const label = escapeHtml(track.callsign ?? track.reg ?? track.icao);
   const isHelicopter = isHelicopterCategory(
     track.category,
     track.aircraftType,
@@ -786,6 +786,8 @@ export function CommandCenterMap({
                     Route: {[track.dep, track.dest].filter(Boolean).join(' → ') || 'Unknown'}
                   </div>
                 ) : null}
+                {track.reg ? <div>Registration: {track.reg}</div> : null}
+                {track.country ? <div>Country: {track.country}</div> : null}
                 {track.alt != null ? <div>Altitude: {track.alt.toFixed(0)} ft</div> : null}
                 {track.speed != null ? <div>Speed: {track.speed.toFixed(0)} kt</div> : null}
                 {track.heading != null ? <div>Heading: {track.heading.toFixed(0)}&deg;</div> : null}

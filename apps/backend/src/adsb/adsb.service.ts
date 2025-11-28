@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { AlarmLevel } from '@prisma/client';
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import readline from 'node:readline';
 import { clearInterval as clearIntervalSafe, setInterval as setIntervalSafe } from 'node:timers';
@@ -43,8 +43,14 @@ interface Dump1090Aircraft {
   category?: string;
   squawk?: string;
   nav_modes?: string;
+  reg?: string;
+  reg_num?: string;
+  r?: string;
   dep?: string;
   dest?: string;
+  cntry?: string;
+  country?: string;
+  messages?: number;
 }
 
 @Injectable()
@@ -64,6 +70,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   private readonly localSiteId: string;
   private readonly dataDir: string;
   private readonly aircraftDbPath: string;
+  private readonly configPath: string;
   private aircraftDb: Map<string, AircraftDbEntry> = new Map();
   private aircraftDbCount = 0;
 
@@ -80,12 +87,15 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     this.geofencesEnabled =
       this.configService.get<boolean>('adsb.geofencesEnabled', false) ?? false;
     this.localSiteId = this.configService.get<string>('site.id', 'default');
-    this.dataDir = join(process.cwd(), 'data', 'adsb');
+    const baseDir = join(__dirname, '..', '..');
+    this.dataDir = join(baseDir, 'data', 'adsb');
     this.aircraftDbPath = join(this.dataDir, 'aircraft-database.csv');
+    this.configPath = join(this.dataDir, 'config.json');
   }
 
-  onModuleInit(): void {
-    void this.refreshGeofences();
+  async onModuleInit(): Promise<void> {
+    await this.refreshGeofences();
+    await this.loadConfigFromDisk();
     this.geofenceSubscription = this.geofencesService
       .getChangesStream()
       .subscribe((event) => this.handleGeofenceChange(event));
@@ -152,6 +162,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     if (this.enabled) {
       this.startPolling();
     }
+    void this.persistConfig();
     return this.getStatus();
   }
 
@@ -206,6 +217,54 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     this.aircraftDb = next;
     this.aircraftDbCount = next.size;
     this.logger.log(`Loaded ADS-B aircraft database (${this.aircraftDbCount} entries)`);
+  }
+
+  private async loadConfigFromDisk(): Promise<void> {
+    try {
+      if (!existsSync(this.configPath)) {
+        return;
+      }
+      const raw = await readFile(this.configPath, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<{
+        enabled: boolean;
+        feedUrl: string;
+        intervalMs: number;
+        geofencesEnabled: boolean;
+      }>;
+      if (typeof parsed.enabled === 'boolean') {
+        this.enabled = parsed.enabled;
+      }
+      if (typeof parsed.feedUrl === 'string' && parsed.feedUrl.trim()) {
+        this.feedUrl = parsed.feedUrl.trim();
+      }
+      if (typeof parsed.intervalMs === 'number' && Number.isFinite(parsed.intervalMs)) {
+        this.intervalMs = Math.max(2000, parsed.intervalMs);
+      }
+      if (typeof parsed.geofencesEnabled === 'boolean') {
+        this.geofencesEnabled = parsed.geofencesEnabled;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load ADS-B config: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private async persistConfig(): Promise<void> {
+    try {
+      await mkdir(this.dataDir, { recursive: true });
+      const payload = {
+        enabled: this.enabled,
+        feedUrl: this.feedUrl,
+        intervalMs: this.intervalMs,
+        geofencesEnabled: this.geofencesEnabled,
+      };
+      await writeFile(this.configPath, JSON.stringify(payload, null, 2), 'utf8');
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist ADS-B config: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private parseCsvLine(line: string): string[] {
@@ -281,23 +340,43 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
         return;
       }
       const id = hex;
+      const existing = this.tracks.get(id);
       const callsign = (entry.flight ?? '').trim() || null;
       const alt = entry.alt_geom ?? entry.alt_baro ?? null;
       const track: AdsbTrack = {
         id,
         icao: hex,
         callsign,
+        reg:
+          typeof entry.reg === 'string' && entry.reg.trim()
+            ? entry.reg.trim()
+            : typeof entry.r === 'string' && entry.r.trim()
+              ? entry.r.trim()
+              : typeof entry.reg_num === 'string' && entry.reg_num.trim()
+                ? entry.reg_num.trim()
+                : (existing?.reg ?? null),
         lat: entry.lat,
         lon: entry.lon,
-        alt: typeof alt === 'number' ? alt : null,
-        speed: typeof entry.gs === 'number' ? entry.gs : null,
-        heading: typeof entry.track === 'number' ? entry.track : null,
+        alt: typeof alt === 'number' ? alt : (existing?.alt ?? null),
+        speed: typeof entry.gs === 'number' ? entry.gs : (existing?.speed ?? null),
+        heading: typeof entry.track === 'number' ? entry.track : (existing?.heading ?? null),
         onGround: null,
         lastSeen: new Date(Date.now() - (entry.seen ?? 0) * 1000).toISOString(),
         siteId: this.localSiteId,
-        category: typeof entry.category === 'string' ? entry.category.trim() || null : null,
-        dep: typeof entry.dep === 'string' ? entry.dep.trim() || null : null,
-        dest: typeof entry.dest === 'string' ? entry.dest.trim() || null : null,
+        category:
+          typeof entry.category === 'string'
+            ? entry.category.trim() || null
+            : (existing?.category ?? null),
+        dep: typeof entry.dep === 'string' ? entry.dep.trim() || null : (existing?.dep ?? null),
+        dest: typeof entry.dest === 'string' ? entry.dest.trim() || null : (existing?.dest ?? null),
+        country:
+          typeof entry.cntry === 'string' && entry.cntry.trim()
+            ? entry.cntry.trim()
+            : typeof entry.country === 'string' && entry.country.trim()
+              ? entry.country.trim()
+              : (existing?.country ?? null),
+        messages:
+          typeof entry.messages === 'number' ? entry.messages : (existing?.messages ?? null),
       };
       this.enrichTrack(track);
       nextTracks.set(id, track);

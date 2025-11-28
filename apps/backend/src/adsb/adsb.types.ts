@@ -11,6 +11,7 @@ export interface AdsbTrack {
   lastSeen: string;
   siteId?: string | null;
   category?: string | null;
+  reg?: string | null;
   dep?: string | null;
   dest?: string | null;
   typeCode?: string | null;
@@ -18,6 +19,8 @@ export interface AdsbTrack {
   manufacturer?: string | null;
   aircraftType?: string | null;
   categoryDescription?: string | null;
+  country?: string | null;
+  messages?: number | null;
 }
 
 export interface AdsbStatus {

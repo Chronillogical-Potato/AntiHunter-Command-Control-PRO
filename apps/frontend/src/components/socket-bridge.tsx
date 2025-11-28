@@ -157,9 +157,11 @@ export function SocketBridge() {
 
     const handleEvent = (payload: unknown) => {
       if (isAdsbTracksEvent(payload)) {
-        const filteredTracks = payload.tracks.filter((track) =>
-          Boolean(track.callsign && track.callsign.trim()),
-        );
+        const filteredTracks = payload.tracks.filter((track) => {
+          const hasId =
+            (track.callsign && track.callsign.trim()) || (track.reg && track.reg.trim());
+          return Boolean(hasId);
+        });
         const adsbMuted = useMapPreferences.getState().adsbMuted;
         if (!adsbMuted) {
           addEntry({

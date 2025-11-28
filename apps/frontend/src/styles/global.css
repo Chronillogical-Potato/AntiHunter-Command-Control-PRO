@@ -2626,12 +2626,14 @@ body.theme-dark .control-chip[disabled] {
 }
 
 .adsb-log-table-wrapper {
+  width: 100%;
   max-height: 60vh;
   overflow: auto;
 }
 
 .adsb-log-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
