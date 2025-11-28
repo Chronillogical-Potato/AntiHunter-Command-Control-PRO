@@ -18,8 +18,6 @@ import {
 import 'leaflet.heat';
 
 import type { AdsbTrack, Geofence, GeofenceVertex, DroneStatus } from '../../api/types';
-import adsbHelicopterIcon from '../../assets/adsb-helicopter.svg';
-import adsbPlaneIcon from '../../assets/adsb-plane.svg';
 import controllerMarkerIcon from '../../assets/drone-controller.svg';
 import droneMarkerIcon from '../../assets/drone-marker.svg';
 import type { AlertColorConfig } from '../../constants/alert-colors';
@@ -93,6 +91,25 @@ const DRONE_STATUS_COLORS: Record<DroneStatus, string> = {
   NEUTRAL: '#facc15',
   HOSTILE: '#ef4444',
 };
+
+const ADSB_PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <path
+    fill="#ffffff"
+    d="M11.25 2c0-.41.34-.75.75-.75s.75.34.75.75v6.5l5.5 1.7v1.2l-5.5-.8v3.3l1.8 1.2v1.2l-2-.35L12 21h-1l-.55-4.03-2 .35v-1.2l1.8-1.2v-3.3l-5.5.8v-1.2l5.5-1.7V2Z"
+  />
+</svg>`;
+const ADSB_HELI_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <path
+    fill="#ffffff"
+    d="M11.4 3c0-.28.24-.5.6-.5h.4c.36 0 .6.22.6.5v3.4c0 .36.22.68.55.82l1.45.63c.18.08.3.25.3.44v.9c0 .17-.09.33-.24.42l-1.86 1.14a.78.78 0 0 0-.36.66v2.4c0 .2-.09.4-.24.53l-.94.83a.5.5 0 0 0-.17.38v1.55c0 .28-.22.5-.5.5H12a.5.5 0 0 1-.5-.5v-1.55a.5.5 0 0 0-.17-.38l-.94-.83a.74.74 0 0 1-.24-.53v-2.4c0-.27-.14-.52-.36-.66l-1.86-1.14a.5.5 0 0 1-.24-.42v-.9c0-.19.12-.36.3-.44l1.45-.63c.33-.14.55-.46.55-.82V3Z"
+  />
+  <path
+    stroke="#ffffff"
+    stroke-width="1.2"
+    stroke-linecap="round"
+    d="M12 4.5v15M4.5 12H19.5M6.5 6.5l11 11M17.5 6.5l-11 11"
+  />
+</svg>`;
 
 function escapeHtml(input: string): string {
   return input.replace(/[&<>"']/g, (char) => {
@@ -177,13 +194,13 @@ function createAdsbIcon(track: AdsbTrack): DivIcon {
     track.categoryDescription,
   );
   const color = isHelicopter ? '#a855f7' : '#06b6d4';
-  const iconSrc = isHelicopter ? adsbHelicopterIcon : adsbPlaneIcon;
   const markerClass = isHelicopter ? 'adsb-marker--heli' : 'adsb-marker--plane';
   const rotation = typeof track.heading === 'number' ? track.heading : null;
+  const svg = isHelicopter ? ADSB_HELI_SVG : ADSB_PLANE_SVG;
   return divIcon({
     html: `<div class="adsb-marker ${markerClass}" style="--adsb-color:${color};${
       rotation != null ? `--adsb-rotation:${rotation}deg;` : ''
-    }"><img src="${iconSrc}" alt="" class="adsb-marker__icon" /><span class="adsb-marker__label">${label}</span></div>`,
+    }"><span class="adsb-marker__icon" aria-hidden="true">${svg}</span><span class="adsb-marker__label">${label}</span></div>`,
     className: 'adsb-marker-wrapper',
     iconSize: [40, 48],
     iconAnchor: [20, 24],

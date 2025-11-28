@@ -1493,12 +1493,18 @@ body.theme-dark .control-chip[disabled] {
 }
 
 .adsb-marker__icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   line-height: 1;
   display: block;
   transform: rotate(var(--adsb-rotation, 0deg));
   filter: drop-shadow(0 0 8px color-mix(in srgb, var(--adsb-color, #06b6d4) 65%, transparent));
+}
+
+.adsb-marker__icon svg {
+  width: 32px;
+  height: 32px;
+  display: block;
 }
 
 .adsb-marker__label {
