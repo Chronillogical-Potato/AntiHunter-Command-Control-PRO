@@ -243,7 +243,16 @@ export function AcarsPage() {
                       <input
                         type="checkbox"
                         checked={acarsEnabled}
-                        onChange={(event) => setAcarsEnabled(event.target.checked)}
+                        onChange={(event) => {
+                          const newValue = event.target.checked;
+                          setAcarsEnabled(newValue);
+                          acarsConfigMutation.mutate({
+                            enabled: newValue,
+                            udpHost: acarsUdpHost,
+                            udpPort: acarsUdpPort,
+                            intervalMs: acarsIntervalMs,
+                          });
+                        }}
                       />
                       <span />
                     </label>
