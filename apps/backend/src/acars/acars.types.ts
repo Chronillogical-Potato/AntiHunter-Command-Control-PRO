@@ -50,9 +50,10 @@ export interface AcarsStatus {
   enabled: boolean;
   udpHost: string;
   udpPort: number;
+  intervalMs?: number;
   lastMessageAt?: string | null;
+  messageCount?: number;
   lastError?: string | null;
-  messageCount: number;
 }
 
 export interface AcarsConfig {

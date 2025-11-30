@@ -530,7 +530,7 @@ export function CommandCenterMap({
     [adsbTracks],
   );
   const acarsWithPosition = useMemo(
-    () => acarsMessages.filter((msg) => hasValidPosition(msg.lat, msg.lon)),
+    () => acarsMessages.filter((msg) => hasValidPosition(msg.lat ?? null, msg.lon ?? null)),
     [acarsMessages],
   );
 

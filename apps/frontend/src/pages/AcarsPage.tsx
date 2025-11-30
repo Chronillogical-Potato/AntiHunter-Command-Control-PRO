@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { useMapPreferences } from '../stores/map-store';
 
 import {
   getAcarsMessages,
@@ -30,19 +31,25 @@ export function AcarsPage() {
   const [acarsStatus, setAcarsStatus] = useState<AcarsStatus | null>(null);
   const [acarsEnabled, setAcarsEnabled] = useState<boolean>(false);
   const [acarsUdpHost, setAcarsUdpHost] = useState<string>('127.0.0.1');
-  const [acarsUdpPort, setAcarsUdpPort] = useState<number>(15550);
+  const [acarsUdpPort, setAcarsUdpPort] = useState<number>(15550);const [acarsIntervalMs, setAcarsIntervalMs] = useState<number>(5000);
+  const [acarsTestMessage, setAcarsTestMessage] = useState<string | null>(null);
+  const [acarsTestError, setAcarsTestError] = useState<string | null>(null);
+  const [acarsTesting, setAcarsTesting] = useState<boolean>(false);
+  const acarsMuted = useMapPreferences((state) => state.acarsMuted);
+  const toggleAcarsMuted = useMapPreferences((state) => state.toggleAcarsMuted);
   const [log, setLog] = useState<Map<string, LogEntry>>(new Map());
 
   const acarsStatusQuery = useQuery({
     queryKey: ['acars', 'status'],
     queryFn: () => getAcarsStatus(),
     staleTime: 5_000,
-    refetchInterval: 5_000,
+    refetchInterval: () => Math.max(2_000, acarsIntervalMs),
   });
 
   useEffect(() => {
     if (acarsStatusQuery.data) {
-      const addons = useAuthStore.getState().user?.preferences?.notifications?.addons ?? {};
+      const addons =
+        useAuthStore.getState().user?.preferences?.notifications?.addons ?? {};
       if (addons.acars === false) {
         setAcarsEnabled(false);
       } else {
@@ -51,6 +58,7 @@ export function AcarsPage() {
       setAcarsStatus(acarsStatusQuery.data);
       setAcarsUdpHost(acarsStatusQuery.data.udpHost);
       setAcarsUdpPort(acarsStatusQuery.data.udpPort);
+      setAcarsIntervalMs(acarsStatusQuery.data.intervalMs ?? 5000);
     }
   }, [acarsStatusQuery.data]);
 
@@ -59,6 +67,7 @@ export function AcarsPage() {
       enabled?: boolean;
       udpHost?: string;
       udpPort?: number;
+      intervalMs?: number;
     }) => updateAcarsConfig(body),
     onSuccess: (data) => {
       setAcarsStatus(data);
@@ -69,7 +78,7 @@ export function AcarsPage() {
   const messagesQuery = useQuery({
     queryKey: ['acars', 'messages', 'log'],
     queryFn: getAcarsMessages,
-    refetchInterval: 5_000,
+    refetchInterval: () => Math.max(2_000, acarsIntervalMs),
   });
 
   useEffect(() => {
@@ -260,6 +269,29 @@ export function AcarsPage() {
                     />
                   </div>
                   <div className="config-row">
+                    <span className="config-label">Poll interval (ms)</span>
+                    <input
+                      type="number"
+                      min={1000}
+                      max={60000}
+                      step={500}
+                      value={acarsIntervalMs}
+                      onChange={(event) => setAcarsIntervalMs(Number(event.target.value))}
+                    />
+                  </div>
+                  <div className="config-row">
+                    <span className="config-label">Mute ACARS log updates</span>
+                    <label className="switch" aria-label="Mute ACARS updates in Terminal & Events">
+                      <input
+                        type="checkbox"
+                        checked={acarsMuted}
+                        onChange={toggleAcarsMuted}
+                      />
+                      <span />
+                    </label>
+                    <p className="form-hint">Suppress ACARS info messages in the event feed.</p>
+                  </div>
+                  <div className="config-row">
                     <span className="config-label">Last message</span>
                     <span>
                       {acarsStatus?.lastMessageAt
@@ -274,6 +306,8 @@ export function AcarsPage() {
                   {acarsStatus?.lastError ? (
                     <div className="form-error">Last error: {acarsStatus.lastError}</div>
                   ) : null}
+                  {acarsTestError ? <div className="form-error">{acarsTestError}</div> : null}
+                  {acarsTestMessage ? <div className="form-hint">{acarsTestMessage}</div> : null}
                   <div className="controls-row">
                     <button
                       type="button"
@@ -283,6 +317,7 @@ export function AcarsPage() {
                           enabled: acarsEnabled,
                           udpHost: acarsUdpHost,
                           udpPort: acarsUdpPort,
+                          intervalMs: acarsIntervalMs,
                         })
                       }
                       disabled={acarsConfigMutation.isPending}
@@ -296,6 +331,34 @@ export function AcarsPage() {
                       disabled={acarsStatusQuery.isFetching}
                     >
                       Refresh status
+                    </button>
+                    <button
+                      type="button"
+                      className="control-chip"
+                      onClick={async () => {
+                        setAcarsTestError(null);
+                        setAcarsTestMessage(null);
+                        setAcarsTesting(true);
+                        const start = performance.now();
+                        try {
+                          const messages = await getAcarsMessages();
+                          const duration = performance.now() - start;
+                          setAcarsTestMessage(
+                            `UDP listener active (${messages.length} messages in buffer) in ${duration.toFixed(0)}ms.`,
+                          );
+                        } catch (error) {
+                          const message =
+                            error instanceof Error
+                              ? error.message
+                              : 'Unable to reach ACARS endpoint.';
+                          setAcarsTestError(message);
+                        } finally {
+                          setAcarsTesting(false);
+                        }
+                      }}
+                      disabled={acarsTesting}
+                    >
+                      {acarsTesting ? 'Testing...' : 'Test listener'}
                     </button>
                   </div>
                 </div>
