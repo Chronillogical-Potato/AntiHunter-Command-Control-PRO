@@ -257,7 +257,9 @@ export function MapPage() {
       acarsAddonEnabled && acarsEnabled && acarsMessagesQuery.data
         ? acarsMessagesQuery.data.filter((message) => {
             return (
-              message.tail && message.tail.trim() && hasValidPosition(message.lat ?? null, message.lon ?? null)
+              message.tail &&
+              message.tail.trim() &&
+              hasValidPosition(message.lat ?? null, message.lon ?? null)
             );
           })
         : [],
