@@ -13,7 +13,7 @@ import type {
   AcarsMessage,
   AcarsStatus,
 } from './acars.types';
-import type { AdsbService } from '../adsb/adsb.service';
+import { AdsbService } from '../adsb/adsb.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
 
 @Injectable()
