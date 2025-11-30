@@ -17,7 +17,13 @@ import {
 } from 'react-leaflet';
 import 'leaflet.heat';
 
-import type { AcarsMessage, AdsbTrack, Geofence, GeofenceVertex, DroneStatus } from '../../api/types';
+import type {
+  AcarsMessage,
+  AdsbTrack,
+  Geofence,
+  GeofenceVertex,
+  DroneStatus,
+} from '../../api/types';
 import controllerMarkerIcon from '../../assets/drone-controller.svg';
 import droneMarkerIcon from '../../assets/drone-marker.svg';
 import type { AlertColorConfig } from '../../constants/alert-colors';
@@ -843,8 +849,12 @@ export function CommandCenterMap({
                 </div>
                 {message.label ? <div>Label: {message.label}</div> : null}
                 {message.text ? <div className="text-truncate">Message: {message.text}</div> : null}
-                {message.frequency ? <div>Frequency: {message.frequency.toFixed(3)} MHz</div> : null}
-                {message.signalLevel ? <div>Signal: {message.signalLevel.toFixed(1)} dB</div> : null}
+                {message.frequency ? (
+                  <div>Frequency: {message.frequency.toFixed(3)} MHz</div>
+                ) : null}
+                {message.signalLevel ? (
+                  <div>Signal: {message.signalLevel.toFixed(1)} dB</div>
+                ) : null}
                 {message.stationId ? <div>Station: {message.stationId}</div> : null}
                 <div>Last seen: {new Date(message.lastSeen).toLocaleTimeString()}</div>
               </div>

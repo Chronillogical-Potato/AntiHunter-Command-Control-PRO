@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 
-import type { AcarsMessage, AcarsStatus } from './acars.types';
 import { AcarsService } from './acars.service';
+import type { AcarsMessage, AcarsStatus } from './acars.types';
 
 @Controller('acars')
 export class AcarsController {

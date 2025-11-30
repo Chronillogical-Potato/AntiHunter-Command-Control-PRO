@@ -1,14 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { useMapPreferences } from '../stores/map-store';
 
-import {
-  getAcarsMessages,
-  getAcarsStatus,
-  updateAcarsConfig,
-} from '../api/acars';
-import type { AcarsMessage, AcarsStatus } from '../api/types';
+import { getAcarsMessages, getAcarsStatus, updateAcarsConfig } from '../api/acars';
+import type { AcarsStatus } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
+import { useMapPreferences } from '../stores/map-store';
 
 type LogEntry = {
   id: string;
@@ -31,7 +27,8 @@ export function AcarsPage() {
   const [acarsStatus, setAcarsStatus] = useState<AcarsStatus | null>(null);
   const [acarsEnabled, setAcarsEnabled] = useState<boolean>(false);
   const [acarsUdpHost, setAcarsUdpHost] = useState<string>('127.0.0.1');
-  const [acarsUdpPort, setAcarsUdpPort] = useState<number>(15550);const [acarsIntervalMs, setAcarsIntervalMs] = useState<number>(5000);
+  const [acarsUdpPort, setAcarsUdpPort] = useState<number>(15550);
+  const [acarsIntervalMs, setAcarsIntervalMs] = useState<number>(5000);
   const [acarsTestMessage, setAcarsTestMessage] = useState<string | null>(null);
   const [acarsTestError, setAcarsTestError] = useState<string | null>(null);
   const [acarsTesting, setAcarsTesting] = useState<boolean>(false);
@@ -48,8 +45,7 @@ export function AcarsPage() {
 
   useEffect(() => {
     if (acarsStatusQuery.data) {
-      const addons =
-        useAuthStore.getState().user?.preferences?.notifications?.addons ?? {};
+      const addons = useAuthStore.getState().user?.preferences?.notifications?.addons ?? {};
       if (addons.acars === false) {
         setAcarsEnabled(false);
       } else {
@@ -163,7 +159,9 @@ export function AcarsPage() {
       .map((cols) =>
         cols
           .map((col) =>
-            typeof col === 'string' && col.includes(',') ? `"${col.replace(/"/g, '""')}"` : String(col),
+            typeof col === 'string' && col.includes(',')
+              ? `"${col.replace(/"/g, '""')}"`
+              : String(col),
           )
           .join(','),
       )
@@ -224,8 +222,8 @@ export function AcarsPage() {
           <div>
             <h1 className="panel__title">ACARS Ingest (RTL-SDR + acarsdec)</h1>
             <p className="panel__subtitle">
-              Decode aircraft ACARS messages via UDP from acarsdec. Real-time UDP listener
-              with cross-platform support for macOS, Windows, and Linux.
+              Decode aircraft ACARS messages via UDP from acarsdec. Real-time UDP listener with
+              cross-platform support for macOS, Windows, and Linux.
             </p>
           </div>
         </header>
@@ -282,11 +280,7 @@ export function AcarsPage() {
                   <div className="config-row">
                     <span className="config-label">Mute ACARS log updates</span>
                     <label className="switch" aria-label="Mute ACARS updates in Terminal & Events">
-                      <input
-                        type="checkbox"
-                        checked={acarsMuted}
-                        onChange={toggleAcarsMuted}
-                      />
+                      <input type="checkbox" checked={acarsMuted} onChange={toggleAcarsMuted} />
                       <span />
                     </label>
                     <p className="form-hint">Suppress ACARS info messages in the event feed.</p>
@@ -393,8 +387,8 @@ export function AcarsPage() {
                         <br />
                         Build:{' '}
                         <code>
-                          git clone https://github.com/f00b4r0/acarsdec && cd acarsdec &&
-                          mkdir build && cd build && cmake .. && make && sudo make install
+                          git clone https://github.com/f00b4r0/acarsdec && cd acarsdec && mkdir
+                          build && cd build && cmake .. && make && sudo make install
                         </code>
                         <br />
                         Run:{' '}
@@ -424,21 +418,21 @@ export function AcarsPage() {
                         <br />
                         Build:{' '}
                         <code>
-                          git clone https://github.com/szpajder/dumpvdl2 && cd dumpvdl2 &&
-                          mkdir build && cd build && cmake .. && make && sudo make install
+                          git clone https://github.com/szpajder/dumpvdl2 && cd dumpvdl2 && mkdir
+                          build && cd build && cmake .. && make && sudo make install
                         </code>
                         <br />
                         Run (Delta/Southwest hubs - 136 MHz):{' '}
                         <code>
-                          dumpvdl2 --rtlsdr 0 --gain 49.6 136650000 136725000 136775000
-                          136800000 136825000 136875000 136900000 136975000 --output
+                          dumpvdl2 --rtlsdr 0 --gain 49.6 136650000 136725000 136775000 136800000
+                          136825000 136875000 136900000 136975000 --output
                           decoded:json:udp:address=127.0.0.1,port=15550
                         </code>
                         <br />
                         Run (Most airports - 131 MHz):{' '}
                         <code>
-                          dumpvdl2 --rtlsdr 0 --gain 49.6 131525000 131550000 131725000
-                          131825000 --output decoded:json:udp:address=127.0.0.1,port=15550
+                          dumpvdl2 --rtlsdr 0 --gain 49.6 131525000 131550000 131725000 131825000
+                          --output decoded:json:udp:address=127.0.0.1,port=15550
                         </code>
                       </div>
                     </li>
@@ -480,8 +474,8 @@ export function AcarsPage() {
                         <br />
                         Run:{' '}
                         <code>
-                          acarsdec.exe -A -e -g 49.6 --output
-                          json:udp:host=127.0.0.1,port=15550 --rtlsdr 0 131.550 131.725
+                          acarsdec.exe -A -e -g 49.6 --output json:udp:host=127.0.0.1,port=15550
+                          --rtlsdr 0 131.550 131.725
                         </code>
                       </div>
                     </li>
@@ -507,31 +501,28 @@ export function AcarsPage() {
                         <br />
                         <code>--rtlsdr N</code>: Device index
                         <br />
-                        <code>--output decoded:json:udp:address=IP,port=PORT</code>: UDP
-                        JSON output
+                        <code>--output decoded:json:udp:address=IP,port=PORT</code>: UDP JSON output
                       </div>
                     </li>
                     <li>
                       <strong>VDL2 vs Legacy ACARS Frequencies</strong>
                       <div className="config-hint">
-                        <strong>VDL2 (136 MHz band)</strong> - Used by Delta, Southwest,
-                        United at major hubs:
+                        <strong>VDL2 (136 MHz band)</strong> - Used by Delta, Southwest, United at
+                        major hubs:
                         <br />
-                        136.650, 136.725, 136.775, 136.800, 136.825, 136.875, 136.900,
-                        136.975 MHz
+                        136.650, 136.725, 136.775, 136.800, 136.825, 136.875, 136.900, 136.975 MHz
                         <br />
                         <br />
-                        <strong>Legacy ACARS (130-131 MHz)</strong> - Most airports
-                        worldwide:
+                        <strong>Legacy ACARS (130-131 MHz)</strong> - Most airports worldwide:
                         <br />
-                        131.550 (Primary), 131.725, 131.825, 130.450, 130.825, 130.025
-                        (Japan), 129.125 (USA)
+                        131.550 (Primary), 131.725, 131.825, 130.450, 130.825, 130.025 (Japan),
+                        129.125 (USA)
                       </div>
                     </li>
                     <li>
                       <strong>Verify</strong>
                       <div className="config-hint">
-                        Check the "Last message" timestamp in settings to confirm UDP
+                        Check the &ldquo;Last message&rdquo; timestamp in settings to confirm UDP
                         messages are being received. The backend listens on{' '}
                         <code>
                           {acarsUdpHost}:{acarsUdpPort}
@@ -541,8 +532,8 @@ export function AcarsPage() {
                     </li>
                   </ul>
                   <p className="config-hint">
-                    For production, run acarsdec/dumpvdl2 as a service. Use dumpvdl2 for
-                    VDL2 (newer aircraft) and acarsdec for legacy ACARS (older aircraft).
+                    For production, run acarsdec/dumpvdl2 as a service. Use dumpvdl2 for VDL2 (newer
+                    aircraft) and acarsdec for legacy ACARS (older aircraft).
                   </p>
                 </div>
               </section>

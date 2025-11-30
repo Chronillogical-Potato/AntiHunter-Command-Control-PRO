@@ -2,7 +2,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import type {
-  AcarsMessage,
   AlarmLevel,
   Drone,
   DroneStatus,
@@ -1132,16 +1131,6 @@ function isAdsbTracksEvent(
   }
   const base = payload as { type?: string; tracks?: unknown };
   return base.type === 'adsb.tracks' && Array.isArray(base.tracks);
-}
-
-function isAcarsMessagesEvent(
-  payload: unknown,
-): payload is { type: 'acars.messages'; messages: AcarsMessage[] } {
-  if (!payload || typeof payload !== 'object') {
-    return false;
-  }
-  const base = payload as { type?: string; messages?: unknown };
-  return base.type === 'acars.messages' && Array.isArray(base.messages);
 }
 
 function isGeofenceAlertEvent(payload: unknown): payload is {

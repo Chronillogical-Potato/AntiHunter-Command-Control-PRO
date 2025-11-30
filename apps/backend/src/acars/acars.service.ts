@@ -6,7 +6,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clearInterval as clearIntervalSafe, setInterval as setIntervalSafe } from 'node:timers';
 
-import type { AcarsdecMessage, AcarsdecResponse, AcarsConfig, AcarsMessage, AcarsStatus } from './acars.types';
+import type {
+  AcarsdecMessage,
+  AcarsdecResponse,
+  AcarsConfig,
+  AcarsMessage,
+  AcarsStatus,
+} from './acars.types';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
 
 @Injectable()
@@ -32,7 +38,8 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
     this.enabled = this.configService.get<boolean>('acars.enabled', false) ?? false;
     this.udpHost = this.configService.get<string>('acars.udpHost', '127.0.0.1') ?? '127.0.0.1';
     this.udpPort = this.configService.get<number>('acars.udpPort', 15550) ?? 15550;
-    this.messageExpiryMs = this.configService.get<number>('acars.messageExpiryMs', 3600000) ?? 3600000;
+    this.messageExpiryMs =
+      this.configService.get<number>('acars.messageExpiryMs', 3600000) ?? 3600000;
     this.localSiteId = this.configService.get<string>('site.id', 'default');
     const baseDir = join(__dirname, '..', '..');
     this.dataDir = join(baseDir, 'data', 'acars');
@@ -65,11 +72,7 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
     return Array.from(this.messages.values());
   }
 
-  updateConfig(config: {
-    enabled?: boolean;
-    udpHost?: string;
-    udpPort?: number;
-  }): AcarsStatus {
+  updateConfig(config: { enabled?: boolean; udpHost?: string; udpPort?: number }): AcarsStatus {
     if (config.enabled !== undefined) {
       this.enabled = Boolean(config.enabled);
     }
@@ -234,13 +237,9 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private generateMessageId(msg: AcarsdecMessage): string {
-    const parts = [
-      msg.tail,
-      msg.timestamp?.toString(),
-      msg.label,
-      msg.msgno,
-      msg.flight,
-    ].filter(Boolean);
+    const parts = [msg.tail, msg.timestamp?.toString(), msg.label, msg.msgno, msg.flight].filter(
+      Boolean,
+    );
     return parts.join('-');
   }
 

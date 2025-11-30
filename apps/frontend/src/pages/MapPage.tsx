@@ -217,7 +217,6 @@ export function MapPage() {
     toggleTargets,
     toggleAdsb,
     toggleAdsbGeofence,
-    toggleAcars,
   } = useMapPreferences();
   const fitEnabled = useMapPreferences((state) => state.fitEnabled);
   const setMapStyle = useMapPreferences((state) => state.setMapStyle);
@@ -257,7 +256,9 @@ export function MapPage() {
     () =>
       acarsAddonEnabled && acarsEnabled && acarsMessagesQuery.data
         ? acarsMessagesQuery.data.filter((message) => {
-            return message.tail && message.tail.trim() && hasValidPosition(message.lat, message.lon);
+            return (
+              message.tail && message.tail.trim() && hasValidPosition(message.lat, message.lon)
+            );
           })
         : [],
     [acarsAddonEnabled, acarsEnabled, acarsMessagesQuery.data],

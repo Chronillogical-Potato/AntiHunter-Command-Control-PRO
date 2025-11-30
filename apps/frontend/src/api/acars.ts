@@ -9,10 +9,6 @@ export function getAcarsMessages() {
   return apiClient.get<AcarsMessage[]>('/acars/messages');
 }
 
-export function updateAcarsConfig(body: {
-  enabled?: boolean;
-  udpHost?: string;
-  udpPort?: number;
-}) {
+export function updateAcarsConfig(body: { enabled?: boolean; udpHost?: string; udpPort?: number }) {
   return apiClient.post<AcarsStatus>('/acars/config', body);
 }
