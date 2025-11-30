@@ -306,12 +306,12 @@ export function AcarsPage() {
               <section className="config-card">
                 <header>
                   <h2>Setup steps</h2>
-                  <p>Minimal steps to get acarsdec running on common platforms.</p>
+                  <p>Minimal steps to get acarsdec/dumpvdl2 running on common platforms.</p>
                 </header>
                 <div className="config-card__body">
                   <ul className="config-list">
                     <li>
-                      <strong>Linux</strong>
+                      <strong>Linux (acarsdec - Legacy ACARS)</strong>
                       <div className="config-hint">
                         Repo:{' '}
                         <a
@@ -322,11 +322,61 @@ export function AcarsPage() {
                           github.com/f00b4r0/acarsdec
                         </a>
                         <br />
-                        Install: <code>sudo apt-get install rtl-sdr librtlsdr-dev build-essential cmake libacars-dev socat</code>
+                        Install:{' '}
+                        <code>
+                          sudo apt-get install rtl-sdr librtlsdr-dev build-essential cmake
+                          libacars-dev
+                        </code>
                         <br />
-                        Build: <code>git clone https://github.com/f00b4r0/acarsdec && cd acarsdec && mkdir build && cd build && cmake .. && make && sudo make install</code>
+                        Build:{' '}
+                        <code>
+                          git clone https://github.com/f00b4r0/acarsdec && cd acarsdec &&
+                          mkdir build && cd build && cmake .. && make && sudo make install
+                        </code>
                         <br />
-                        Run acarsdec: <code>acarsdec -i MyStation -e --output json:udp:host=127.0.0.1,port=15550 --rtlsdr 0 -g 49.6 131.550 131.725 131.825</code>
+                        Run:{' '}
+                        <code>
+                          acarsdec -A -e -g 49.6 --output json:udp:host=127.0.0.1,port=15550
+                          --rtlsdr 0 131.550 131.725 131.825 130.450 130.825
+                        </code>
+                      </div>
+                    </li>
+                    <li>
+                      <strong>Linux (dumpvdl2 - VDL2 Mode 2)</strong>
+                      <div className="config-hint">
+                        Repo:{' '}
+                        <a
+                          href="https://github.com/szpajder/dumpvdl2"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          github.com/szpajder/dumpvdl2
+                        </a>
+                        <br />
+                        Install:{' '}
+                        <code>
+                          sudo apt-get install rtl-sdr librtlsdr-dev build-essential cmake
+                          libglib2.0-dev libacars-dev libzmq3-dev
+                        </code>
+                        <br />
+                        Build:{' '}
+                        <code>
+                          git clone https://github.com/szpajder/dumpvdl2 && cd dumpvdl2 &&
+                          mkdir build && cd build && cmake .. && make && sudo make install
+                        </code>
+                        <br />
+                        Run (Delta/Southwest hubs - 136 MHz):{' '}
+                        <code>
+                          dumpvdl2 --rtlsdr 0 --gain 49.6 136650000 136725000 136775000
+                          136800000 136825000 136875000 136900000 136975000 --output
+                          decoded:json:udp:address=127.0.0.1,port=15550
+                        </code>
+                        <br />
+                        Run (Most airports - 131 MHz):{' '}
+                        <code>
+                          dumpvdl2 --rtlsdr 0 --gain 49.6 131525000 131550000 131725000
+                          131825000 --output decoded:json:udp:address=127.0.0.1,port=15550
+                        </code>
                       </div>
                     </li>
                     <li>
@@ -334,60 +384,102 @@ export function AcarsPage() {
                       <div className="config-hint">
                         Install: <code>brew install rtl-sdr cmake libacars</code>
                         <br />
-                        Build: <code>git clone https://github.com/f00b4r0/acarsdec && cd acarsdec && mkdir build && cd build && cmake .. && make && sudo make install</code>
+                        Build acarsdec or dumpvdl2 from source (same as Linux)
                         <br />
-                        Run acarsdec: <code>acarsdec -i MyStation -e --output json:udp:host=127.0.0.1,port=15550 --rtlsdr 0 -g 49.6 131.550 131.725 131.825</code>
+                        Run acarsdec:{' '}
+                        <code>
+                          acarsdec -A -e -g 49.6 --output json:udp:host=127.0.0.1,port=15550
+                          --rtlsdr 0 131.550 131.725 131.825
+                        </code>
                       </div>
                     </li>
                     <li>
                       <strong>Windows</strong>
                       <div className="config-hint">
-                        Download prebuilt binary from{' '}
+                        Download prebuilt binaries from{' '}
                         <a
                           href="https://github.com/f00b4r0/acarsdec/releases"
                           target="_blank"
                           rel="noreferrer"
                         >
-                          GitHub releases
+                          acarsdec releases
+                        </a>{' '}
+                        or{' '}
+                        <a
+                          href="https://github.com/szpajder/dumpvdl2/releases"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          dumpvdl2 releases
                         </a>
                         <br />
-                        Run: <code>acarsdec.exe -i MyStation -e --output json:udp:host=127.0.0.1,port=15550 --rtlsdr 0 -g 49.6 131.550 131.725 131.825</code>
+                        Install RTL-SDR drivers via Zadig
+                        <br />
+                        Run:{' '}
+                        <code>
+                          acarsdec.exe -A -e -g 49.6 --output
+                          json:udp:host=127.0.0.1,port=15550 --rtlsdr 0 131.550 131.725
+                        </code>
                       </div>
                     </li>
                     <li>
                       <strong>Common Options</strong>
                       <div className="config-hint">
-                        <code>-i StationID</code>: Set your station identifier
-                        <br />
-                        <code>-e</code>: Skip empty messages
+                        <strong>acarsdec:</strong>
                         <br />
                         <code>-A</code>: Aircraft messages only (no uplink)
+                        <br />
+                        <code>-e</code>: Skip empty messages
                         <br />
                         <code>-g</code>: RTL-SDR gain in dB (0-49.6, &gt;52 for AGC)
                         <br />
                         <code>-p</code>: PPM frequency correction
                         <br />
-                        <code>-b</code>: Filter by label (e.g., <code>-b "H1:Q0"</code>)
+                        <br />
+                        <strong>dumpvdl2:</strong>
+                        <br />
+                        <code>--gain</code>: RTL-SDR gain (0-49.6)
+                        <br />
+                        <code>--correction</code>: PPM frequency correction
+                        <br />
+                        <code>--rtlsdr N</code>: Device index
+                        <br />
+                        <code>--output decoded:json:udp:address=IP,port=PORT</code>: UDP
+                        JSON output
                       </div>
                     </li>
                     <li>
-                      <strong>Common ACARS Frequencies</strong>
+                      <strong>VDL2 vs Legacy ACARS Frequencies</strong>
                       <div className="config-hint">
-                        131.550 MHz (Primary worldwide), 131.725 MHz (Secondary), 131.825 MHz (Tertiary),
-                        130.025 MHz (Japan), 130.450 MHz (Japan), 131.450 MHz (Europe),
-                        129.125 MHz (USA), 130.425 MHz (USA)
+                        <strong>VDL2 (136 MHz band)</strong> - Used by Delta, Southwest,
+                        United at major hubs:
+                        <br />
+                        136.650, 136.725, 136.775, 136.800, 136.825, 136.875, 136.900,
+                        136.975 MHz
+                        <br />
+                        <br />
+                        <strong>Legacy ACARS (130-131 MHz)</strong> - Most airports
+                        worldwide:
+                        <br />
+                        131.550 (Primary), 131.725, 131.825, 130.450, 130.825, 130.025
+                        (Japan), 129.125 (USA)
                       </div>
                     </li>
                     <li>
                       <strong>Verify</strong>
                       <div className="config-hint">
-                        Check the "Last message" timestamp in settings to confirm UDP messages are being received.
-                        The backend listens on <code>{acarsUdpHost}:{acarsUdpPort}</code>.
+                        Check the "Last message" timestamp in settings to confirm UDP
+                        messages are being received. The backend listens on{' '}
+                        <code>
+                          {acarsUdpHost}:{acarsUdpPort}
+                        </code>
+                        .
                       </div>
                     </li>
                   </ul>
                   <p className="config-hint">
-                    For production, run acarsdec as a service and ensure the backend can receive UDP packets on the configured port.
+                    For production, run acarsdec/dumpvdl2 as a service. Use dumpvdl2 for
+                    VDL2 (newer aircraft) and acarsdec for legacy ACARS (older aircraft).
                   </p>
                 </div>
               </section>
