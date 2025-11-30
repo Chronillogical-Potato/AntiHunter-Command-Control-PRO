@@ -369,7 +369,7 @@ function detectAdsbAircraftType(
 
     // Category B: Non-aircraft
     if (cat === 'B6') {
-      // UAV/UAS 
+      // UAV/UAS
       return { type: 'uav', ...ADSB_TYPE_CONFIG.uav };
     }
     if (cat === 'B1') {
@@ -451,12 +451,7 @@ function detectAdsbAircraftType(
     }
 
     // Ground vehicle detection
-    if (
-      token === 'C1' ||
-      token === 'C2' ||
-      token.includes('GROUND') ||
-      token.includes('VEHICLE')
-    ) {
+    if (token === 'C1' || token === 'C2' || token.includes('GROUND') || token.includes('VEHICLE')) {
       return { type: 'ground', ...ADSB_TYPE_CONFIG.ground };
     }
 
