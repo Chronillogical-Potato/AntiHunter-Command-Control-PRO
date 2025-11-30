@@ -210,6 +210,10 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     const adsbTracks = this.adsbService.getTracks();
 
+    if (adsbTracks.length > 0) {
+      this.logger.debug(`Processing ${messages.length} ACARS messages with ${adsbTracks.length} ADSB tracks available`);
+    }
+
     for (const msg of messages) {
       if (!msg.tail || !msg.timestamp) {
         continue;
@@ -221,6 +225,7 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
       // Correlate with ADSB by matching tail number to registration
       let lat: number | null = null;
       let lon: number | null = null;
+      let correlatedIcao: string | null = null;
 
       // Try to find matching ADSB track
       const normalizedTail = this.normalizeTailNumber(msg.tail);
@@ -239,11 +244,18 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
         ) {
           lat = track.lat;
           lon = track.lon;
-          this.logger.debug(
-            `Correlated ACARS ${msg.tail} with ADSB ${track.reg ?? track.callsign} at ${lat},${lon}`,
+          correlatedIcao = track.icao;
+          this.logger.log(
+            `Correlated ACARS ${msg.tail}/${msg.flight ?? 'N/A'} with ADSB ${track.icao} (${track.reg ?? track.callsign}) at ${lat},${lon}`,
           );
           break;
         }
+      }
+
+      if (!correlatedIcao && adsbTracks.length > 0) {
+        this.logger.debug(
+          `No correlation found for ACARS ${msg.tail}/${msg.flight ?? 'N/A'}. Checked ${adsbTracks.length} ADSB tracks.`,
+        );
       }
 
       const acarsMessage: AcarsMessage = {
@@ -264,6 +276,7 @@ export class AcarsService implements OnModuleInit, OnModuleDestroy {
         lastSeen: new Date(now).toISOString(),
         lat,
         lon,
+        correlatedIcao,
       };
 
       this.messages.set(id, acarsMessage);

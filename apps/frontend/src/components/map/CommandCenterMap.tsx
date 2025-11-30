@@ -207,7 +207,7 @@ function createTargetIcon(target: TargetMarker): DivIcon {
   });
 }
 
-function createAdsbIcon(track: AdsbTrack): DivIcon {
+function createAdsbIcon(track: AdsbTrack, hasAcarsMessages = false): DivIcon {
   const label = escapeHtml(track.callsign ?? track.reg ?? track.icao);
   const isHelicopter = isHelicopterCategory(
     track.category,
@@ -219,10 +219,13 @@ function createAdsbIcon(track: AdsbTrack): DivIcon {
   const markerClass = isHelicopter ? 'adsb-marker--heli' : 'adsb-marker--plane';
   const rotation = typeof track.heading === 'number' ? track.heading : null;
   const svg = isHelicopter ? ADSB_HELI_SVG : ADSB_PLANE_SVG;
+  const acarsBadge = hasAcarsMessages
+    ? '<span class="adsb-marker__acars-badge" title="Has ACARS messages">⚡</span>'
+    : '';
   return divIcon({
     html: `<div class="adsb-marker ${markerClass}" style="--adsb-color:${color};${
       rotation != null ? `--adsb-rotation:${rotation}deg;` : ''
-    }"><span class="adsb-marker__icon" aria-hidden="true">${svg}</span><span class="adsb-marker__label">${label}</span></div>`,
+    }"><span class="adsb-marker__icon" aria-hidden="true">${svg}</span><span class="adsb-marker__label">${label}${acarsBadge}</span></div>`,
     className: 'adsb-marker-wrapper',
     iconSize: [40, 48],
     iconAnchor: [20, 24],
@@ -441,7 +444,8 @@ interface CommandCenterMapProps {
   showCoverage: boolean;
   adsbTracks?: { lat: number; lon: number; icao: string; callsign?: string | null; id: string }[];
   adsbTrails?: Record<string, AdsbTrailPoint[]>;
-  acarsMessages?: AcarsMessage[];
+  acarsMessagesByIcao?: Map<string, AcarsMessage[]>;
+  uncorrelatedAcarsMessages?: AcarsMessage[];
   geofences: Geofence[];
   geofenceHighlights: Record<string, number>;
   mapStyle: string;
@@ -484,7 +488,8 @@ export function CommandCenterMap({
   trackingOverlays = [],
   adsbTracks = [],
   adsbTrails = {},
-  acarsMessages = [],
+  acarsMessagesByIcao = new Map(),
+  uncorrelatedAcarsMessages = [],
 }: CommandCenterMapProps) {
   const mapRef = useRef<LeafletMap | null>(null);
   const baseLayerKeys = useMemo(() => BASE_LAYERS.map((layer) => layer.key), []);
@@ -538,9 +543,10 @@ export function CommandCenterMap({
       ),
     [adsbTracks],
   );
-  const acarsWithPosition = useMemo(
-    () => acarsMessages.filter((msg) => hasValidPosition(msg.lat ?? null, msg.lon ?? null)),
-    [acarsMessages],
+  const uncorrelatedAcarsWithPosition = useMemo(
+    () =>
+      uncorrelatedAcarsMessages.filter((msg) => hasValidPosition(msg.lat ?? null, msg.lon ?? null)),
+    [uncorrelatedAcarsMessages],
   );
 
   const center = useMemo<LatLngExpression>(() => {
@@ -813,6 +819,7 @@ export function CommandCenterMap({
           track.categoryDescription,
         );
         const trailColor = isHelicopter ? '#a855f7' : '#06b6d4';
+        const correlatedMessages = acarsMessagesByIcao.get(track.icao) ?? [];
 
         return (
           <Fragment key={`adsb-${track.id}`}>
@@ -826,7 +833,7 @@ export function CommandCenterMap({
                 }}
               />
             ) : null}
-            <Marker position={position} icon={createAdsbIcon(track)}>
+            <Marker position={position} icon={createAdsbIcon(track, correlatedMessages.length > 0)}>
               <Tooltip direction="top" offset={[0, -10]} opacity={0.95} className="tooltip--drone">
                 <div className="drone-tooltip">
                   <div className="badge badge--inline">Source: ADS-B</div>
@@ -849,19 +856,48 @@ export function CommandCenterMap({
                     <div>Heading: {track.heading.toFixed(0)}&deg;</div>
                   ) : null}
                   <div>Last seen: {new Date(track.lastSeen).toLocaleTimeString()}</div>
+                  {correlatedMessages.length > 0 ? (
+                    <>
+                      <hr style={{ margin: '8px 0', borderColor: 'rgba(255,255,255,0.2)' }} />
+                      <div className="badge badge--inline" style={{ background: '#f59e0b' }}>
+                        ACARS Messages ({correlatedMessages.length})
+                      </div>
+                      {correlatedMessages.slice(0, 5).map((msg) => (
+                        <div key={msg.id} style={{ marginTop: '4px', fontSize: '0.9em' }}>
+                          <div>
+                            <strong>
+                              [{msg.label ?? 'N/A'}] {msg.text?.substring(0, 50)}
+                              {msg.text && msg.text.length > 50 ? '...' : ''}
+                            </strong>
+                          </div>
+                          <div className="muted" style={{ fontSize: '0.85em' }}>
+                            {new Date(msg.timestamp).toLocaleTimeString()}
+                            {msg.signalLevel ? ` • ${msg.signalLevel.toFixed(1)} dB` : ''}
+                          </div>
+                        </div>
+                      ))}
+                      {correlatedMessages.length > 5 ? (
+                        <div className="muted" style={{ marginTop: '4px', fontSize: '0.85em' }}>
+                          +{correlatedMessages.length - 5} more messages
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
               </Tooltip>
             </Marker>
           </Fragment>
         );
       })}
-      {acarsWithPosition.map((message) => {
+      {uncorrelatedAcarsWithPosition.map((message) => {
         const position: LatLngExpression = [message.lat!, message.lon!];
         return (
           <Marker key={`acars-${message.id}`} position={position} icon={createAcarsIcon(message)}>
             <Tooltip direction="top" offset={[0, -10]} opacity={0.95} className="tooltip--drone">
               <div className="drone-tooltip">
-                <div className="badge badge--inline">Source: ACARS</div>
+                <div className="badge badge--inline" style={{ background: '#f59e0b' }}>
+                  Source: ACARS (Uncorrelated)
+                </div>
                 <strong>{message.flight ?? message.tail}</strong>
                 <div className="muted">{message.tail}</div>
                 <div>

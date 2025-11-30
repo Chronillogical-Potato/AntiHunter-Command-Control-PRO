@@ -44,6 +44,7 @@ export interface AcarsMessage {
   lastSeen: string;
   lat?: number | null;
   lon?: number | null;
+  correlatedIcao?: string | null;
 }
 
 export interface AcarsStatus {

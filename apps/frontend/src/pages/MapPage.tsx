@@ -14,12 +14,14 @@ import {
   MdBookmarkAdd,
   MdClose,
   MdRadar,
+  MdSettingsInputAntenna,
 } from 'react-icons/md';
 
 import { getAcarsMessages } from '../api/acars';
 import { getAdsbTracksViaProxy } from '../api/adsb';
 import { apiClient } from '../api/client';
 import type {
+  AcarsMessage,
   AlarmLevel,
   AppSettings,
   AuthUser,
@@ -219,6 +221,7 @@ export function MapPage() {
     toggleTargets,
     toggleAdsb,
     toggleAdsbGeofence,
+    toggleAcars,
   } = useMapPreferences();
   const fitEnabled = useMapPreferences((state) => state.fitEnabled);
   const setMapStyle = useMapPreferences((state) => state.setMapStyle);
@@ -258,14 +261,31 @@ export function MapPage() {
     () =>
       acarsAddonEnabled && acarsEnabled && acarsMessagesQuery.data
         ? acarsMessagesQuery.data.filter((message) => {
-            return (
-              message.tail &&
-              message.tail.trim() &&
-              hasValidPosition(message.lat ?? null, message.lon ?? null)
-            );
+            return message.tail && message.tail.trim();
           })
         : [],
     [acarsAddonEnabled, acarsEnabled, acarsMessagesQuery.data],
+  );
+
+  const acarsMessagesByIcao = useMemo(() => {
+    const map = new Map<string, AcarsMessage[]>();
+    acarsMessages.forEach((message) => {
+      if (message.correlatedIcao) {
+        const existing = map.get(message.correlatedIcao) ?? [];
+        existing.push(message);
+        map.set(message.correlatedIcao, existing);
+      }
+    });
+    return map;
+  }, [acarsMessages]);
+
+  const uncorrelatedAcarsMessages = useMemo(
+    () =>
+      acarsMessages.filter(
+        (message) =>
+          !message.correlatedIcao && hasValidPosition(message.lat ?? null, message.lon ?? null),
+      ),
+    [acarsMessages],
   );
 
   useEffect(() => {
@@ -774,6 +794,15 @@ export function MapPage() {
                 </button>
               </>
             ) : null}
+            {acarsAddonEnabled ? (
+              <button
+                type="button"
+                className={`control-chip ${acarsEnabled ? 'is-active' : ''}`}
+                onClick={toggleAcars}
+              >
+                <MdSettingsInputAntenna /> ACARS
+              </button>
+            ) : null}
           </div>
         </header>
         <div className="map-canvas">
@@ -791,7 +820,12 @@ export function MapPage() {
             showTargets={targetsEnabled}
             adsbTracks={adsbAddonEnabled && adsbEnabled ? adsbTracks : []}
             adsbTrails={adsbTrails}
-            acarsMessages={acarsAddonEnabled && acarsEnabled ? acarsMessages : []}
+            acarsMessagesByIcao={
+              acarsAddonEnabled && acarsEnabled ? acarsMessagesByIcao : new Map()
+            }
+            uncorrelatedAcarsMessages={
+              acarsAddonEnabled && acarsEnabled ? uncorrelatedAcarsMessages : []
+            }
             followEnabled={followEnabled}
             showCoverage={coverageEnabled}
             mapStyle={mapStyle}
