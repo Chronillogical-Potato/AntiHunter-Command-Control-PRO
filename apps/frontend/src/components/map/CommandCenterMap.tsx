@@ -361,7 +361,7 @@ function createAdsbIcon(track: AdsbTrack, hasAcarsMessages = false): DivIcon {
     }"><span class="adsb-marker__icon" aria-hidden="true">${config.svg}</span><span class="adsb-marker__label">${label}${acarsBadge}</span></div>`,
     className: 'adsb-marker-wrapper',
     iconSize: [40, 48],
-    iconAnchor: [20, 24],
+    iconAnchor: [20, 16],
   });
 }
 
@@ -372,7 +372,7 @@ function createAcarsIcon(message: AcarsMessage): DivIcon {
     html: `<div class="acars-marker" style="--acars-color:${color};"><span class="acars-marker__icon" aria-hidden="true">${ACARS_COMM_SVG}</span><span class="acars-marker__label">${label}</span></div>`,
     className: 'acars-marker-wrapper',
     iconSize: [40, 48],
-    iconAnchor: [20, 24],
+    iconAnchor: [20, 16],
   });
 }
 
