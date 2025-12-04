@@ -355,22 +355,22 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async poll(): Promise<void> {
-  if (!this.feedUrl) {
-    throw new Error('No ADSB feed URL configured');
-  }
-  const feedUrl = validateFeedUrl(this.feedUrl);
-  // codeql[js/request-forgery] Admin-configured URL with protocol validation
-  const response = await fetch(feedUrl, { redirect: 'manual' });
-  if (response.status >= 300 && response.status < 400) {
-    const location = response.headers.get('location');
-    if (location) {
-      validateFeedUrl(new URL(location, feedUrl).toString());
+    if (!this.feedUrl) {
+      throw new Error('No ADSB feed URL configured');
     }
-    throw new Error('Redirect not followed - update feed URL directly');
-  }
-  if (!response.ok) {
-    throw new Error(`ADSB feed error: ${response.status} ${response.statusText}`);
-  }
+    const feedUrl = validateFeedUrl(this.feedUrl);
+    // codeql[js/request-forgery] Admin-configured URL with protocol validation
+    const response = await fetch(feedUrl, { redirect: 'manual' });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (location) {
+        validateFeedUrl(new URL(location, feedUrl).toString());
+      }
+      throw new Error('Redirect not followed - update feed URL directly');
+    }
+    if (!response.ok) {
+      throw new Error(`ADSB feed error: ${response.status} ${response.statusText}`);
+    }
     const payload = (await response.json()) as { aircraft?: Dump1090Aircraft[] };
     const aircraft = Array.isArray(payload.aircraft) ? payload.aircraft : [];
     const nextTracks: Map<string, AdsbTrack> = new Map();
