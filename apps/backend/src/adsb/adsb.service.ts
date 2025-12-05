@@ -68,6 +68,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   private geofences: GeofenceResponse[] = [];
   private geofenceStates: Map<string, Map<string, boolean>> = new Map();
   private tracks: Map<string, AdsbTrack> = new Map();
+  private sessionLog: Map<string, AdsbTrack> = new Map();
   private readonly localSiteId: string;
   private readonly dataDir: string;
   private readonly aircraftDbPath: string;
@@ -134,6 +135,10 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
 
   getTracks(): AdsbTrack[] {
     return Array.from(this.tracks.values());
+  }
+
+  getSessionLog(): AdsbTrack[] {
+    return Array.from(this.sessionLog.values());
   }
 
   updateConfig(config: {
@@ -387,9 +392,14 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       nextTracks.set(id, track);
     });
 
+    // Update current active tracks (for map)
+    this.tracks = nextTracks;
+
+    // Merge into session log (for ADS-B log page)
     nextTracks.forEach((track, id) => {
-      this.tracks.set(id, track);
+      this.sessionLog.set(id, track);
     });
+
     this.lastPollAt = new Date().toISOString();
     this.lastError = null;
     this.evaluateGeofences(this.tracks);

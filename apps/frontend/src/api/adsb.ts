@@ -35,6 +35,10 @@ export function getAdsbTracks() {
   return apiClient.get<AdsbTrack[]>('/adsb/tracks');
 }
 
+export function getAdsbLog() {
+  return apiClient.get<AdsbTrack[]>('/adsb/log');
+}
+
 export function updateAdsbConfig(body: {
   enabled?: boolean;
   feedUrl?: string;
