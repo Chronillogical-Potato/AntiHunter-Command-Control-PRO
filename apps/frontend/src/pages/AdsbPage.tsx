@@ -141,7 +141,7 @@ export function AdsbPage() {
             speed: track.speed ?? null,
             heading: track.heading ?? null,
             messages: track.messages ?? null,
-            firstSeen: track.lastSeen ?? now,
+            firstSeen: track.firstSeen ?? track.lastSeen ?? now,
             lastSeen: track.lastSeen ?? now,
             hits: 1,
           });

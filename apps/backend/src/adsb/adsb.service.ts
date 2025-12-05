@@ -387,7 +387,6 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       nextTracks.set(id, track);
     });
 
-    // Merge new tracks into existing tracks
     nextTracks.forEach((track, id) => {
       this.tracks.set(id, track);
     });
@@ -395,7 +394,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     this.lastError = null;
     this.evaluateGeofences(this.tracks);
     this.gateway.emitEvent(
-      { type: 'adsb.tracks', tracks: Array.from(this.tracks.values()) },
+      { type: 'adsb.tracks', tracks: Array.from(nextTracks.values()) },
       { skipBus: true },
     );
   }
