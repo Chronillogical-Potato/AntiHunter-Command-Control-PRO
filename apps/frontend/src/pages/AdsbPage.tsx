@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 import {
   fetchAdsbProxy,
+  getAdsbLog,
   getAdsbStatus,
-  getAdsbTracksViaProxy,
   updateAdsbConfig,
   uploadAircraftDatabase,
 } from '../api/adsb';
@@ -88,15 +88,18 @@ export function AdsbPage() {
   });
 
   const tracksQuery = useQuery({
-    queryKey: ['adsb', 'tracks', 'log'],
-    queryFn: getAdsbTracksViaProxy,
+    queryKey: ['adsb', 'log'],
+    queryFn: getAdsbLog,
     refetchInterval: () => Math.max(5_000, adsbIntervalMs),
   });
 
   useEffect(() => {
     if (!tracksQuery.data) return;
     const filtered = tracksQuery.data.filter((track) => {
-      const hasId = (track.callsign && track.callsign.trim()) || (track.reg && track.reg.trim());
+      const hasId =
+        (track.callsign && track.callsign.trim()) ||
+        (track.reg && track.reg.trim()) ||
+        (track.icao && track.icao.trim());
       return Boolean(hasId);
     });
     setLog((prev) => {
@@ -138,7 +141,7 @@ export function AdsbPage() {
             speed: track.speed ?? null,
             heading: track.heading ?? null,
             messages: track.messages ?? null,
-            firstSeen: track.lastSeen ?? now,
+            firstSeen: track.firstSeen ?? track.lastSeen ?? now,
             lastSeen: track.lastSeen ?? now,
             hits: 1,
           });
@@ -418,7 +421,7 @@ export function AdsbPage() {
                         Choose file
                         <input
                           type="file"
-                          accept=".csv,text/csv"
+                          accept=".csv,.txt,text/csv,text/plain"
                           onChange={async (event) => {
                             const file = event.target.files?.[0];
                             if (!file) {
@@ -432,6 +435,7 @@ export function AdsbPage() {
                             try {
                               await uploadAircraftDatabase(file);
                               setUploadMessage(`Uploaded ${file.name} successfully.`);
+                              void adsbStatusQuery.refetch();
                             } catch (error) {
                               const message =
                                 error instanceof Error
@@ -448,6 +452,12 @@ export function AdsbPage() {
                       </label>
                       <span className="file-upload__name">{selectedFileName}</span>
                     </div>
+                    {adsbStatus?.aircraftDbCount != null && adsbStatus.aircraftDbCount > 0 ? (
+                      <div className="form-hint">
+                        Aircraft database loaded: {adsbStatus.aircraftDbCount.toLocaleString()}{' '}
+                        entries
+                      </div>
+                    ) : null}
                     {uploadMessage ? <div className="form-hint">{uploadMessage}</div> : null}
                     {uploadError ? <div className="form-error">{uploadError}</div> : null}
                   </div>

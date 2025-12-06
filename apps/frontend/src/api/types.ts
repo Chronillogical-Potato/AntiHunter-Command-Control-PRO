@@ -284,6 +284,7 @@ export interface AdsbTrack {
   speed?: number | null;
   heading?: number | null;
   onGround?: boolean | null;
+  firstSeen: string;
   lastSeen: string;
   category?: string | null;
   reg?: string | null;
@@ -306,6 +307,7 @@ export interface AdsbStatus {
   lastPollAt?: string | null;
   lastError?: string | null;
   trackCount: number;
+  aircraftDbCount?: number;
 }
 
 export interface AcarsMessage {
