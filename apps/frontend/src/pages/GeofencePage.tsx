@@ -76,8 +76,8 @@ export function GeofencePage() {
 
   const totalArea = useMemo(() => sortedGeofences.length, [sortedGeofences]);
 
-  const handleFocus = (geofenceIndex: number) => {
-    const geofence = geofences[geofenceIndex];
+  const handleFocus = (geofenceId: string) => {
+    const geofence = geofences.find((g) => g.id === geofenceId);
     if (!geofence || geofence.polygon.length === 0) {
       return;
     }
@@ -245,7 +245,7 @@ export function GeofencePage() {
               </tr>
             </thead>
             <tbody>
-              {sortedGeofences.map((geofence, index) => (
+              {sortedGeofences.map((geofence) => (
                 <tr key={geofence.id}>
                   <td className="geofence-table__name">
                     <input
@@ -273,7 +273,7 @@ export function GeofencePage() {
                   <td>
                     <input
                       type="color"
-                      value={geofence.color}
+                      value={geofence.color || '#1d4ed8'}
                       onChange={(event) => handleColorChange(geofence.id, event)}
                       aria-label={`Color for ${geofence.name}`}
                     />
@@ -370,7 +370,7 @@ export function GeofencePage() {
                     </label>
                   </td>
                   <td className="geofence-table__actions">
-                    <button type="button" onClick={() => handleFocus(index)}>
+                    <button type="button" onClick={() => handleFocus(geofence.id)}>
                       <MdMyLocation /> Focus
                     </button>
                     <button

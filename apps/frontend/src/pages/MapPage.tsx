@@ -201,9 +201,9 @@ export function MapPage() {
   }, [targetsQuery.data, commentMap, trackingMap, triangulationState]);
 
   const adsbAddonEnabled =
-    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.adsb ?? true) ?? true;
+    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.adsb ?? false) ?? false;
   const acarsAddonEnabled =
-    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.acars ?? true) ?? true;
+    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.acars ?? false) ?? false;
 
   const {
     trailsEnabled,
@@ -363,36 +363,6 @@ export function MapPage() {
   const [draftVertices, setDraftVertices] = useState<GeofenceVertex[]>([]);
   const [hoverVertex, setHoverVertex] = useState<GeofenceVertex | null>(null);
 
-  const performFit = useCallback(() => {
-    if (!mapReady || !mapRef.current) {
-      return false;
-    }
-    const positions = nodeListWithFix
-      .map((node) =>
-        typeof node.lat === 'number' && typeof node.lon === 'number'
-          ? ([node.lat, node.lon] as [number, number])
-          : null,
-      )
-      .filter((value): value is [number, number] => value !== null);
-    if (positions.length === 0) {
-      return false;
-    }
-    const bounds = latLngBounds(positions);
-    mapRef.current.fitBounds(bounds.pad(0.25));
-    return true;
-  }, [mapReady, nodeListWithFix]);
-
-  const handleFitClick = () => {
-    if (fitEnabled) {
-      setFitEnabled(false);
-      return;
-    }
-    const fitted = performFit();
-    if (fitted) {
-      setFitEnabled(true);
-    }
-  };
-
   const persistMapState = useCallback(
     async ({
       views,
@@ -476,13 +446,6 @@ export function MapPage() {
   );
 
   useEffect(() => {
-    if (!fitEnabled || !mapReady) {
-      return;
-    }
-    performFit();
-  }, [fitEnabled, performFit, nodeListWithFix.length, mapReady]);
-
-  useEffect(() => {
     if (!pendingTarget || !mapReady || !mapRef.current) {
       return;
     }
@@ -512,6 +475,10 @@ export function MapPage() {
     if (initialViewAppliedRef.current) {
       return;
     }
+    // Don't apply initial view if there's a pending target to navigate to
+    if (pendingTarget) {
+      return;
+    }
     const preferredView = normalizeSnapshot(currentUser?.preferences?.mapState?.lastView);
     if (preferredView) {
       mapRef.current.setView([preferredView.lat, preferredView.lon], preferredView.zoom);
@@ -522,7 +489,7 @@ export function MapPage() {
       );
     }
     initialViewAppliedRef.current = true;
-  }, [mapReady, currentUser?.preferences?.mapState?.lastView]);
+  }, [mapReady, currentUser?.preferences?.mapState?.lastView, pendingTarget]);
 
   const geofenceHighlightCount = useMemo(
     () => Object.keys(geofenceHighlights).length,
@@ -538,6 +505,68 @@ export function MapPage() {
       }),
     [drones],
   );
+
+  const performFit = useCallback(() => {
+    if (!mapReady || !mapRef.current) {
+      return false;
+    }
+    const positions: [number, number][] = [];
+
+    // Add nodes
+    nodeListWithFix.forEach((node) => {
+      if (typeof node.lat === 'number' && typeof node.lon === 'number') {
+        positions.push([node.lat, node.lon]);
+      }
+    });
+
+    // Add drones
+    freshDrones.forEach((drone) => {
+      if (typeof drone.lat === 'number' && typeof drone.lon === 'number') {
+        positions.push([drone.lat, drone.lon]);
+      }
+    });
+
+    // Add ADS-B tracks
+    adsbTracks.forEach((track) => {
+      if (typeof track.lat === 'number' && typeof track.lon === 'number') {
+        positions.push([track.lat, track.lon]);
+      }
+    });
+
+    // Add geofence vertices
+    geofences.forEach((geofence) => {
+      geofence.polygon.forEach((vertex) => {
+        if (typeof vertex.lat === 'number' && typeof vertex.lon === 'number') {
+          positions.push([vertex.lat, vertex.lon]);
+        }
+      });
+    });
+
+    if (positions.length === 0) {
+      return false;
+    }
+    const bounds = latLngBounds(positions);
+    mapRef.current.fitBounds(bounds.pad(0.25));
+    return true;
+  }, [mapReady, nodeListWithFix, freshDrones, adsbTracks, geofences]);
+
+  const handleFitClick = () => {
+    if (fitEnabled) {
+      setFitEnabled(false);
+      return;
+    }
+    const fitted = performFit();
+    if (fitted) {
+      setFitEnabled(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!fitEnabled || !mapReady) {
+      return;
+    }
+    performFit();
+  }, [fitEnabled, performFit, nodeListWithFix.length, mapReady]);
 
   const [activeDroneId, setActiveDroneId] = useState<string | null>(null);
   const [droneCardVisible, setDroneCardVisible] = useState(false);
