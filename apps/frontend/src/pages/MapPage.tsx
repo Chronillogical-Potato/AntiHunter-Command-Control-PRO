@@ -73,6 +73,7 @@ export function MapPage() {
 
   const mapRef = useRef<LeafletMap | null>(null);
   const initialViewAppliedRef = useRef(false);
+  const programmaticMoveRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
   const { commentMap, trackingMap } = useTargetStore((state) => ({
@@ -203,7 +204,8 @@ export function MapPage() {
   const adsbAddonEnabled =
     useAuthStore((state) => state.user?.preferences?.notifications?.addons?.adsb ?? false) ?? false;
   const acarsAddonEnabled =
-    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.acars ?? false) ?? false;
+    useAuthStore((state) => state.user?.preferences?.notifications?.addons?.acars ?? false) ??
+    false;
 
   const {
     trailsEnabled,
@@ -427,6 +429,7 @@ export function MapPage() {
       if (!mapRef.current) {
         return;
       }
+      programmaticMoveRef.current = true;
       mapRef.current.flyTo([view.lat, view.lon], view.zoom, { duration: 1.1 });
       void persistMapState({ lastView: viewToSnapshot(view) });
     },
@@ -449,6 +452,9 @@ export function MapPage() {
     if (!pendingTarget || !mapReady || !mapRef.current) {
       return;
     }
+    // Mark that we've applied an initial view so the default view doesn't override this
+    initialViewAppliedRef.current = true;
+    programmaticMoveRef.current = true;
     if (pendingTarget.bounds) {
       const bounds = latLngBounds([pendingTarget.bounds.southWest, pendingTarget.bounds.northEast]);
       mapRef.current.fitBounds(bounds.pad(0.2), { animate: true });
@@ -479,6 +485,12 @@ export function MapPage() {
     if (pendingTarget) {
       return;
     }
+    // If fit is enabled, let the fit effect handle the initial view
+    if (fitEnabled) {
+      initialViewAppliedRef.current = true;
+      return;
+    }
+    programmaticMoveRef.current = true;
     const preferredView = normalizeSnapshot(currentUser?.preferences?.mapState?.lastView);
     if (preferredView) {
       mapRef.current.setView([preferredView.lat, preferredView.lon], preferredView.zoom);
@@ -489,7 +501,7 @@ export function MapPage() {
       );
     }
     initialViewAppliedRef.current = true;
-  }, [mapReady, currentUser?.preferences?.mapState?.lastView, pendingTarget]);
+  }, [mapReady, currentUser?.preferences?.mapState?.lastView, pendingTarget, fitEnabled]);
 
   const geofenceHighlightCount = useMemo(
     () => Object.keys(geofenceHighlights).length,
@@ -545,6 +557,7 @@ export function MapPage() {
     if (positions.length === 0) {
       return false;
     }
+    programmaticMoveRef.current = true;
     const bounds = latLngBounds(positions);
     mapRef.current.fitBounds(bounds.pad(0.25));
     return true;
@@ -562,11 +575,11 @@ export function MapPage() {
   };
 
   useEffect(() => {
-    if (!fitEnabled || !mapReady) {
+    if (!fitEnabled || !mapReady || pendingTarget) {
       return;
     }
     performFit();
-  }, [fitEnabled, performFit, nodeListWithFix.length, mapReady]);
+  }, [fitEnabled, performFit, nodeListWithFix.length, mapReady, pendingTarget]);
 
   const [activeDroneId, setActiveDroneId] = useState<string | null>(null);
   const [droneCardVisible, setDroneCardVisible] = useState(false);
@@ -657,6 +670,7 @@ export function MapPage() {
       if (options?.focus && mapRef.current) {
         const drone = drones.find((item) => item.id === droneId);
         if (drone) {
+          programmaticMoveRef.current = true;
           mapRef.current.flyTo([drone.lat, drone.lon], Math.max(mapRef.current.getZoom(), 15), {
             duration: 1,
           });
@@ -675,6 +689,61 @@ export function MapPage() {
     const timer = window.setInterval(() => pruneGeofenceHighlights(), 1000);
     return () => window.clearInterval(timer);
   }, [geofenceHighlightCount, pruneGeofenceHighlights]);
+
+  // Auto-save map position when user moves/zooms
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !currentUser) {
+      return;
+    }
+
+    let timeoutId: number | null = null;
+
+    const handleMoveEnd = () => {
+      // Skip if this was a programmatic movement
+      if (programmaticMoveRef.current) {
+        programmaticMoveRef.current = false;
+        return;
+      }
+
+      // Disable fit mode when user manually moves the map
+      if (fitEnabled) {
+        setFitEnabled(false);
+      }
+
+      // Clear any pending timeout
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
+      // Debounce the save operation
+      timeoutId = window.setTimeout(() => {
+        if (!mapRef.current) {
+          return;
+        }
+        const center = mapRef.current.getCenter();
+        const zoom = mapRef.current.getZoom();
+        const snapshot: MapViewSnapshot = {
+          lat: center.lat,
+          lon: center.lng,
+          zoom,
+          updatedAt: Date.now(),
+        };
+        void persistMapState({ lastView: snapshot });
+      }, 1000); // Wait 1 second after user stops moving
+    };
+
+    const map = mapRef.current;
+    map.on('moveend', handleMoveEnd);
+    map.on('zoomend', handleMoveEnd);
+
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+      map.off('moveend', handleMoveEnd);
+      map.off('zoomend', handleMoveEnd);
+    };
+  }, [mapReady, currentUser, persistMapState, fitEnabled, setFitEnabled]);
 
   const startGeofenceDrawing = () => {
     setDrawingGeofence(true);

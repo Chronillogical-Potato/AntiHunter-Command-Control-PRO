@@ -1,6 +1,6 @@
 {
-  "enabled": true,
+  "enabled": false,
   "feedUrl": "http://127.0.0.1:8090/data/aircraft.json",
   "intervalMs": 15000,
-  "geofencesEnabled": false
+  "geofencesEnabled": true
 }
