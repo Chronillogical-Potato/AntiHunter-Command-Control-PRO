@@ -506,7 +506,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       const entityKey = this.buildEntityKey(track);
       activeEntities.add(entityKey);
       this.geofences.forEach((geofence) => {
-        if (!geofence.alarm.enabled || geofence.polygon.length < 3) {
+        if (!geofence.alarm.enabled || geofence.polygon.length < 3 || !geofence.appliesToAdsb) {
           return;
         }
         const inside = this.pointInPolygon(track.lat, track.lon, geofence.polygon);

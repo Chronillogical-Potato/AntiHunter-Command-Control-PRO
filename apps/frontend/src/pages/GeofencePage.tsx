@@ -238,6 +238,9 @@ export function GeofencePage() {
                 </th>
                 <th>Trigger Exit</th>
                 <th>Alarm Message</th>
+                <th>ADS-B</th>
+                <th>Drones</th>
+                <th>Targets</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -320,6 +323,51 @@ export function GeofencePage() {
                       onChange={(event) => handleMessageChange(geofence.id, event)}
                       placeholder="Alert text, e.g. {entity} entered geofence {geofence}"
                     />
+                  </td>
+                  <td>
+                    <label
+                      className="switch"
+                      aria-label={`Apply to ADS-B aircraft for ${geofence.name ?? 'this geofence'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(geofence.appliesToAdsb)}
+                        onChange={(event) =>
+                          updateGeofence(geofence.id, { appliesToAdsb: event.target.checked })
+                        }
+                      />
+                      <span />
+                    </label>
+                  </td>
+                  <td>
+                    <label
+                      className="switch"
+                      aria-label={`Apply to drones for ${geofence.name ?? 'this geofence'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(geofence.appliesToDrones)}
+                        onChange={(event) =>
+                          updateGeofence(geofence.id, { appliesToDrones: event.target.checked })
+                        }
+                      />
+                      <span />
+                    </label>
+                  </td>
+                  <td>
+                    <label
+                      className="switch"
+                      aria-label={`Apply to targets/devices for ${geofence.name ?? 'this geofence'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(geofence.appliesToTargets)}
+                        onChange={(event) =>
+                          updateGeofence(geofence.id, { appliesToTargets: event.target.checked })
+                        }
+                      />
+                      <span />
+                    </label>
                   </td>
                   <td className="geofence-table__actions">
                     <button type="button" onClick={() => handleFocus(index)}>

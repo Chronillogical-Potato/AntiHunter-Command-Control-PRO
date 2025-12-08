@@ -212,7 +212,6 @@ export function MapPage() {
     targetsEnabled,
     coverageEnabled,
     adsbEnabled,
-    adsbGeofenceEnabled,
     acarsEnabled,
     mapStyle,
     toggleTrails,
@@ -220,7 +219,6 @@ export function MapPage() {
     toggleFollow,
     toggleTargets,
     toggleAdsb,
-    toggleAdsbGeofence,
     toggleAcars,
   } = useMapPreferences();
   const fitEnabled = useMapPreferences((state) => state.fitEnabled);
@@ -777,22 +775,13 @@ export function MapPage() {
               <MdVisibility /> Targets
             </button>
             {adsbAddonEnabled ? (
-              <>
-                <button
-                  type="button"
-                  className={`control-chip ${adsbEnabled ? 'is-active' : ''}`}
-                  onClick={toggleAdsb}
-                >
-                  <MdRadar /> ADS-B
-                </button>
-                <button
-                  type="button"
-                  className={`control-chip ${adsbGeofenceEnabled ? 'is-active' : ''}`}
-                  onClick={toggleAdsbGeofence}
-                >
-                  <MdRadar /> ADS-B Geofence
-                </button>
-              </>
+              <button
+                type="button"
+                className={`control-chip ${adsbEnabled ? 'is-active' : ''}`}
+                onClick={toggleAdsb}
+              >
+                <MdRadar /> ADS-B
+              </button>
             ) : null}
             {acarsAddonEnabled ? (
               <button
