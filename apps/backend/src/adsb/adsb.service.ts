@@ -112,6 +112,12 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   private openskyFailureCount = 0;
   private openskyCooldownUntil = 0;
   private openskyBackoffMs = 0;
+  private openskyNextAvailableMs = 0;
+  private openskyRatePromise: Promise<void> = Promise.resolve();
+  private openskyDailyBudget = 4000;
+  private openskyDailyUsed = 0;
+  private openskyBudgetResetMs = 0;
+  private openskyMinIntervalMs = 25_000;
   private readonly routeCache: Map<
     string,
     { dep: string | null; dest: string | null; ts: number; empty: boolean; retryAt: number }
@@ -161,6 +167,11 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       'https://opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token';
     this.planespottersEnabled =
       this.configService.get<boolean>('adsb.planespottersEnabled', true) ?? true;
+    const dailyBudget = this.configService.get<number>('adsb.openskyDailyBudget', 4000) ?? 4000;
+    this.openskyDailyBudget = Math.max(1, dailyBudget);
+    const intervalFromBudget = Math.floor((24 * 60 * 60 * 1000) / this.openskyDailyBudget);
+    this.openskyMinIntervalMs = Math.max(1000, intervalFromBudget);
+    this.resetOpenskyBudgetIfNeeded(true);
     this.localSiteId = this.configService.get<string>('site.id', 'default');
     const baseDir = join(__dirname, '..', '..');
     this.dataDir = join(baseDir, 'data', 'adsb');
@@ -233,6 +244,11 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
           ? new Date(this.openskyCooldownUntil).toISOString()
           : null,
         nextRouteRetryAt: nextRouteRetry ? new Date(nextRouteRetry).toISOString() : null,
+        dailyBudget: this.openskyDailyBudget,
+        dailyUsed: this.openskyDailyUsed,
+        budgetResetsAt: this.openskyBudgetResetMs
+          ? new Date(this.openskyBudgetResetMs).toISOString()
+          : null,
       },
       // Note: planespottersEnabled is intentionally not exposed to clients to avoid toggling in UI yet
     };
@@ -890,6 +906,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
         return;
       }
       const now = Date.now();
+      this.resetOpenskyBudgetIfNeeded();
       if (now < this.openskyCooldownUntil) {
         if (now >= this.openskyCooldownUntil && this.lastOpenskyError?.includes('429')) {
           this.lastOpenskyError = null;
@@ -1054,6 +1071,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     depCandidates?: number | null;
     destCandidates?: number | null;
   } | null> {
+    await this.enforceOpenSkyRateLimit();
     const end = Math.floor(Date.now() / 1000);
     const begin = end - 12 * 3600;
     const url = `https://opensky-network.org/api/flights/aircraft?icao24=${icao.toLowerCase()}&begin=${begin}&end=${end}`;
@@ -1188,6 +1206,23 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private enforceOpenSkyRateLimit(): Promise<void> {
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const now = Date.now();
+    const wait = Math.max(0, this.openskyNextAvailableMs - now);
+    this.openskyRatePromise = this.openskyRatePromise.then(async () => {
+      if (wait > 0) {
+        await sleep(wait);
+      }
+      this.openskyNextAvailableMs = Date.now() + this.openskyMinIntervalMs;
+      this.openskyDailyUsed += 1;
+      if (this.openskyDailyUsed >= this.openskyDailyBudget) {
+        this.lastOpenskyError = `OpenSky daily budget exhausted (${this.openskyDailyUsed}/${this.openskyDailyBudget}).`;
+      }
+    });
+    return this.openskyRatePromise;
+  }
+
   private toNumber(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;
@@ -1197,6 +1232,18 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       return Number.isFinite(parsed) ? parsed : null;
     }
     return null;
+  }
+
+  private resetOpenskyBudgetIfNeeded(force = false): void {
+    const now = Date.now();
+    if (force || now >= this.openskyBudgetResetMs) {
+      const tomorrow = new Date();
+      tomorrow.setHours(24, 0, 0, 0);
+      this.openskyBudgetResetMs = tomorrow.getTime();
+      this.openskyDailyUsed = 0;
+      this.lastOpenskyError = null;
+      this.openskyBackoffMs = 0;
+    }
   }
 
   private extractRoute(

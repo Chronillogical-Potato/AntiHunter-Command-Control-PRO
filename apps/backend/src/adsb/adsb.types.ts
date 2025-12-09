@@ -61,5 +61,8 @@ export interface AdsbStatus {
     failureCount?: number;
     cooldownUntil?: string | null;
     nextRouteRetryAt?: string | null;
+    dailyBudget?: number;
+    dailyUsed?: number;
+    budgetResetsAt?: string | null;
   };
 }
