@@ -403,6 +403,18 @@ export function AdsbPage() {
                           OpenSky error: {adsbStatus.openskyStatus.lastError}
                         </div>
                       ) : null}
+                      {adsbStatus?.openskyStatus?.cooldownUntil ? (
+                        <div className="form-hint">
+                          Cooldown until:{' '}
+                          {new Date(adsbStatus.openskyStatus.cooldownUntil).toLocaleString()}
+                        </div>
+                      ) : null}
+                      {adsbStatus?.openskyStatus?.nextRouteRetryAt ? (
+                        <div className="form-hint">
+                          Next route attempt:{' '}
+                          {new Date(adsbStatus.openskyStatus.nextRouteRetryAt).toLocaleString()}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="config-row">
                       <span className="config-label">Upload credentials.json</span>

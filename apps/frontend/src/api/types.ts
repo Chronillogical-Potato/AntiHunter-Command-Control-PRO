@@ -334,6 +334,8 @@ export interface AdsbStatus {
     lastSuccessAt?: string | null;
     lastError?: string | null;
     failureCount?: number;
+    cooldownUntil?: string | null;
+    nextRouteRetryAt?: string | null;
   };
 }
 

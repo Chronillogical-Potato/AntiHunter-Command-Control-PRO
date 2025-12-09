@@ -110,11 +110,16 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   private lastOpenskyRouteFetchAt: string | null = null;
   private lastOpenskyRouteSuccessAt: string | null = null;
   private openskyFailureCount = 0;
+  private openskyCooldownUntil = 0;
+  private openskyBackoffMs = 0;
   private readonly routeCache: Map<
     string,
     { dep: string | null; dest: string | null; ts: number; empty: boolean; retryAt: number }
   > = new Map();
   private static readonly ROUTE_CACHE_TTL_MS = 10 * 60 * 1000;
+  private static readonly ROUTE_MIN_RETRY_MS = 15 * 60 * 1000;
+  private static readonly OPEN_SKY_BASE_BACKOFF_MS = 5 * 60 * 1000;
+  private static readonly OPEN_SKY_MAX_BACKOFF_MS = 60 * 60 * 1000;
   private readonly photoCache: Map<
     string,
     {
@@ -201,6 +206,11 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   }
 
   getStatus(): AdsbStatus {
+    const now = Date.now();
+    const nextRouteRetry = Array.from(this.routeCache.values())
+      .map((entry) => entry.retryAt)
+      .filter((ts) => ts && ts > now)
+      .sort((a, b) => a - b)[0];
     return {
       enabled: this.enabled,
       feedUrl: this.feedUrl,
@@ -219,6 +229,10 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
         lastSuccessAt: this.lastOpenskyRouteSuccessAt,
         lastError: this.lastOpenskyError,
         failureCount: this.openskyFailureCount,
+        cooldownUntil: this.openskyCooldownUntil
+          ? new Date(this.openskyCooldownUntil).toISOString()
+          : null,
+        nextRouteRetryAt: nextRouteRetry ? new Date(nextRouteRetry).toISOString() : null,
       },
       // Note: planespottersEnabled is intentionally not exposed to clients to avoid toggling in UI yet
     };
@@ -868,14 +882,20 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       if (!this.openskyEnabled || !this.openskyClientId || !this.openskyClientSecret) {
         return;
       }
+      const now = Date.now();
+      if (now < this.openskyCooldownUntil) {
+        if (now >= this.openskyCooldownUntil && this.lastOpenskyError?.includes('429')) {
+          this.lastOpenskyError = null;
+        }
+        return;
+      }
 
       const cached = this.routeCache.get(track.icao);
-      const now = Date.now();
       if (cached) {
         if (cached.empty && now < cached.retryAt) {
           return;
         }
-        if (!cached.empty && now - cached.ts < AdsbService.ROUTE_CACHE_TTL_MS) {
+        if (!cached.empty && now < cached.retryAt) {
           if (cached.dep && !track.dep) track.dep = cached.dep;
           if (cached.dest && !track.dest) track.dest = cached.dest;
           this.syncTrackRoute(track);
@@ -891,7 +911,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
           dest: null,
           ts: now,
           empty: true,
-          retryAt: now + Math.min(AdsbService.ROUTE_CACHE_TTL_MS, 10 * 60 * 1000),
+          retryAt: now + AdsbService.ROUTE_MIN_RETRY_MS,
         });
         this.lastOpenskyError = 'OpenSky returned no route';
         this.openskyFailureCount += 1;
@@ -903,7 +923,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
         dest: route.dest,
         ts: now,
         empty: false,
-        retryAt: now + AdsbService.ROUTE_CACHE_TTL_MS,
+        retryAt: now + Math.max(AdsbService.ROUTE_CACHE_TTL_MS, AdsbService.ROUTE_MIN_RETRY_MS),
       });
       this.lastOpenskyRouteSuccessAt = new Date().toISOString();
       this.lastOpenskyError = null;
@@ -920,6 +940,17 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       this.enrichAirportMetadata(track);
       this.syncTrackRoute(track);
     } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 429) {
+        const base = AdsbService.OPEN_SKY_BASE_BACKOFF_MS;
+        const nextBackoff = this.openskyBackoffMs
+          ? Math.min(AdsbService.OPEN_SKY_MAX_BACKOFF_MS, this.openskyBackoffMs * 2)
+          : base;
+        this.openskyBackoffMs = nextBackoff;
+        this.openskyCooldownUntil = Date.now() + nextBackoff;
+        this.lastOpenskyError = `OpenSky 429; backing off ${Math.round(nextBackoff / 60000)}m`;
+        return;
+      }
       this.lastOpenskyError = error instanceof Error ? error.message : String(error);
       this.openskyFailureCount += 1;
       this.logger.debug(
@@ -1023,7 +1054,11 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     const response = await this.fetchWithOpenskyAuth(url);
 
     if (!response.ok) {
-      throw new Error(`OpenSky ${response.status} ${response.statusText}`);
+      const err = new Error(`OpenSky ${response.status} ${response.statusText}`) as Error & {
+        status?: number;
+      };
+      err.status = response.status;
+      throw err;
     }
 
     const flights = (await response.json()) as Array<{

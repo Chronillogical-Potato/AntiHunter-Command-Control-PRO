@@ -52,4 +52,14 @@ export interface AdsbStatus {
   aircraftDbCount?: number;
   openskyEnabled?: boolean;
   openskyClientId?: string | null;
+  openskyStatus?: {
+    enabled: boolean;
+    clientIdPresent: boolean;
+    lastFetchAt?: string | null;
+    lastSuccessAt?: string | null;
+    lastError?: string | null;
+    failureCount?: number;
+    cooldownUntil?: string | null;
+    nextRouteRetryAt?: string | null;
+  };
 }
