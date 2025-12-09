@@ -585,7 +585,14 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       const id = hex;
       const existing = this.tracks.get(id);
       const callsign = (entry.flight ?? '').trim() || null;
-      const alt = entry.alt_geom ?? entry.alt_baro ?? null;
+      const alt = this.toNumber(entry.alt_geom ?? entry.alt_baro);
+      const speed = this.toNumber(
+        entry.gs ??
+          (entry as Record<string, unknown>).g_speed ??
+          (entry as Record<string, unknown>).spd ??
+          (entry as Record<string, unknown>).speed,
+      );
+      const heading = this.toNumber(entry.track);
       const now = new Date(Date.now() - (entry.seen ?? 0) * 1000).toISOString();
       const { dep, dest } = this.extractRoute(entry, existing);
       const track: AdsbTrack = {
@@ -602,9 +609,9 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
                 : (existing?.reg ?? null),
         lat: entry.lat,
         lon: entry.lon,
-        alt: typeof alt === 'number' ? alt : (existing?.alt ?? null),
-        speed: typeof entry.gs === 'number' ? entry.gs : (existing?.speed ?? null),
-        heading: typeof entry.track === 'number' ? entry.track : (existing?.heading ?? null),
+        alt: alt ?? existing?.alt ?? null,
+        speed: speed ?? existing?.speed ?? null,
+        heading: heading ?? existing?.heading ?? null,
         onGround: null,
         firstSeen: existing?.firstSeen ?? now,
         lastSeen: now,
@@ -1179,6 +1186,17 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private toNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
 
   private extractRoute(
