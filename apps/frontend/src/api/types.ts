@@ -304,6 +304,8 @@ export interface AdsbStatus {
   feedUrl: string;
   intervalMs: number;
   geofencesEnabled: boolean;
+  openskyEnabled?: boolean;
+  openskyClientId?: string | null;
   lastPollAt?: string | null;
   lastError?: string | null;
   trackCount: number;

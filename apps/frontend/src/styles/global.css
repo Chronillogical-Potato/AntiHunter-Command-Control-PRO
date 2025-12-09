@@ -1116,15 +1116,15 @@ body.theme-dark .control-chip[disabled] {
 }
 
 .drone-tooltip,
-  .drone-operator-tooltip {
-    min-width: 200px;
-    max-width: 340px;
-    font-size: 0.8rem;
-    display: grid;
-    gap: 0.2rem;
-    word-break: normal;
-    overflow-wrap: break-word;
-  }
+.drone-operator-tooltip {
+  min-width: 200px;
+  max-width: 340px;
+  font-size: 0.8rem;
+  display: grid;
+  gap: 0.2rem;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
 
 .leaflet-tooltip.tooltip--drone {
   background: rgba(5, 7, 8, 0.8);
@@ -1563,7 +1563,8 @@ body.theme-dark .control-chip[disabled] {
 }
 
 @keyframes acarsPulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }

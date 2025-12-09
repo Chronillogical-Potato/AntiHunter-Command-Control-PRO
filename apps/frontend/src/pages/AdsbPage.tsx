@@ -8,6 +8,7 @@ import {
   getAdsbStatus,
   updateAdsbConfig,
   uploadAircraftDatabase,
+  uploadOpenSkyCredentials,
 } from '../api/adsb';
 import type { AdsbStatus } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
@@ -42,6 +43,10 @@ export function AdsbPage() {
   );
   const [adsbIntervalMs, setAdsbIntervalMs] = useState<number>(15000);
   const [adsbGeofencesEnabled, setAdsbGeofencesEnabled] = useState<boolean>(false);
+  const [adsbOpenskyEnabled, setAdsbOpenskyEnabled] = useState<boolean>(false);
+  const [openskyUploadMessage, setOpenskyUploadMessage] = useState<string | null>(null);
+  const [openskyUploadError, setOpenskyUploadError] = useState<string | null>(null);
+  const [openskyUploading, setOpenskyUploading] = useState<boolean>(false);
   const [adsbTestMessage, setAdsbTestMessage] = useState<string | null>(null);
   const [adsbTestError, setAdsbTestError] = useState<string | null>(null);
   const [adsbTesting, setAdsbTesting] = useState<boolean>(false);
@@ -72,6 +77,7 @@ export function AdsbPage() {
       setAdsbFeedUrl(adsbStatusQuery.data.feedUrl);
       setAdsbIntervalMs(adsbStatusQuery.data.intervalMs);
       setAdsbGeofencesEnabled(adsbStatusQuery.data.geofencesEnabled);
+      setAdsbOpenskyEnabled(Boolean(adsbStatusQuery.data.openskyEnabled));
     }
   }, [adsbStatusQuery.data]);
 
@@ -81,6 +87,7 @@ export function AdsbPage() {
       feedUrl?: string;
       intervalMs?: number;
       geofencesEnabled?: boolean;
+      openskyEnabled?: boolean;
     }) => updateAdsbConfig(body),
     onSuccess: (data) => {
       setAdsbStatus(data);
@@ -270,8 +277,7 @@ export function AdsbPage() {
             <h1 className="panel__title">ADSB Ingest (RTL-SDR + dump1090)</h1>
             <p className="panel__subtitle">
               Prepare to ingest ADS-B traffic by pointing at a dump1090/readsb JSON feed. This is
-              cross-platform: macOS, Windows, Linux. No native bindings added here—just HTTP polling
-              against aircraft.json.
+              cross-platform: macOS, Windows, Linux.
             </p>
           </div>
         </header>
@@ -300,6 +306,7 @@ export function AdsbPage() {
                               feedUrl: adsbFeedUrl,
                               intervalMs: adsbIntervalMs,
                               geofencesEnabled: adsbGeofencesEnabled,
+                              openskyEnabled: adsbOpenskyEnabled,
                             });
                           }}
                         />
@@ -332,6 +339,61 @@ export function AdsbPage() {
                         />
                         <span />
                       </label>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">OpenSky enrichment</span>
+                      <label className="switch" aria-label="Toggle OpenSky enrichment for routes">
+                        <input
+                          type="checkbox"
+                          checked={adsbOpenskyEnabled}
+                          onChange={(event) => setAdsbOpenskyEnabled(event.target.checked)}
+                        />
+                        <span />
+                      </label>
+                      <p className="form-hint">
+                        Use OpenSky (auth required in backend env) to enrich departure/destination
+                        when the feed omits them.
+                      </p>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Upload credentials.json</span>
+                      <div className="file-upload">
+                        <label className="file-upload__button control-chip">
+                          Choose file
+                          <input
+                            type="file"
+                            accept="application/json,.json"
+                            onChange={async (event) => {
+                              const file = event.target.files?.[0];
+                              if (!file) return;
+                              setOpenskyUploadMessage(null);
+                              setOpenskyUploadError(null);
+                              setOpenskyUploading(true);
+                              try {
+                                await uploadOpenSkyCredentials(file);
+                                setOpenskyUploadMessage(`Uploaded ${file.name} successfully.`);
+                                void adsbStatusQuery.refetch();
+                              } catch (error) {
+                                const message =
+                                  error instanceof Error
+                                    ? error.message
+                                    : 'Upload failed. Ensure the JSON has clientId/clientSecret.';
+                                setOpenskyUploadError(message);
+                              } finally {
+                                setOpenskyUploading(false);
+                                event.target.value = '';
+                              }
+                            }}
+                            disabled={openskyUploading}
+                          />
+                        </label>
+                      </div>
+                      {openskyUploadMessage ? (
+                        <div className="form-hint">{openskyUploadMessage}</div>
+                      ) : null}
+                      {openskyUploadError ? (
+                        <div className="form-error">{openskyUploadError}</div>
+                      ) : null}
                     </div>
                     <div className="config-row">
                       <span className="config-label">Mute ADS-B log updates</span>
@@ -371,6 +433,7 @@ export function AdsbPage() {
                             feedUrl: adsbFeedUrl,
                             intervalMs: adsbIntervalMs,
                             geofencesEnabled: adsbGeofencesEnabled,
+                            openskyEnabled: adsbOpenskyEnabled,
                           })
                         }
                         disabled={adsbConfigMutation.isPending}

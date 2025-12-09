@@ -43,11 +43,20 @@ export function clearAdsbLog() {
   return apiClient.delete<{ cleared: boolean }>('/adsb/log');
 }
 
+export function uploadOpenSkyCredentials(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.upload('/adsb/opensky/credentials', formData);
+}
+
 export function updateAdsbConfig(body: {
   enabled?: boolean;
   feedUrl?: string;
   intervalMs?: number;
   geofencesEnabled?: boolean;
+  openskyEnabled?: boolean;
+  openskyClientId?: string;
+  openskyClientSecret?: string;
 }) {
   return apiClient.post<AdsbStatus>('/adsb/config', body);
 }
