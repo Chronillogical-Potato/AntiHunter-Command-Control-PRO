@@ -14,6 +14,26 @@ import type { AdsbStatus } from '../api/types';
 import { useAuthStore } from '../stores/auth-store';
 import { useMapPreferences } from '../stores/map-store';
 
+function formatRelativeTime(value?: string | null): string {
+  if (!value) return 'N/A';
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return 'N/A';
+  const diffMs = Date.now() - ts;
+  const diffSec = Math.max(0, Math.round(diffMs / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  return `${diffHr}h ago`;
+}
+
+function formatDateWithTz(value?: string | null): string {
+  if (!value) return 'N/A';
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return 'N/A';
+  return new Date(ts).toLocaleString(undefined, { timeZoneName: 'short' });
+}
+
 type LogEntry = {
   id: string;
   icao: string;
@@ -392,7 +412,8 @@ export function AdsbPage() {
                       {adsbStatus?.openskyStatus?.lastSuccessAt ? (
                         <div className="form-hint">
                           Last OpenSky route success:{' '}
-                          {new Date(adsbStatus.openskyStatus.lastSuccessAt).toLocaleString()}
+                          {formatRelativeTime(adsbStatus.openskyStatus.lastSuccessAt)} (
+                          {formatDateWithTz(adsbStatus.openskyStatus.lastSuccessAt)})
                         </div>
                       ) : null}
                       {openskyErrorMessage ? (
@@ -400,14 +421,16 @@ export function AdsbPage() {
                       ) : null}
                       {adsbStatus?.openskyStatus?.cooldownUntil ? (
                         <div className="form-hint">
-                          Cooldown until:{' '}
-                          {new Date(adsbStatus.openskyStatus.cooldownUntil).toLocaleString()}
+                          {`Cooldown until: ${formatDateWithTz(
+                            adsbStatus.openskyStatus.cooldownUntil,
+                          )}`}
                         </div>
                       ) : null}
                       {adsbStatus?.openskyStatus?.nextRouteRetryAt ? (
                         <div className="form-hint">
-                          Next route attempt:{' '}
-                          {new Date(adsbStatus.openskyStatus.nextRouteRetryAt).toLocaleString()}
+                          {`Next route attempt: ${formatDateWithTz(
+                            adsbStatus.openskyStatus.nextRouteRetryAt,
+                          )}`}
                         </div>
                       ) : null}
                     </div>
@@ -474,7 +497,7 @@ export function AdsbPage() {
                       <span className="config-label">Last poll</span>
                       <span>
                         {adsbStatus?.lastPollAt
-                          ? new Date(adsbStatus.lastPollAt).toLocaleString()
+                          ? `${formatRelativeTime(adsbStatus.lastPollAt)} (${formatDateWithTz(adsbStatus.lastPollAt)})`
                           : 'N/A'}
                       </span>
                     </div>
