@@ -1154,6 +1154,9 @@ export function CommandCenterMap({
                           alt="Aircraft"
                           width={140}
                           style={{ borderRadius: 4, objectFit: 'cover' }}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          crossOrigin="anonymous"
                           onError={(event) => {
                             const fallback = photoHref && photoHref !== displaySrc ? photoHref : '';
                             if (fallback) {
