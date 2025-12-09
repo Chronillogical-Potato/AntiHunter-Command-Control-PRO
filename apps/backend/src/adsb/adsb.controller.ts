@@ -47,7 +47,6 @@ export class AdsbController {
       enabled?: boolean;
       feedUrl?: string;
       intervalMs?: number;
-      geofencesEnabled?: boolean;
       openskyEnabled?: boolean;
       openskyClientId?: string | null;
       openskyClientSecret?: string | null;

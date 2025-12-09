@@ -49,7 +49,6 @@ export function AdsbPage() {
     'http://127.0.0.1:8080/data/aircraft.json',
   );
   const [adsbIntervalMs, setAdsbIntervalMs] = useState<number>(15000);
-  const [adsbGeofencesEnabled, setAdsbGeofencesEnabled] = useState<boolean>(false);
   const [adsbOpenskyEnabled, setAdsbOpenskyEnabled] = useState<boolean>(false);
   const [openskyUploadMessage, setOpenskyUploadMessage] = useState<string | null>(null);
   const [openskyUploadError, setOpenskyUploadError] = useState<string | null>(null);
@@ -96,7 +95,6 @@ export function AdsbPage() {
       setAdsbStatus(adsbStatusQuery.data);
       setAdsbFeedUrl(adsbStatusQuery.data.feedUrl);
       setAdsbIntervalMs(adsbStatusQuery.data.intervalMs);
-      setAdsbGeofencesEnabled(adsbStatusQuery.data.geofencesEnabled);
       setAdsbOpenskyEnabled(Boolean(adsbStatusQuery.data.openskyEnabled));
     }
   }, [adsbStatusQuery.data]);
@@ -106,7 +104,6 @@ export function AdsbPage() {
       enabled?: boolean;
       feedUrl?: string;
       intervalMs?: number;
-      geofencesEnabled?: boolean;
       openskyEnabled?: boolean;
     }) => updateAdsbConfig(body),
     onSuccess: (data) => {
@@ -285,7 +282,7 @@ export function AdsbPage() {
         <div className="config-rail__title">
           <h1 className="config-rail__heading">ADS-B</h1>
           <p className="config-rail__copy">
-            Configure ADS-B ingest, feed settings, geofences, and the aircraft database.
+            Configure ADS-B ingest, feed settings, and the aircraft database.
           </p>
         </div>
         <nav className="config-menu" aria-label="ADS-B sections">
@@ -296,7 +293,7 @@ export function AdsbPage() {
             aria-pressed={activeSection === 'settings'}
           >
             <span className="config-menu__label">ADS-B Settings</span>
-            <span className="config-menu__description">Feed URL, polling, geofences</span>
+            <span className="config-menu__description">Feed URL and polling</span>
           </button>
           <button
             type="button"
@@ -337,7 +334,7 @@ export function AdsbPage() {
                 <section className="config-card">
                   <header>
                     <h2>ADS-B settings</h2>
-                    <p>Control ingest, feed URL, poll interval, and geofence triggers.</p>
+                    <p>Control ingest, feed URL, and poll interval.</p>
                   </header>
                   <div className="config-card__body">
                     <div className="config-row">
@@ -353,7 +350,6 @@ export function AdsbPage() {
                               enabled: newValue,
                               feedUrl: adsbFeedUrl,
                               intervalMs: adsbIntervalMs,
-                              geofencesEnabled: adsbGeofencesEnabled,
                               openskyEnabled: adsbOpenskyEnabled,
                             });
                           }}
@@ -376,17 +372,6 @@ export function AdsbPage() {
                         value={adsbIntervalMs}
                         onChange={(event) => setAdsbIntervalMs(Number(event.target.value))}
                       />
-                    </div>
-                    <div className="config-row">
-                      <span className="config-label">Trigger geofences</span>
-                      <label className="switch" aria-label="Toggle ADS-B geofence integration">
-                        <input
-                          type="checkbox"
-                          checked={adsbGeofencesEnabled}
-                          onChange={(event) => setAdsbGeofencesEnabled(event.target.checked)}
-                        />
-                        <span />
-                      </label>
                     </div>
                     <div className="config-row">
                       <span className="config-label">OpenSky enrichment</span>
@@ -511,7 +496,6 @@ export function AdsbPage() {
                             enabled: adsbEnabled,
                             feedUrl: adsbFeedUrl,
                             intervalMs: adsbIntervalMs,
-                            geofencesEnabled: adsbGeofencesEnabled,
                             openskyEnabled: adsbOpenskyEnabled,
                           })
                         }

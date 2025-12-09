@@ -90,7 +90,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   private enabled: boolean;
   private feedUrl: string;
   private intervalMs: number;
-  private geofencesEnabled: boolean;
+  private geofencesEnabled = true;
   private timer: NodeJS.Timeout | null = null;
   private lastPollAt: string | null = null;
   private lastError: string | null = null;
@@ -167,8 +167,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       this.configService.get<string>('adsb.feedUrl', 'http://127.0.0.1:8080/data/aircraft.json') ??
       'http://127.0.0.1:8080/data/aircraft.json';
     this.intervalMs = this.configService.get<number>('adsb.pollIntervalMs', 15000) ?? 15000;
-    this.geofencesEnabled =
-      this.configService.get<boolean>('adsb.geofencesEnabled', false) ?? false;
+    // Geofences are always enabled; user toggle removed.
     this.openskyEnabled = this.configService.get<boolean>('adsb.openskyEnabled', false) ?? false;
     this.openskyClientId = this.configService.get<string>('adsb.openskyClientId');
     this.openskyClientSecret = this.configService.get<string>('adsb.openskyClientSecret');
@@ -247,7 +246,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       enabled: this.enabled,
       feedUrl: this.feedUrl,
       intervalMs: this.intervalMs,
-      geofencesEnabled: this.geofencesEnabled,
+      geofencesEnabled: true,
       lastPollAt: this.lastPollAt,
       lastError: this.lastError,
       trackCount: this.tracks.size,
@@ -388,7 +387,6 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     enabled?: boolean;
     feedUrl?: string;
     intervalMs?: number;
-    geofencesEnabled?: boolean;
     openskyEnabled?: boolean;
     openskyClientId?: string | null;
     openskyClientSecret?: string | null;
@@ -406,14 +404,6 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     }
     if (config.intervalMs && Number.isFinite(config.intervalMs)) {
       this.intervalMs = Math.max(2000, Number(config.intervalMs));
-    }
-    if (config.geofencesEnabled !== undefined) {
-      this.geofencesEnabled = Boolean(config.geofencesEnabled);
-      if (!this.geofencesEnabled) {
-        this.geofenceStates.clear();
-      } else {
-        void this.refreshGeofences();
-      }
     }
     if (config.openskyEnabled !== undefined) {
       this.openskyEnabled = Boolean(config.openskyEnabled);
@@ -570,7 +560,6 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
         enabled: boolean;
         feedUrl: string;
         intervalMs: number;
-        geofencesEnabled: boolean;
         openskyEnabled: boolean;
         openskyClientId?: string | null;
         openskyClientSecret?: string | null;
@@ -583,9 +572,6 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
       }
       if (typeof parsed.intervalMs === 'number' && Number.isFinite(parsed.intervalMs)) {
         this.intervalMs = Math.max(2000, parsed.intervalMs);
-      }
-      if (typeof parsed.geofencesEnabled === 'boolean') {
-        this.geofencesEnabled = parsed.geofencesEnabled;
       }
       if (typeof parsed.openskyEnabled === 'boolean') {
         this.openskyEnabled = this.hardDisabled ? false : parsed.openskyEnabled;
@@ -610,7 +596,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
         enabled: this.enabled,
         feedUrl: this.feedUrl,
         intervalMs: this.intervalMs,
-        geofencesEnabled: this.geofencesEnabled,
+        geofencesEnabled: true,
         openskyEnabled: this.openskyEnabled,
         openskyClientId: this.openskyClientId ?? null,
         openskyClientSecret: this.openskyClientSecret ?? null,
@@ -802,11 +788,6 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async refreshGeofences(): Promise<void> {
-    if (!this.geofencesEnabled) {
-      this.geofences = [];
-      this.geofenceStates.clear();
-      return;
-    }
     try {
       this.geofences = await this.geofencesService.list({ includeRemote: true });
       this.geofenceStates.clear();
@@ -841,7 +822,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   }
 
   private evaluateGeofences(tracks: Map<string, AdsbTrack>): void {
-    if (!this.geofencesEnabled || this.geofences.length === 0) {
+    if (this.geofences.length === 0) {
       this.geofenceStates.clear();
       return;
     }
