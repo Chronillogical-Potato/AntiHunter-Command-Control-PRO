@@ -41,3 +41,6 @@ test-status-regex.js
 architecture-overview.svg
 temp_alert.tsx
 tmp_AlertsPage.tsx
+
+# Local ADS-B credentials (never commit)
+apps/backend/data/adsb/opensky-credentials.json
