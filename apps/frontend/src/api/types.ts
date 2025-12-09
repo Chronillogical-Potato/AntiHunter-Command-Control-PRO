@@ -290,6 +290,13 @@ export interface AdsbTrack {
   reg?: string | null;
   dep?: string | null;
   dest?: string | null;
+  depTime?: string | null;
+  destTime?: string | null;
+  depDistanceM?: number | null;
+  destDistanceM?: number | null;
+  depCandidates?: number | null;
+  destCandidates?: number | null;
+  routeSource?: 'feed' | 'opensky' | null;
   typeCode?: string | null;
   model?: string | null;
   manufacturer?: string | null;
@@ -297,6 +304,16 @@ export interface AdsbTrack {
   categoryDescription?: string | null;
   country?: string | null;
   messages?: number | null;
+  depIata?: string | null;
+  destIata?: string | null;
+  depIcao?: string | null;
+  destIcao?: string | null;
+  depAirport?: string | null;
+  destAirport?: string | null;
+  photoUrl?: string | null;
+  photoThumbUrl?: string | null;
+  photoAuthor?: string | null;
+  photoSourceUrl?: string | null;
 }
 
 export interface AdsbStatus {

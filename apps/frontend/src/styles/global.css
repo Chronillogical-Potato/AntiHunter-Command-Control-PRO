@@ -1234,6 +1234,10 @@ body.theme-dark .control-chip[disabled] {
   padding: 0.5rem;
 }
 
+.adsb-floating-card__table-wrapper {
+  max-height: 320px;
+}
+
 .drone-floating-card__table {
   width: 100%;
   border-collapse: collapse;

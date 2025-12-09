@@ -23,6 +23,13 @@ type LogEntry = {
   category?: string | null;
   dep?: string | null;
   dest?: string | null;
+  depTime?: string | null;
+  destTime?: string | null;
+  depDistanceM?: number | null;
+  destDistanceM?: number | null;
+  depCandidates?: number | null;
+  destCandidates?: number | null;
+  routeSource?: 'feed' | 'opensky' | null;
   lat: number;
   lon: number;
   alt?: number | null;
@@ -64,6 +71,7 @@ export function AdsbPage() {
     staleTime: 15_000,
     refetchInterval: () => Math.max(5_000, adsbIntervalMs),
   });
+  const openskyHasCreds = Boolean(adsbStatus?.openskyClientId);
 
   useEffect(() => {
     if (adsbStatusQuery.data) {
@@ -124,6 +132,13 @@ export function AdsbPage() {
             category: track.category ?? existing.category,
             dep: track.dep ?? existing.dep,
             dest: track.dest ?? existing.dest,
+            depTime: track.depTime ?? existing.depTime ?? null,
+            destTime: track.destTime ?? existing.destTime ?? null,
+            depDistanceM: track.depDistanceM ?? existing.depDistanceM ?? null,
+            destDistanceM: track.destDistanceM ?? existing.destDistanceM ?? null,
+            depCandidates: track.depCandidates ?? existing.depCandidates ?? null,
+            destCandidates: track.destCandidates ?? existing.destCandidates ?? null,
+            routeSource: track.routeSource ?? existing.routeSource ?? null,
             lat: track.lat,
             lon: track.lon,
             alt: track.alt ?? existing.alt,
@@ -143,6 +158,13 @@ export function AdsbPage() {
             category: track.category ?? null,
             dep: track.dep ?? null,
             dest: track.dest ?? null,
+            depTime: track.depTime ?? null,
+            destTime: track.destTime ?? null,
+            depDistanceM: track.depDistanceM ?? null,
+            destDistanceM: track.destDistanceM ?? null,
+            depCandidates: track.depCandidates ?? null,
+            destCandidates: track.destCandidates ?? null,
+            routeSource: track.routeSource ?? null,
             lat: track.lat,
             lon: track.lon,
             alt: track.alt ?? null,
@@ -181,6 +203,13 @@ export function AdsbPage() {
       'Category',
       'Departure',
       'Destination',
+      'Route Source',
+      'Dep Time',
+      'Arr Time',
+      'Dep Dist (m)',
+      'Arr Dist (m)',
+      'Dep Candidates',
+      'Arr Candidates',
       'Lat',
       'Lon',
       'Alt',
@@ -199,6 +228,13 @@ export function AdsbPage() {
       entry.category ?? '',
       entry.dep ?? '',
       entry.dest ?? '',
+      entry.routeSource ?? '',
+      entry.depTime ?? '',
+      entry.destTime ?? '',
+      entry.depDistanceM ?? '',
+      entry.destDistanceM ?? '',
+      entry.depCandidates ?? '',
+      entry.destCandidates ?? '',
       entry.lat,
       entry.lon,
       entry.alt ?? '',
@@ -350,10 +386,6 @@ export function AdsbPage() {
                         />
                         <span />
                       </label>
-                      <p className="form-hint">
-                        Use OpenSky (auth required in backend env) to enrich departure/destination
-                        when the feed omits them.
-                      </p>
                     </div>
                     <div className="config-row">
                       <span className="config-label">Upload credentials.json</span>
@@ -390,6 +422,14 @@ export function AdsbPage() {
                       </div>
                       {openskyUploadMessage ? (
                         <div className="form-hint">{openskyUploadMessage}</div>
+                      ) : null}
+                      {openskyHasCreds ? (
+                        <div className="form-hint">
+                          Credentials present
+                          {adsbStatus?.openskyClientId
+                            ? ` (clientId: ${adsbStatus.openskyClientId})`
+                            : ''}
+                        </div>
                       ) : null}
                       {openskyUploadError ? (
                         <div className="form-error">{openskyUploadError}</div>
@@ -571,8 +611,8 @@ export function AdsbPage() {
                       <strong>Set home position</strong>
                       <div className="config-hint">
                         In <code>dump1090-8090.cfg</code>, set your <code>homepos</code> to your
-                        location (e.g. Levanger: <code>homepos = 63.7500000,11.3000000</code>) to
-                        avoid the global-distance check failing.
+                        location (e.g. CityName: <code>homepos = 64.4300,11.3950</code>) to avoid
+                        the global-distance check failing.
                       </div>
                     </li>
                     <li>
@@ -662,6 +702,11 @@ export function AdsbPage() {
                         <th>Category</th>
                         <th>Departure</th>
                         <th>Destination</th>
+                        <th>Route source</th>
+                        <th>Dep time</th>
+                        <th>Arr time</th>
+                        <th>Dep dist (m)</th>
+                        <th>Arr dist (m)</th>
                         <th>Lat</th>
                         <th>Lon</th>
                         <th>Alt</th>
@@ -677,23 +722,38 @@ export function AdsbPage() {
                       {logEntries.map((entry) => (
                         <tr key={entry.icao}>
                           <td data-label="ICAO">{entry.icao}</td>
-                          <td data-label="Callsign">{entry.callsign ?? '—'}</td>
-                          <td data-label="Registration">{entry.reg ?? '—'}</td>
-                          <td data-label="Country">{entry.country ?? '—'}</td>
-                          <td data-label="Category">{entry.category ?? '—'}</td>
-                          <td data-label="Departure">{entry.dep ?? '—'}</td>
-                          <td data-label="Destination">{entry.dest ?? '—'}</td>
+                          <td data-label="Callsign">{entry.callsign ?? '--'}</td>
+                          <td data-label="Registration">{entry.reg ?? '--'}</td>
+                          <td data-label="Country">{entry.country ?? '--'}</td>
+                          <td data-label="Category">{entry.category ?? '--'}</td>
+                          <td data-label="Departure">{entry.dep ?? '--'}</td>
+                          <td data-label="Destination">{entry.dest ?? '--'}</td>
+                          <td data-label="Route source">{entry.routeSource ?? '--'}</td>
+                          <td data-label="Dep time">
+                            {entry.depTime ? new Date(entry.depTime).toLocaleString() : '--'}
+                          </td>
+                          <td data-label="Arr time">
+                            {entry.destTime ? new Date(entry.destTime).toLocaleString() : '--'}
+                          </td>
+                          <td data-label="Dep dist (m)">
+                            {entry.depDistanceM != null ? entry.depDistanceM.toString() : '--'}
+                          </td>
+                          <td data-label="Arr dist (m)">
+                            {entry.destDistanceM != null ? entry.destDistanceM.toString() : '--'}
+                          </td>
                           <td data-label="Lat">{entry.lat.toFixed(5)}</td>
                           <td data-label="Lon">{entry.lon.toFixed(5)}</td>
-                          <td data-label="Alt">{entry.alt != null ? entry.alt.toFixed(0) : '—'}</td>
+                          <td data-label="Alt">
+                            {entry.alt != null ? entry.alt.toFixed(0) : '--'}
+                          </td>
                           <td data-label="Speed">
-                            {entry.speed != null ? entry.speed.toFixed(0) : '—'}
+                            {entry.speed != null ? entry.speed.toFixed(0) : '--'}
                           </td>
                           <td data-label="Heading">
-                            {entry.heading != null ? entry.heading.toFixed(0) : '—'}
+                            {entry.heading != null ? entry.heading.toFixed(0) : '--'}
                           </td>
                           <td data-label="Messages">
-                            {entry.messages != null ? entry.messages.toString() : '—'}
+                            {entry.messages != null ? entry.messages.toString() : '--'}
                           </td>
                           <td data-label="First Seen">
                             {new Date(entry.firstSeen).toLocaleString()}
@@ -706,7 +766,7 @@ export function AdsbPage() {
                       ))}
                       {logEntries.length === 0 ? (
                         <tr>
-                          <td colSpan={15} className="muted">
+                          <td colSpan={21} className="muted">
                             No aircraft seen yet. Log populates as ADS-B tracks arrive.
                           </td>
                         </tr>

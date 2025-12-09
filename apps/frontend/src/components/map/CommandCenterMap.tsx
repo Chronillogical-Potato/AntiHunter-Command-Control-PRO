@@ -1,4 +1,4 @@
-import classNames from 'clsx';
+﻿import classNames from 'clsx';
 import type { LatLngExpression, LatLngTuple, Map as LeafletMap, TileLayerOptions } from 'leaflet';
 import { DivIcon, divIcon } from 'leaflet';
 import * as L from 'leaflet';
@@ -353,7 +353,7 @@ function createAdsbIcon(track: AdsbTrack, hasAcarsMessages = false): DivIcon {
   const markerClass = `adsb-marker--${typeInfo.type}`;
   const rotation = typeof track.heading === 'number' ? track.heading : null;
   const acarsBadge = hasAcarsMessages
-    ? '<span class="adsb-marker__acars-badge" title="Has ACARS messages">⚡</span>'
+    ? '<span class="adsb-marker__acars-badge" title="Has ACARS messages">ÔÜí</span>'
     : '';
   return divIcon({
     html: `<div class="adsb-marker ${markerClass}" style="--adsb-color:${config.color};${
@@ -684,7 +684,7 @@ interface CommandCenterMapProps {
   showTargets: boolean;
   followEnabled: boolean;
   showCoverage: boolean;
-  adsbTracks?: { lat: number; lon: number; icao: string; callsign?: string | null; id: string }[];
+  adsbTracks?: AdsbTrack[];
   adsbTrails?: Record<string, AdsbTrailPoint[]>;
   acarsMessagesByIcao?: Map<string, AcarsMessage[]>;
   uncorrelatedAcarsMessages?: AcarsMessage[];
@@ -701,6 +701,7 @@ interface CommandCenterMapProps {
   onReady?: (map: LeafletMap) => void;
   onMapStyleChange?: (style: string) => void;
   onDroneSelect?: (droneId: string) => void;
+  onAdsbSelect?: (track: AdsbTrack) => void;
   onNodeCommand?: (node: NodeSummary) => void;
   trackingOverlays?: TrackingEstimate[];
 }
@@ -726,6 +727,7 @@ export function CommandCenterMap({
   onReady,
   onMapStyleChange,
   onDroneSelect,
+  onAdsbSelect,
   onNodeCommand,
   trackingOverlays = [],
   adsbTracks = [],
@@ -1076,7 +1078,13 @@ export function CommandCenterMap({
                 }}
               />
             ) : null}
-            <Marker position={position} icon={createAdsbIcon(track, correlatedMessages.length > 0)}>
+            <Marker
+              position={position}
+              icon={createAdsbIcon(track, correlatedMessages.length > 0)}
+              eventHandlers={{
+                click: () => onAdsbSelect?.(track),
+              }}
+            >
               <Tooltip direction="top" offset={[0, -10]} opacity={0.95} className="tooltip--drone">
                 <div className="drone-tooltip">
                   <div className="badge badge--inline">Source: ADS-B</div>
@@ -1089,19 +1097,79 @@ export function CommandCenterMap({
                   {typeInfo.isMilitary ? (
                     <div className="badge badge--warning">Classification: Military</div>
                   ) : null}
-                  {track.dep || track.dest ? (
-                    <div>
-                      Route: {[track.dep, track.dest].filter(Boolean).join(' → ') || 'Unknown'}
+                  {(() => {
+                    const depLabel = buildAirportLabel(track.depIata, track.depIcao ?? track.dep);
+                    const destLabel = buildAirportLabel(
+                      track.destIata,
+                      track.destIcao ?? track.dest,
+                    );
+                    if (depLabel && destLabel) {
+                      return (
+                        <div>
+                          Route: {depLabel} {'>'} {destLabel}
+                        </div>
+                      );
+                    }
+                    if (depLabel || destLabel) {
+                      return <div>Route: {depLabel ?? destLabel}</div>;
+                    }
+                    return null;
+                  })()}
+                  {track.depAirport || track.destAirport ? (
+                    <div className="muted">
+                      {track.depAirport ?? '—'} {'>'} {track.destAirport ?? '—'}
                     </div>
                   ) : null}
                   {track.reg ? <div>Registration: {track.reg}</div> : null}
                   {track.country ? <div>Country: {track.country}</div> : null}
+                  {track.model || track.manufacturer ? (
+                    <div>
+                      Aircraft:{' '}
+                      {[track.manufacturer, track.model].filter(Boolean).join(' ') ||
+                        track.aircraftType ||
+                        track.typeCode}
+                    </div>
+                  ) : null}
+                  {track.categoryDescription ? (
+                    <div className="muted">{track.categoryDescription}</div>
+                  ) : null}
                   {track.alt != null ? <div>Altitude: {track.alt.toFixed(0)} ft</div> : null}
                   {track.speed != null ? <div>Speed: {track.speed.toFixed(0)} kt</div> : null}
                   {track.heading != null ? (
                     <div>Heading: {track.heading.toFixed(0)}&deg;</div>
                   ) : null}
+                  {track.messages != null ? <div>Messages: {track.messages}</div> : null}
                   <div>Last seen: {new Date(track.lastSeen).toLocaleTimeString()}</div>
+                  {(() => {
+                    const photoHref = normalizePhotoUrl(
+                      track.photoSourceUrl ?? track.photoUrl ?? track.photoThumbUrl ?? '',
+                    );
+                    const photoSrc = normalizePhotoUrl(track.photoThumbUrl ?? track.photoUrl ?? '');
+                    const displaySrc = photoSrc || photoHref;
+                    if (!displaySrc) return null;
+                    return (
+                      <div className="adsb-tooltip-photo">
+                        <img
+                          src={displaySrc}
+                          alt="Aircraft"
+                          width={140}
+                          style={{ borderRadius: 4, objectFit: 'cover' }}
+                          onError={(event) => {
+                            const fallback = photoHref && photoHref !== displaySrc ? photoHref : '';
+                            if (fallback) {
+                              event.currentTarget.onerror = null;
+                              event.currentTarget.src = fallback;
+                              return;
+                            }
+                            event.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        {track.photoAuthor ? (
+                          <div className="muted">© {track.photoAuthor}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
                   {correlatedMessages.length > 0 ? (
                     <>
                       <hr style={{ margin: '8px 0', borderColor: 'rgba(255,255,255,0.2)' }} />
@@ -1118,7 +1186,7 @@ export function CommandCenterMap({
                           </div>
                           <div className="muted" style={{ fontSize: '0.85em' }}>
                             {new Date(msg.timestamp).toLocaleTimeString()}
-                            {msg.signalLevel ? ` • ${msg.signalLevel.toFixed(1)} dB` : ''}
+                            {msg.signalLevel ? ` ÔÇó ${msg.signalLevel.toFixed(1)} dB` : ''}
                           </div>
                         </div>
                       ))}
@@ -1400,13 +1468,14 @@ function buildViewCone(
 }
 
 function bearingBetween(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  const θ = Math.atan2(y, x);
-  const deg = (θ * 180) / Math.PI;
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  const theta = Math.atan2(y, x);
+  const deg = (theta * 180) / Math.PI;
   return (deg + 360) % 360;
 }
 
@@ -1417,21 +1486,25 @@ function offsetCoordinate(
   bearingDegrees: number,
 ): { lat: number; lon: number } | null {
   const R = 6_371_000;
-  const δ = distanceMeters / R;
-  const θ = (bearingDegrees * Math.PI) / 180;
-  const φ1 = (lat * Math.PI) / 180;
-  const λ1 = (lon * Math.PI) / 180;
+  const delta = distanceMeters / R;
+  const theta = (bearingDegrees * Math.PI) / 180;
+  const phi1 = (lat * Math.PI) / 180;
+  const lambda1 = (lon * Math.PI) / 180;
 
-  const sinφ2 = Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(θ);
-  const φ2 = Math.asin(sinφ2);
-  const λ2 =
-    λ1 +
-    Math.atan2(Math.sin(θ) * Math.sin(δ) * Math.cos(φ1), Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2));
+  const sinPhi2 =
+    Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
+  const phi2 = Math.asin(sinPhi2);
+  const lambda2 =
+    lambda1 +
+    Math.atan2(
+      Math.sin(theta) * Math.sin(delta) * Math.cos(phi1),
+      Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2),
+    );
 
-  if (!Number.isFinite(φ2) || !Number.isFinite(λ2)) {
+  if (!Number.isFinite(phi2) || !Number.isFinite(lambda2)) {
     return null;
   }
-  return { lat: (φ2 * 180) / Math.PI, lon: (((λ2 * 180) / Math.PI + 540) % 360) - 180 };
+  return { lat: (phi2 * 180) / Math.PI, lon: (((lambda2 * 180) / Math.PI + 540) % 360) - 180 };
 }
 function MapReadyBridge({ onReady }: { onReady?: (map: LeafletMap) => void }) {
   const map = useMap();
@@ -1631,4 +1704,22 @@ function formatDroneStatusClass(status: DroneMarker['status']): string {
 function getDroneStatusColor(status: DroneMarker['status']): string {
   const key = (status ?? 'UNKNOWN') as DroneStatus;
   return DRONE_STATUS_COLORS[key] ?? DRONE_STATUS_COLORS.UNKNOWN;
+}
+
+function buildAirportLabel(iata?: string | null, icao?: string | null): string | null {
+  const iataCode = iata?.trim();
+  const icaoCode = icao?.trim();
+  if (iataCode && icaoCode && iataCode !== icaoCode) {
+    return `${iataCode} (${icaoCode})`;
+  }
+  return iataCode || icaoCode || null;
+}
+
+function normalizePhotoUrl(url?: unknown): string {
+  if (typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  if (!/^https?:\/\//i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
 }

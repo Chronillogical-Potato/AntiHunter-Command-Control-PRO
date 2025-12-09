@@ -26,6 +26,7 @@ import type {
   AppSettings,
   AuthUser,
   Drone,
+  AdsbTrack,
   DroneStatus,
   GeofenceVertex,
   MapStatePreference,
@@ -34,6 +35,7 @@ import type {
   SiteSummary,
   Target,
 } from '../api/types';
+import { AdsbFloatingCard } from '../components/AdsbFloatingCard';
 import { DroneFloatingCard } from '../components/DroneFloatingCard';
 import { CommandCenterMap, type IndicatorSeverity } from '../components/map/CommandCenterMap';
 import { extractAlertColors, applyAlertOverrides } from '../constants/alert-colors';
@@ -583,6 +585,8 @@ export function MapPage() {
 
   const [activeDroneId, setActiveDroneId] = useState<string | null>(null);
   const [droneCardVisible, setDroneCardVisible] = useState(false);
+  const [activeAdsbId, setActiveAdsbId] = useState<string | null>(null);
+  const [adsbCardVisible, setAdsbCardVisible] = useState(false);
 
   useEffect(() => {
     if (freshDrones.length === 0) {
@@ -595,6 +599,21 @@ export function MapPage() {
       setDroneCardVisible(true);
     }
   }, [freshDrones, activeDroneId]);
+
+  const [adsbTracksForCard, setAdsbTracksForCard] = useState<typeof adsbTracks>([]);
+  useEffect(() => {
+    const available = adsbAddonEnabled && adsbEnabled ? adsbTracks : [];
+    setAdsbTracksForCard(available);
+    if (available.length === 0) {
+      setActiveAdsbId(null);
+      setAdsbCardVisible(false);
+      return;
+    }
+    if (!activeAdsbId || !available.some((track) => track.id === activeAdsbId)) {
+      setActiveAdsbId(available[0].id);
+      setAdsbCardVisible(true);
+    }
+  }, [adsbAddonEnabled, adsbEnabled, adsbTracks, activeAdsbId]);
 
   const droneStatusMutation = useMutation<
     Drone,
@@ -679,6 +698,21 @@ export function MapPage() {
     },
     [drones],
   );
+
+  const handleAdsbSelect = useCallback((track: AdsbTrack, options?: { focus?: boolean }) => {
+    setActiveAdsbId(track.id);
+    setAdsbCardVisible(true);
+    if (options?.focus && mapRef.current) {
+      programmaticMoveRef.current = true;
+      mapRef.current.flyTo([track.lat, track.lon], Math.max(mapRef.current.getZoom(), 14), {
+        duration: 1,
+      });
+    }
+  }, []);
+
+  const handleAdsbCardClose = useCallback(() => {
+    setAdsbCardVisible(false);
+  }, []);
 
   const handleDroneCardClose = useCallback(() => setDroneCardVisible(false), []);
 
@@ -936,6 +970,7 @@ export function MapPage() {
               setMapReady(true);
             }}
             onDroneSelect={handleDroneSelect}
+            onAdsbSelect={handleAdsbSelect}
           />
         </div>
         <footer className="map-footer">
@@ -1036,6 +1071,13 @@ export function MapPage() {
           </div>
         </footer>
       </section>
+      <AdsbFloatingCard
+        tracks={adsbTracksForCard}
+        activeId={activeAdsbId}
+        visible={adsbCardVisible && adsbTracksForCard.length > 0}
+        onClose={handleAdsbCardClose}
+        onSelect={handleAdsbSelect}
+      />
       <DroneFloatingCard
         drones={freshDrones}
         activeDroneId={activeDroneId}
