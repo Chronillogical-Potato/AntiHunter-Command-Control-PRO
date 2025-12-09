@@ -116,8 +116,8 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     string,
     { dep: string | null; dest: string | null; ts: number; empty: boolean; retryAt: number }
   > = new Map();
-  private static readonly ROUTE_CACHE_TTL_MS = 10 * 60 * 1000;
-  private static readonly ROUTE_MIN_RETRY_MS = 15 * 60 * 1000;
+  private static readonly ROUTE_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+  private static readonly ROUTE_MIN_RETRY_MS = 60 * 60 * 1000; // 1 hour
   private static readonly OPEN_SKY_BASE_BACKOFF_MS = 5 * 60 * 1000;
   private static readonly OPEN_SKY_MAX_BACKOFF_MS = 60 * 60 * 1000;
   private readonly photoCache: Map<
