@@ -1,15 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChangeEvent, useMemo, useState, useRef, useEffect } from 'react';
+import { ChangeEvent, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 
 import { apiClient } from '../api/client';
 import type { CommandRequest, InventoryDevice, Target } from '../api/types';
+import { RF_ENVIRONMENT_OPTIONS, DEFAULT_RF_ENVIRONMENT } from '../data/mesh-commands';
 import { useAuthStore } from '../stores/auth-store';
+import { NodeSummary, useNodeStore } from '../stores/node-store';
 import { useTargetStore } from '../stores/target-store';
 import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 import { useTrackingSessionStore } from '../stores/tracking-session-store';
 import { useTriangulationStore } from '../stores/triangulation-store';
 
 const DEFAULT_TRIANGULATION_DURATION = 60;
+const NODE_ONLINE_THRESHOLD_MS = 11 * 60 * 1000; // 11 minutes - matches Nodes page
 const DEFAULT_SCAN_DURATION = 60;
 const TRIANGULATE_DEBOUNCE_MS = 3000;
 const REFINEMENT_DURATION_MULTIPLIER = 1.5;
@@ -80,6 +83,14 @@ type TargetSortKey =
 interface TriangulatePayload {
   target: Target;
   duration?: number;
+  rfEnvironment?: string;
+}
+
+interface TriangulationDialogState {
+  open: boolean;
+  target: Target | null;
+  duration: number;
+  rfEnvironment: string;
 }
 
 interface TrackPayload {
@@ -108,6 +119,52 @@ async function sendCommand(body: CommandRequest) {
   await apiClient.post('/commands/send', body);
 }
 
+function isNodeOnline(node: NodeSummary): boolean {
+  const lastTimestamp = node.lastSeen ?? node.ts;
+  if (!lastTimestamp) {
+    return false;
+  }
+  const parsed = Date.parse(lastTimestamp);
+  if (Number.isNaN(parsed)) {
+    return false;
+  }
+  return Date.now() - parsed <= NODE_ONLINE_THRESHOLD_MS;
+}
+
+function findOnlineNodeForTarget(target: Target, nodes: NodeSummary[]): string | null {
+  // First try the firstNodeId if it's online
+  if (target.firstNodeId) {
+    const firstNodeNormalized = target.firstNodeId.toUpperCase().replace(/^NODE_/, '');
+    const firstNode = nodes.find(
+      (n) => n.id.toUpperCase().replace(/^NODE_/, '') === firstNodeNormalized,
+    );
+    if (firstNode && isNodeOnline(firstNode)) {
+      return normalizeNodeTarget(target.firstNodeId);
+    }
+  }
+
+  // Otherwise find any online node from the same site
+  const targetSiteId = target.siteId;
+  const onlineNodes = nodes.filter((n) => {
+    if (!isNodeOnline(n)) return false;
+    // If target has a site, prefer nodes from same site
+    if (targetSiteId && n.siteId !== targetSiteId) return false;
+    return true;
+  });
+
+  if (onlineNodes.length > 0) {
+    return normalizeNodeTarget(onlineNodes[0].id);
+  }
+
+  // Fallback: any online node
+  const anyOnline = nodes.find((n) => isNodeOnline(n));
+  if (anyOnline) {
+    return normalizeNodeTarget(anyOnline.id);
+  }
+
+  return null;
+}
+
 export function TargetsPage() {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<TargetSortKey>('updated');
@@ -126,12 +183,21 @@ export function TargetsPage() {
   }));
   const startTrackingSession = useTrackingSessionStore((state) => state.startSession);
   const stopTrackingSession = useTrackingSessionStore((state) => state.stopSession);
+  const availableNodes = useNodeStore((state) =>
+    state.order.map((id) => state.nodes[id]).filter((node): node is NodeSummary => Boolean(node)),
+  );
   const trackingTimeouts = useRef<Record<string, number>>({});
   const [triangulateLocked, setTriangulateLocked] = useState(false);
   const triangulateCooldownRef = useRef<number | null>(null);
   const triangulateGuardRef = useRef<boolean>(false);
   const refinementAttemptsRef = useRef<Record<string, number>>({});
   const startTriangulationCountdown = useTriangulationStore((state) => state.setCountdown);
+  const [triangulationDialog, setTriangulationDialog] = useState<TriangulationDialogState>({
+    open: false,
+    target: null,
+    duration: DEFAULT_TRIANGULATION_DURATION,
+    rfEnvironment: DEFAULT_RF_ENVIRONMENT,
+  });
   const requestTrackingCountdown = useTrackingBannerStore((state) => state.requestCountdown);
   useEffect(() => {
     return () => {
@@ -171,18 +237,20 @@ export function TargetsPage() {
     mutationFn: async ({
       target,
       duration = DEFAULT_TRIANGULATION_DURATION,
+      rfEnvironment = DEFAULT_RF_ENVIRONMENT,
     }: TriangulatePayload) => {
       if (!target.mac) {
         throw new Error('Target MAC unknown');
       }
-      const commandTarget = normalizeNodeTarget(target.firstNodeId);
+      // Find an online node - prefer firstNodeId if online, otherwise any online node
+      const commandTarget = findOnlineNodeForTarget(target, availableNodes);
       if (!commandTarget || commandTarget === '@ALL') {
-        throw new Error('First detecting node unknown');
+        throw new Error('No online node available to send triangulation command');
       }
       await sendCommand({
         target: commandTarget,
         name: 'TRIANGULATE_START',
-        params: [target.mac, String(duration)],
+        params: [target.mac, String(duration), rfEnvironment],
       });
     },
     onSuccess: (_data, variables) => {
@@ -224,7 +292,7 @@ export function TargetsPage() {
     }, duration * 1000);
   };
 
-  const beginTriangulateCooldown = () => {
+  const beginTriangulateCooldown = useCallback(() => {
     setTriangulateLocked(true);
     triangulateGuardRef.current = true;
     if (triangulateCooldownRef.current) {
@@ -235,16 +303,17 @@ export function TargetsPage() {
       triangulateGuardRef.current = false;
       triangulateCooldownRef.current = null;
     }, TRIANGULATE_DEBOUNCE_MS);
-  };
+  }, []);
 
   const trackMutation = useMutation({
     mutationFn: async ({ target, duration = DEFAULT_SCAN_DURATION }: TrackPayload) => {
       if (!target.mac) {
         throw new Error('Target MAC unknown');
       }
-      const commandTarget = normalizeNodeTarget(target.firstNodeId);
+      // Find an online node - prefer firstNodeId if online, otherwise any online node
+      const commandTarget = findOnlineNodeForTarget(target, availableNodes);
       if (!commandTarget || commandTarget === '@ALL') {
-        throw new Error('First detecting node unknown; cannot start remote tracking.');
+        throw new Error('No online node available to start remote tracking.');
       }
       const siteId = target.siteId ?? undefined;
       await sendCommand({
@@ -277,6 +346,40 @@ export function TargetsPage() {
     },
   });
 
+  const openTriangulationDialog = useCallback((target: Target) => {
+    setTriangulationDialog({
+      open: true,
+      target,
+      duration: DEFAULT_TRIANGULATION_DURATION,
+      rfEnvironment: DEFAULT_RF_ENVIRONMENT,
+    });
+  }, []);
+
+  const closeTriangulationDialog = useCallback(() => {
+    setTriangulationDialog((prev) => ({ ...prev, open: false, target: null }));
+  }, []);
+
+  const submitTriangulation = useCallback(() => {
+    const { target, duration, rfEnvironment } = triangulationDialog;
+    if (!target) return;
+
+    const clampedDuration = Math.max(20, Math.min(300, Math.round(duration)));
+    beginTriangulateCooldown();
+    closeTriangulationDialog();
+
+    void triangulateMutation
+      .mutateAsync({ target, duration: clampedDuration, rfEnvironment })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Failed to start triangulation.';
+        window.alert(message);
+      });
+  }, [
+    triangulationDialog,
+    beginTriangulateCooldown,
+    closeTriangulationDialog,
+    triangulateMutation,
+  ]);
+
   const handleTriangulateRequest = (target: Target) => {
     if (!target.mac) {
       window.alert('Target MAC unknown.');
@@ -286,25 +389,7 @@ export function TargetsPage() {
       window.alert('Triangulation commands are cooling down. Please wait a moment.');
       return;
     }
-    // Set cooldown immediately to prevent multiple rapid clicks
-    beginTriangulateCooldown();
-    const input = window.prompt(
-      'Enter triangulation duration in seconds (20-300)',
-      String(DEFAULT_TRIANGULATION_DURATION),
-    );
-    if (input == null) {
-      return;
-    }
-    const parsed = Number(input);
-    if (!Number.isFinite(parsed)) {
-      window.alert('Invalid duration.');
-      return;
-    }
-    const duration = Math.max(20, Math.min(300, Math.round(parsed)));
-    void triangulateMutation.mutateAsync({ target, duration }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'Failed to start triangulation.';
-      window.alert(message);
-    });
+    openTriangulationDialog(target);
   };
 
   const handleRefineTriangulation = (target: Target) => {
@@ -362,10 +447,14 @@ export function TargetsPage() {
     refinementAttemptsRef.current[target.id] = currentAttempts + 1;
 
     beginTriangulateCooldown();
-    void triangulateMutation.mutateAsync({ target, duration }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'Failed to refine triangulation.';
-      window.alert(message);
-    });
+    // Use Indoor Dense for low quality (common cause of poor results), Indoor for medium
+    const rfEnvironment = quality.quality === 'low' ? '3' : DEFAULT_RF_ENVIRONMENT;
+    void triangulateMutation
+      .mutateAsync({ target, duration, rfEnvironment })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Failed to refine triangulation.';
+        window.alert(message);
+      });
   };
 
   const handleTrackRequest = (target: Target) => {
@@ -783,6 +872,99 @@ export function TargetsPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Triangulation Configuration Dialog */}
+      {triangulationDialog.open && triangulationDialog.target && (
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeTriangulationDialog();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeTriangulationDialog();
+          }}
+          role="presentation"
+        >
+          <div
+            className="modal-content triangulation-dialog"
+            role="dialog"
+            aria-labelledby="triangulation-dialog-title"
+            aria-modal="true"
+          >
+            <h3 id="triangulation-dialog-title">Start Triangulation</h3>
+            <p className="triangulation-dialog__target">
+              Target:{' '}
+              <strong>
+                {(() => {
+                  const inv = vendorMap.get(triangulationDialog.target.mac?.toUpperCase() ?? '');
+                  const ssid = inv?.ssid?.trim();
+                  const label = ssid || inv?.vendor || triangulationDialog.target.mac;
+                  const showMac = triangulationDialog.target.mac && (ssid || inv?.vendor);
+                  return showMac ? `${label} (${triangulationDialog.target.mac})` : label;
+                })()}
+              </strong>
+            </p>
+
+            <div className="triangulation-dialog__field">
+              <label htmlFor="triangulation-duration">Duration (seconds)</label>
+              <input
+                id="triangulation-duration"
+                type="number"
+                min={20}
+                max={300}
+                value={triangulationDialog.duration}
+                onChange={(e) =>
+                  setTriangulationDialog((prev) => ({
+                    ...prev,
+                    duration: Number(e.target.value) || DEFAULT_TRIANGULATION_DURATION,
+                  }))
+                }
+              />
+              <small>20-300 seconds</small>
+            </div>
+
+            <div className="triangulation-dialog__field">
+              <label htmlFor="triangulation-rf-env">RF Environment</label>
+              <select
+                id="triangulation-rf-env"
+                value={triangulationDialog.rfEnvironment}
+                onChange={(e) =>
+                  setTriangulationDialog((prev) => ({
+                    ...prev,
+                    rfEnvironment: e.target.value,
+                  }))
+                }
+              >
+                {RF_ENVIRONMENT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {
+                  RF_ENVIRONMENT_OPTIONS.find((o) => o.value === triangulationDialog.rfEnvironment)
+                    ?.description
+                }
+              </small>
+            </div>
+
+            <div className="triangulation-dialog__actions">
+              <button type="button" className="control-chip" onClick={closeTriangulationDialog}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="control-chip control-chip--primary"
+                onClick={submitTriangulation}
+                disabled={triangulateMutation.isPending}
+              >
+                {triangulateMutation.isPending ? 'Starting...' : 'Start Triangulation'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>
