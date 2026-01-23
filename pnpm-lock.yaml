@@ -157,7 +157,7 @@ importers:
         specifier: ^4.8.3
         version: 4.8.3
       undici:
-        specifier: ^6.23.0
+        specifier: '>=6.23.0'
         version: 6.23.0
       zod:
         specifier: ^3.23.8
