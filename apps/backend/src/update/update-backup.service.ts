@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { mkdir, readdir, stat, rm } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 @Injectable()
 export class UpdateBackupService {
@@ -11,8 +11,8 @@ export class UpdateBackupService {
   private readonly repoRoot: string;
 
   constructor() {
-    this.repoRoot = join(__dirname, '../../../..');
-    this.backupBaseDir = process.env.AUTO_UPDATE_BACKUP_DIR || join(this.repoRoot, 'backups');
+    this.repoRoot = resolve(__dirname, '../../../..');
+    this.backupBaseDir = process.env.AUTO_UPDATE_BACKUP_DIR || resolve(this.repoRoot, 'backups');
   }
 
   /**
@@ -77,7 +77,7 @@ export class UpdateBackupService {
       this.logger.log(`Ensured base backup directory exists: ${this.backupBaseDir}`);
 
       const backupDirName = this.getBackupDirName();
-      const backupPath = join(this.backupBaseDir, backupDirName);
+      const backupPath = resolve(this.backupBaseDir, backupDirName);
 
       await mkdir(backupPath, { recursive: true });
       this.logger.log(`Created backup directory: ${backupPath}`);
@@ -110,7 +110,7 @@ export class UpdateBackupService {
       const username = url.username;
       const password = url.password;
 
-      const backupFile = join(backupPath, 'database.sql');
+      const backupFile = resolve(backupPath, 'database.sql');
 
       // Use pg_dump to create backup
       const env = { ...process.env };
