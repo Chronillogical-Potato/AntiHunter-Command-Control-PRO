@@ -45,6 +45,38 @@ import { useNodeStore } from '../stores/node-store';
 type AppSettingsUpdate = Partial<AppSettings> & { mailPassword?: string };
 type MqttNotice = { type: 'success' | 'error' | 'info'; text: string } | null;
 
+interface UpdateInfo {
+  available: boolean;
+  currentCommit: string;
+  currentBranch?: string;
+  latestCommit?: string;
+  commitsBehind?: number;
+  lastCommitMessage?: string;
+  lastCommitDate?: string;
+  lastCommitAuthor?: string;
+  lastCheckAt: string;
+  canUpdate: boolean;
+  blockers?: string[];
+}
+
+interface UpdateLog {
+  id: string;
+  fromCommit: string;
+  toCommit: string | null;
+  status: string;
+  phase: string | null;
+  error: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  durationSeconds: number | null;
+  triggeredBy: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+}
+
 const LEVEL_METADATA: Record<AlarmLevel, { label: string; description: string }> = {
   INFO: { label: 'Info', description: 'Low priority notifications (status updates).' },
   NOTICE: { label: 'Notice', description: 'Important events, like new targets.' },
@@ -218,7 +250,8 @@ type ConfigSectionId =
   | 'oui'
   | 'firewall'
   | 'webhooks'
-  | 'faa';
+  | 'faa'
+  | 'system-updates';
 
 const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: string }> = [
   { id: 'alarms', label: 'Alarms', description: 'Audio profiles & cooldowns' },
@@ -240,6 +273,7 @@ const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: 
   { id: 'map', label: 'Map & Coverage', description: 'Map viewport and coverage rings' },
   { id: 'oui', label: 'OUI Resolver', description: 'Vendor cache imports & exports' },
   { id: 'faa', label: 'FAA Registry', description: 'Aircraft registry enrichment' },
+  { id: 'system-updates', label: 'System Updates', description: 'Monitor and deploy updates' },
 ];
 
 export function ConfigPage() {
@@ -339,6 +373,29 @@ export function ConfigPage() {
     queryFn: () => apiClient.get<{ total: number; lastUpdated?: string | null }>('/oui/stats'),
   });
 
+  const isAdmin = authUser?.role === 'ADMIN';
+
+  const {
+    data: updateInfo,
+    isLoading: isCheckingUpdates,
+    refetch: checkForUpdates,
+  } = useQuery({
+    queryKey: ['updates', 'check'],
+    queryFn: async () => {
+      return await apiClient.get<UpdateInfo>('/updates/check');
+    },
+    enabled: isAdmin,
+    refetchInterval: false,
+  });
+
+  const { data: updateHistory } = useQuery({
+    queryKey: ['updates', 'history'],
+    queryFn: async () => {
+      return await apiClient.get<UpdateLog[]>('/updates/history');
+    },
+    enabled: isAdmin,
+  });
+
   const [ouiMode, setOuiMode] = useState<'replace' | 'merge'>('replace');
   const [ouiError, setOuiError] = useState<string | null>(null);
 
@@ -383,6 +440,12 @@ export function ConfigPage() {
   const [firewallMessage, setFirewallMessage] = useState<string | null>(null);
   const [firewallError, setFirewallError] = useState<string | null>(null);
   const [firewallDirty, setFirewallDirty] = useState(false);
+  const [showUpdateConfirmation, setShowUpdateConfirmation] = useState(false);
+  const [updateConfirmationText, setUpdateConfirmationText] = useState('');
+  const [updateResolutionError, setUpdateResolutionError] = useState<{
+    message: string;
+    options: Array<{ action: string; description: string; command?: string }>;
+  } | null>(null);
   const volumeKeys: Array<keyof AlarmConfig> = [
     'volumeInfo',
     'volumeNotice',
@@ -839,6 +902,52 @@ export function ConfigPage() {
     onError: (error) => {
       const message = error instanceof Error ? error.message : 'Unable to upload FAA file.';
       setConfigNotice({ type: 'error', text: message });
+    },
+  });
+
+  const triggerUpdateMutation = useMutation({
+    mutationFn: async () => {
+      return await apiClient.post('/updates/trigger', {
+        confirmation: 'UPDATE',
+      });
+    },
+    onSuccess: () => {
+      setShowUpdateConfirmation(false);
+      setUpdateConfirmationText('');
+      queryClient.invalidateQueries({ queryKey: ['updates'] });
+      setConfigNotice({
+        type: 'success',
+        text: 'Update started! Monitor progress via the terminal or logs.',
+      });
+    },
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const axiosError = error as {
+        response?: {
+          data?: {
+            message?: string;
+            resolutionOptions?: Array<{ action: string; description: string; command?: string }>;
+          };
+        };
+      };
+
+      // Check if we have resolution options
+      const resolutionOptions = axiosError.response?.data?.resolutionOptions;
+      const message = axiosError.response?.data?.message || errorMessage;
+
+      if (resolutionOptions && resolutionOptions.length > 0) {
+        // Show resolution modal
+        setUpdateResolutionError({
+          message,
+          options: resolutionOptions,
+        });
+      } else {
+        // Show generic error notification
+        setConfigNotice({
+          type: 'error',
+          text: `Failed to trigger update: ${message}`,
+        });
+      }
     },
   });
 
@@ -1522,6 +1631,41 @@ export function ConfigPage() {
 
   const formatDateTime = (value?: string | null) =>
     value ? new Date(value).toLocaleString() : 'N/A';
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '—';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes === 0) return `${remainingSeconds}s`;
+    return `${minutes}m ${remainingSeconds}s`;
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'SUCCESS':
+        return <span className="status-badge status-badge--success">SUCCESS</span>;
+      case 'FAILED':
+        return <span className="status-badge status-badge--error">FAILED</span>;
+      case 'RUNNING':
+        return <span className="status-badge status-badge--info">RUNNING</span>;
+      case 'ROLLED_BACK':
+        return <span className="status-badge status-badge--warning">ROLLED BACK</span>;
+      default:
+        return <span className="status-badge">{status}</span>;
+    }
+  };
 
   const ouiStats = ouiStatsQuery.data;
   const takConfigError = takConfigQuery.error instanceof Error ? takConfigQuery.error : null;
@@ -4179,8 +4323,278 @@ export function ConfigPage() {
               </div>
             </div>
           </section>
+
+          <section className={cardClass('system-updates')}>
+            <header>
+              <h2>System Updates</h2>
+              <p>Monitor and deploy system updates for the Command Center infrastructure.</p>
+            </header>
+            {!isAdmin ? (
+              <div className="config-card__body">
+                <div className="form-error">
+                  Administrator privileges required to access system update management.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="config-card__body">
+                  <div className="config-subcard">
+                    <h3>Current Version</h3>
+                    <div className="config-row">
+                      <span className="config-label">Commit</span>
+                      <span className="mono-text">
+                        {updateInfo?.currentCommit?.substring(0, 8).toUpperCase() || 'Loading...'}
+                      </span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Branch</span>
+                      <span className="mono-text">{updateInfo?.currentBranch || 'main'}</span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Last Check</span>
+                      <span>{updateInfo ? formatDate(updateInfo.lastCheckAt) : 'Never'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="submit-button"
+                      onClick={() => checkForUpdates()}
+                      disabled={isCheckingUpdates}
+                    >
+                      {isCheckingUpdates ? 'Checking...' : 'Check for Updates'}
+                    </button>
+                  </div>
+
+                  <div className="config-subcard">
+                    <h3>Status</h3>
+                    {!updateInfo ? (
+                      <div className="config-hint">Loading update information...</div>
+                    ) : updateInfo.available ? (
+                      <>
+                        <div className="form-success" style={{ marginBottom: '1rem' }}>
+                          <strong>Update Available</strong> — {updateInfo.commitsBehind} commit
+                          {updateInfo.commitsBehind !== 1 ? 's' : ''} behind
+                        </div>
+                        {updateInfo.lastCommitMessage && (
+                          <div className="config-row">
+                            <span className="config-label">Latest Changes</span>
+                            <span>{updateInfo.lastCommitMessage}</span>
+                          </div>
+                        )}
+                        {updateInfo.lastCommitAuthor && (
+                          <div className="config-row">
+                            <span className="config-label">Author</span>
+                            <span>{updateInfo.lastCommitAuthor}</span>
+                          </div>
+                        )}
+                        {updateInfo.lastCommitDate && (
+                          <div className="config-row">
+                            <span className="config-label">Committed</span>
+                            <span>{formatDate(updateInfo.lastCommitDate)}</span>
+                          </div>
+                        )}
+                        {updateInfo.latestCommit && (
+                          <div className="config-row">
+                            <span className="config-label">Target Commit</span>
+                            <span className="mono-text">
+                              {updateInfo.latestCommit.substring(0, 8).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
+                        {updateInfo.blockers && updateInfo.blockers.length > 0 && (
+                          <div className="form-error" style={{ marginTop: '1rem' }}>
+                            <strong>Update Blocked:</strong>
+                            <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
+                              {updateInfo.blockers.map((blocker: string, idx: number) => (
+                                <li key={idx}>{blocker}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="submit-button"
+                          style={{ marginTop: '1rem' }}
+                          onClick={() => setShowUpdateConfirmation(true)}
+                          disabled={!updateInfo.canUpdate || triggerUpdateMutation.isPending}
+                        >
+                          {triggerUpdateMutation.isPending ? 'Initiating...' : 'Deploy Update'}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="form-success">
+                        System is running the latest version. No updates available.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="config-card__body">
+                  <h3>Update History</h3>
+                  {updateHistory && updateHistory.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Timestamp</th>
+                            <th>Status</th>
+                            <th>Commit Range</th>
+                            <th>Duration</th>
+                            <th>Operator</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {updateHistory.map((log: UpdateLog) => (
+                            <tr key={log.id}>
+                              <td>{formatDate(log.startedAt)}</td>
+                              <td>{getStatusBadge(log.status)}</td>
+                              <td className="mono-text">
+                                {log.fromCommit.substring(0, 7)} →{' '}
+                                {log.toCommit?.substring(0, 7) || '—'}
+                              </td>
+                              <td>{formatDuration(log.durationSeconds)}</td>
+                              <td>{log.triggeredBy.email}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="config-hint">
+                      No history available. Update logs will appear here after deployments.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
         </div>
       </div>
+
+      {showUpdateConfirmation && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Confirm System Update</h3>
+            <div className="form-hint" style={{ marginBottom: '1rem' }}>
+              This operation will update the system from commit{' '}
+              <span className="mono-text">
+                {updateInfo?.currentCommit?.substring(0, 8).toUpperCase()}
+              </span>{' '}
+              to the latest version.
+            </div>
+            <div className="form-error" style={{ marginBottom: '1rem' }}>
+              <strong>System Downtime Expected:</strong> The Command Center will be unavailable for
+              approximately 3-8 minutes during deployment.
+            </div>
+            <label>
+              Type <strong className="mono-text">UPDATE</strong> to confirm:
+              <input
+                type="text"
+                value={updateConfirmationText}
+                onChange={(e) => setUpdateConfirmationText(e.target.value)}
+                placeholder="UPDATE"
+                style={{ marginTop: '0.5rem' }}
+              />
+            </label>
+            <div className="controls-row" style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                className="control-chip"
+                onClick={() => {
+                  setShowUpdateConfirmation(false);
+                  setUpdateConfirmationText('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="submit-button"
+                onClick={() => triggerUpdateMutation.mutate()}
+                disabled={updateConfirmationText !== 'UPDATE'}
+              >
+                Execute Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {updateResolutionError && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Update Blocked</h3>
+            <div className="form-error" style={{ marginBottom: '1rem' }}>
+              {updateResolutionError.message}
+            </div>
+            <div className="form-hint" style={{ marginBottom: '1rem' }}>
+              Please choose how to resolve this issue:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {updateResolutionError.options.map((option) => (
+                <div
+                  key={option.action}
+                  style={{
+                    padding: '1rem',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s',
+                  }}
+                  onClick={() => {
+                    // For now, show the command to run
+                    if (option.command) {
+                      setConfigNotice({
+                        type: 'info',
+                        text: `To ${option.action}, run: ${option.command}`,
+                      });
+                    } else {
+                      setConfigNotice({
+                        type: 'info',
+                        text: option.description,
+                      });
+                    }
+                    setUpdateResolutionError(null);
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--hover-bg, rgba(0, 0, 0, 0.05))';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                    {option.action.charAt(0).toUpperCase() + option.action.slice(1)}
+                  </div>
+                  <div style={{ fontSize: '0.9rem', opacity: 0.8 }}>{option.description}</div>
+                  {option.command && (
+                    <div
+                      className="mono-text"
+                      style={{
+                        marginTop: '0.5rem',
+                        padding: '0.5rem',
+                        backgroundColor: 'var(--code-bg, rgba(0, 0, 0, 0.1))',
+                        borderRadius: '3px',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {option.command}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="controls-row" style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                className="control-chip"
+                onClick={() => setUpdateResolutionError(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>,
   );
 }
