@@ -231,17 +231,31 @@ function handleBaselineStart(params: string[]): string[] {
 }
 
 function handleTriangulateStart(params: string[]): string[] {
-  if (params.length < 2 || params.length > 3) {
+  if (params.length < 2 || params.length > 5) {
     throw new BadRequestException(
-      'TRIANGULATE_START expects a target reference (MAC or T-identity), duration in seconds, and optional RF environment (0-4).',
+      'TRIANGULATE_START expects a target reference (MAC or T-identity), duration in seconds, and optional RF environment (0-4), wifiPwr multiplier (0.1-5.0), and blePwr multiplier (0.1-5.0).',
     );
   }
   const referenceRaw = params[0].trim();
   const normalizedRef = normalizeTargetReference(referenceRaw);
   const duration = normalizeDuration(params[1]);
   // Default to Indoor (2) if not specified
-  const rfEnvironment = params.length === 3 ? normalizeRFEnvironment(params[2]) : '2';
-  return [normalizedRef, duration, rfEnvironment];
+  const rfEnvironment = params.length >= 3 ? normalizeRFEnvironment(params[2]) : '2';
+  const output = [normalizedRef, duration, rfEnvironment];
+
+  // Optional wifiPwr multiplier (default 1.0)
+  if (params.length >= 4) {
+    const wifiPwr = normalizePowerMultiplier(params[3], 'WiFi');
+    output.push(wifiPwr);
+  }
+
+  // Optional blePwr multiplier (default 1.0)
+  if (params.length === 5) {
+    const blePwr = normalizePowerMultiplier(params[4], 'BLE');
+    output.push(blePwr);
+  }
+
+  return output;
 }
 
 function normalizeRFEnvironment(value: string): string {
@@ -252,6 +266,14 @@ function normalizeRFEnvironment(value: string): string {
     );
   }
   return trimmed;
+}
+
+function normalizePowerMultiplier(value: string, band: 'WiFi' | 'BLE'): string {
+  const parsed = Number.parseFloat(value.trim());
+  if (!Number.isFinite(parsed) || parsed < 0.1 || parsed > 5.0) {
+    throw new BadRequestException(`${band} power multiplier must be between 0.1 and 5.0.`);
+  }
+  return parsed.toFixed(1);
 }
 
 function handleEraseForce(params: string[]): string[] {
