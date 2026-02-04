@@ -84,6 +84,8 @@ interface TriangulatePayload {
   target: Target;
   duration?: number;
   rfEnvironment?: string;
+  wifiPwr?: number;
+  blePwr?: number;
 }
 
 interface TriangulationDialogState {
@@ -91,6 +93,8 @@ interface TriangulationDialogState {
   target: Target | null;
   duration: number;
   rfEnvironment: string;
+  wifiPwr: number;
+  blePwr: number;
 }
 
 interface TrackPayload {
@@ -197,6 +201,8 @@ export function TargetsPage() {
     target: null,
     duration: DEFAULT_TRIANGULATION_DURATION,
     rfEnvironment: DEFAULT_RF_ENVIRONMENT,
+    wifiPwr: 1.0,
+    blePwr: 1.0,
   });
   const requestTrackingCountdown = useTrackingBannerStore((state) => state.requestCountdown);
   useEffect(() => {
@@ -238,6 +244,8 @@ export function TargetsPage() {
       target,
       duration = DEFAULT_TRIANGULATION_DURATION,
       rfEnvironment = DEFAULT_RF_ENVIRONMENT,
+      wifiPwr = 1.0,
+      blePwr = 1.0,
     }: TriangulatePayload) => {
       if (!target.mac) {
         throw new Error('Target MAC unknown');
@@ -247,10 +255,18 @@ export function TargetsPage() {
       if (!commandTarget || commandTarget === '@ALL') {
         throw new Error('No online node available to send triangulation command');
       }
+      const params = [target.mac, String(duration), rfEnvironment];
+      // Add optional power multipliers if specified
+      if (wifiPwr !== 1.0 || blePwr !== 1.0) {
+        params.push(String(wifiPwr));
+        if (blePwr !== 1.0) {
+          params.push(String(blePwr));
+        }
+      }
       await sendCommand({
         target: commandTarget,
         name: 'TRIANGULATE_START',
-        params: [target.mac, String(duration), rfEnvironment],
+        params,
       });
     },
     onSuccess: (_data, variables) => {
@@ -352,6 +368,8 @@ export function TargetsPage() {
       target,
       duration: DEFAULT_TRIANGULATION_DURATION,
       rfEnvironment: DEFAULT_RF_ENVIRONMENT,
+      wifiPwr: 1.0,
+      blePwr: 1.0,
     });
   }, []);
 
@@ -360,7 +378,7 @@ export function TargetsPage() {
   }, []);
 
   const submitTriangulation = useCallback(() => {
-    const { target, duration, rfEnvironment } = triangulationDialog;
+    const { target, duration, rfEnvironment, wifiPwr, blePwr } = triangulationDialog;
     if (!target) return;
 
     const clampedDuration = Math.max(20, Math.min(300, Math.round(duration)));
@@ -368,7 +386,7 @@ export function TargetsPage() {
     closeTriangulationDialog();
 
     void triangulateMutation
-      .mutateAsync({ target, duration: clampedDuration, rfEnvironment })
+      .mutateAsync({ target, duration: clampedDuration, rfEnvironment, wifiPwr, blePwr })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : 'Failed to start triangulation.';
         window.alert(message);
@@ -949,6 +967,44 @@ export function TargetsPage() {
                     ?.description
                 }
               </small>
+            </div>
+
+            <div className="triangulation-dialog__field">
+              <label htmlFor="triangulation-wifi-pwr">WiFi Power Multiplier</label>
+              <input
+                id="triangulation-wifi-pwr"
+                type="number"
+                min={0.1}
+                max={5.0}
+                step={0.1}
+                value={triangulationDialog.wifiPwr}
+                onChange={(e) =>
+                  setTriangulationDialog((prev) => ({
+                    ...prev,
+                    wifiPwr: Number(e.target.value) || 1.0,
+                  }))
+                }
+              />
+              <small>Distance multiplier for WiFi signals (0.1-5.0, default 1.0)</small>
+            </div>
+
+            <div className="triangulation-dialog__field">
+              <label htmlFor="triangulation-ble-pwr">BLE Power Multiplier</label>
+              <input
+                id="triangulation-ble-pwr"
+                type="number"
+                min={0.1}
+                max={5.0}
+                step={0.1}
+                value={triangulationDialog.blePwr}
+                onChange={(e) =>
+                  setTriangulationDialog((prev) => ({
+                    ...prev,
+                    blePwr: Number(e.target.value) || 1.0,
+                  }))
+                }
+              />
+              <small>Distance multiplier for BLE signals (0.1-5.0, default 1.0)</small>
             </div>
 
             <div className="triangulation-dialog__actions">
