@@ -199,6 +199,39 @@ export class UpdateGitService {
   }
 
   /**
+   * Get remote commit details (message and date)
+   */
+  async getRemoteCommitDetails(
+    remote: string = 'origin',
+    branch: string = 'main',
+  ): Promise<{ message: string; date: string } | null> {
+    try {
+      const hash = await this.getRemoteCommit(remote, branch);
+      const messageResult = await this.execGit([
+        'log',
+        '-1',
+        '--format=%s',
+        hash,
+      ]);
+      const dateResult = await this.execGit([
+        'log',
+        '-1',
+        '--format=%aI',
+        hash,
+      ]);
+
+      return {
+        message: messageResult.stdout,
+        date: dateResult.stdout,
+      };
+    } catch (error: unknown) {
+      const err = error as Error;
+      this.logger.error(`Failed to get remote commit details: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Pull changes with fast-forward only
    */
   async pull(

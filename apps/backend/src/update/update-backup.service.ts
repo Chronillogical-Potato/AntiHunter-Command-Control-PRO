@@ -21,13 +21,14 @@ export class UpdateBackupService {
   private async execCommand(
     command: string,
     args: string[],
-    options: { timeout?: number; cwd?: string } = {},
+    options: { timeout?: number; cwd?: string; env?: NodeJS.ProcessEnv } = {},
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const timeout = options.timeout || 300000; // 5 minutes default
     const cwd = options.cwd || this.repoRoot;
+    const env = options.env || process.env;
 
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { cwd, shell: false });
+      const child = spawn(command, args, { cwd, shell: false, env });
 
       let stdout = '';
       let stderr = '';
@@ -71,6 +72,10 @@ export class UpdateBackupService {
    */
   async createBackupDir(): Promise<string> {
     try {
+      // Ensure base backup directory exists first
+      await mkdir(this.backupBaseDir, { recursive: true });
+      this.logger.log(`Ensured base backup directory exists: ${this.backupBaseDir}`);
+
       const backupDirName = this.getBackupDirName();
       const backupPath = join(this.backupBaseDir, backupDirName);
 
@@ -130,6 +135,7 @@ export class UpdateBackupService {
 
       const result = await this.execCommand('pg_dump', args, {
         timeout: 300000, // 5 minutes for large databases
+        env,
       });
 
       if (result.exitCode !== 0) {

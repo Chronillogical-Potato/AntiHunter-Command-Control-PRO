@@ -23,7 +23,38 @@ export class UpdateService {
     private readonly configService: UpdateConfigService,
     private readonly backupService: UpdateBackupService,
     private readonly executor: UpdateExecutorService,
-  ) {}
+  ) {
+    // Clean up any stuck RUNNING updates on startup
+    this.cleanupStuckUpdates();
+  }
+
+  /**
+   * Clean up stuck RUNNING updates on startup
+   * This handles cases where the process was killed during an update
+   */
+  private async cleanupStuckUpdates(): Promise<void> {
+    try {
+      const result = await this.prisma.updateLog.updateMany({
+        where: {
+          status: 'RUNNING',
+        },
+        data: {
+          status: 'FAILED',
+          phase: 'FAILED',
+          error: 'Update process was interrupted (service restart detected)',
+          completedAt: new Date(),
+        },
+      });
+
+      if (result.count > 0) {
+        this.logger.warn(`Cleaned up ${result.count} stuck update(s) from previous session`);
+      }
+    } catch (error: unknown) {
+      const err = error as Error;
+      this.logger.error(`Failed to cleanup stuck updates: ${err.message}`);
+      // Don't throw - this is a non-critical cleanup operation
+    }
+  }
 
   /**
    * Check if updates are enabled
@@ -66,6 +97,12 @@ export class UpdateService {
       // Get git status
       const status = await this.gitService.getStatus(remote, branch);
 
+      // Get remote commit details if updates are available
+      let remoteCommitDetails = null;
+      if (status.commitsBehind > 0) {
+        remoteCommitDetails = await this.gitService.getRemoteCommitDetails(remote, branch);
+      }
+
       const updateInfo: UpdateInfo = {
         available: status.commitsBehind > 0,
         currentCommit: status.lastCommit?.hash || 'unknown',
@@ -74,8 +111,8 @@ export class UpdateService {
             ? await this.gitService.getRemoteCommit(remote, branch)
             : undefined,
         commitsBehind: status.commitsBehind,
-        lastCommitMessage: status.lastCommit?.message,
-        lastCommitDate: status.lastCommit?.date,
+        lastCommitMessage: remoteCommitDetails?.message || status.lastCommit?.message,
+        lastCommitDate: remoteCommitDetails?.date || status.lastCommit?.date,
         lastCheckAt: new Date().toISOString(),
       };
 
@@ -339,9 +376,6 @@ export class UpdateService {
       this.logger.log(`Update completed successfully in ${durationSeconds} seconds`);
       this.logger.warn('Service restart required to apply changes');
 
-      this.updateInProgress = false;
-      this.currentUpdateLogId = null;
-
       // Auto-restart only in production (don't exit dev server)
       const isProduction = process.env.NODE_ENV === 'production';
       const autoRestart = process.env.AUTO_RESTART_AFTER_UPDATE !== 'false';
@@ -361,17 +395,23 @@ export class UpdateService {
       const err = error as Error;
       this.logger.error(`Update failed: ${err.message}`);
 
-      // Mark as failed
-      if (this.currentUpdateLogId) {
-        await this.prisma.updateLog.update({
-          where: { id: this.currentUpdateLogId },
-          data: {
-            status: 'FAILED',
-            phase: 'FAILED',
-            error: err.message,
-            completedAt: new Date(),
-          },
-        });
+      // Mark as failed - use try/catch to ensure flag cleanup happens even if this fails
+      try {
+        if (this.currentUpdateLogId) {
+          await this.prisma.updateLog.update({
+            where: { id: this.currentUpdateLogId },
+            data: {
+              status: 'FAILED',
+              phase: 'FAILED',
+              error: err.message,
+              completedAt: new Date(),
+            },
+          });
+        }
+      } catch (dbError: unknown) {
+        const dbErr = dbError as Error;
+        this.logger.error(`Failed to update database with failure status: ${dbErr.message}`);
+        // Continue to cleanup even if database update fails
       }
 
       // Publish failure event
@@ -390,10 +430,11 @@ export class UpdateService {
         data: completeEvent,
       });
 
+      throw error;
+    } finally {
+      // ALWAYS reset the flag and clear the update ID, even if the catch block fails
       this.updateInProgress = false;
       this.currentUpdateLogId = null;
-
-      throw error;
     }
   }
 
