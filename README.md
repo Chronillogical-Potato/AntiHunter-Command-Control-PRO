@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="TopREADMElogo.png" alt="AntiHunter Command Center Logo" width="320"/>
+  <img src="TopREADMElogo.png" alt="AntiHunter Command Center Logo" width="320" />
 </p>
 
 <h1 align="center">AntiHunter Command & Control Pro</h1>
