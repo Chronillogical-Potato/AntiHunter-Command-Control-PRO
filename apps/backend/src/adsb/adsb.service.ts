@@ -162,7 +162,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     this.hardDisabled = envEnabled === 'false';
     const cfgToggle = this.configService.get<boolean>('adsb.enabled');
     const resolved = envEnabled !== undefined ? envEnabled === 'true' : cfgToggle;
-    this.enabled = this.hardDisabled ? false : (resolved ?? true);
+    this.enabled = this.hardDisabled ? false : (resolved ?? false);
     this.feedUrl =
       this.configService.get<string>('adsb.feedUrl', 'http://127.0.0.1:8080/data/aircraft.json') ??
       'http://127.0.0.1:8080/data/aircraft.json';
