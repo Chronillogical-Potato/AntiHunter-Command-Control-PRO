@@ -402,9 +402,21 @@ export function ConfigPage() {
   useEffect(() => {
     if (!socket || !isAdmin) return;
 
-    const handleUpdateComplete = () => {
+    const handleUpdateComplete = (event: { success: boolean; error?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['updates', 'check'] });
       queryClient.invalidateQueries({ queryKey: ['updates', 'history'] });
+
+      if (event.success) {
+        setConfigNotice({
+          type: 'success',
+          text: 'Update completed successfully! Server has been restarted.',
+        });
+      } else {
+        setConfigNotice({
+          type: 'error',
+          text: `Update failed: ${event.error || 'Unknown error'}`,
+        });
+      }
     };
 
     socket.on('update.complete', handleUpdateComplete);

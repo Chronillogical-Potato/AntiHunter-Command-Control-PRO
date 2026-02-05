@@ -284,6 +284,9 @@ export class UpdateService implements OnModuleInit {
     let configChecksums: Map<string, string> | undefined;
     let fromCommit: string | undefined;
     let toCommit: string | undefined;
+    let updateSuccess = false;
+    let updateError: string | undefined;
+    let updateDuration = 0;
 
     try {
       // Get current commit before update
@@ -405,20 +408,8 @@ export class UpdateService implements OnModuleInit {
         },
       });
 
-      // Publish completion event
-      const completeEvent: UpdateCompleteEvent = {
-        type: 'update.complete',
-        success: true,
-        fromCommit: fromCommit || 'unknown',
-        toCommit: toCommit || 'unknown',
-        duration: durationSeconds,
-        timestamp: new Date().toISOString(),
-      };
-
-      this.eventBus.publish({
-        type: 'update.complete',
-        data: completeEvent,
-      });
+      updateSuccess = true;
+      updateDuration = durationSeconds;
 
       this.logger.log(`Update completed successfully in ${durationSeconds} seconds`);
       this.logger.warn('Service restart required to apply changes');
@@ -442,6 +433,8 @@ export class UpdateService implements OnModuleInit {
       const err = error as Error;
       this.logger.error(`Update failed: ${err.message}`);
 
+      updateError = err.message;
+
       // Mark as failed - use try/catch to ensure flag cleanup happens even if this fails
       try {
         if (this.currentUpdateLogId) {
@@ -461,22 +454,6 @@ export class UpdateService implements OnModuleInit {
         // Continue to cleanup even if database update fails
       }
 
-      // Publish failure event
-      const completeEvent: UpdateCompleteEvent = {
-        type: 'update.complete',
-        success: false,
-        fromCommit: fromCommit || 'unknown',
-        toCommit: toCommit || 'unknown',
-        duration: 0,
-        error: err.message,
-        timestamp: new Date().toISOString(),
-      };
-
-      this.eventBus.publish({
-        type: 'update.complete',
-        data: completeEvent,
-      });
-
       throw error;
     } finally {
       this.updateInProgress = false;
@@ -486,6 +463,22 @@ export class UpdateService implements OnModuleInit {
       if (existsSync(updateLockFile)) {
         unlinkSync(updateLockFile);
       }
+
+      // Publish completion event after cleanup
+      const completeEvent: UpdateCompleteEvent = {
+        type: 'update.complete',
+        success: updateSuccess,
+        fromCommit: fromCommit || 'unknown',
+        toCommit: toCommit || 'unknown',
+        duration: updateDuration,
+        error: updateError,
+        timestamp: new Date().toISOString(),
+      };
+
+      this.eventBus.publish({
+        type: 'update.complete',
+        data: completeEvent,
+      });
 
       // Clean up backup created for this update
       if (backupPath && existsSync(backupPath)) {
