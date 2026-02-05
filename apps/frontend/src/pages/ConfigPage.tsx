@@ -946,11 +946,22 @@ export function ConfigPage() {
     },
     onSuccess: () => {
       setShowUpdateConfirmation(false);
-      queryClient.invalidateQueries({ queryKey: ['updates'] });
       setConfigNotice({
-        type: 'success',
-        text: 'Update started! Monitor progress via the terminal or logs.',
+        type: 'info',
+        text: 'Update in progress... Page will reload when complete.',
       });
+
+      // Poll for completion (fallback if WebSocket fails)
+      const pollInterval = setInterval(async () => {
+        const status = await apiClient.get<{ status: string }>('/updates/status');
+        if (status.status !== 'RUNNING') {
+          clearInterval(pollInterval);
+          window.location.reload();
+        }
+      }, 2000);
+
+      // Stop polling after 5 minutes
+      setTimeout(() => clearInterval(pollInterval), 300000);
     },
     onError: (error: unknown) => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

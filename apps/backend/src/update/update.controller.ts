@@ -44,7 +44,7 @@ export class UpdateController {
 
       // Check for blockers
       if (this.updateService.isUpdateInProgress()) {
-        blockers.push('An update is already in progress');
+        blockers.push('An update is in progress');
       }
 
       return {
