@@ -402,8 +402,19 @@ export function ConfigPage() {
   useEffect(() => {
     if (!socket || !isAdmin) return;
 
-    const handleUpdateComplete = (event: { success: boolean; error?: string }) => {
-      if (event.success) {
+    const handleUpdateProgress = (event: {
+      data: { phase: string; message: string; progress: number };
+    }) => {
+      setUpdateProgress({
+        phase: event.data.phase,
+        message: event.data.message,
+        progress: event.data.progress,
+      });
+    };
+
+    const handleUpdateComplete = (event: { data: { success: boolean; error?: string } }) => {
+      setUpdateProgress(null);
+      if (event.data.success) {
         setConfigNotice({
           type: 'success',
           text: 'Update completed successfully! Reloading page in 3 seconds...',
@@ -414,17 +425,23 @@ export function ConfigPage() {
       } else {
         setConfigNotice({
           type: 'error',
-          text: `Update failed: ${event.error || 'Unknown error'}`,
+          text: `Update failed: ${event.data.error || 'Unknown error'}`,
         });
         queryClient.invalidateQueries({ queryKey: ['updates', 'check'] });
         queryClient.invalidateQueries({ queryKey: ['updates', 'history'] });
       }
     };
 
-    socket.on('update.complete', handleUpdateComplete);
+    socket.on('event', (event: { type: string; data: unknown }) => {
+      if (event.type === 'update.progress') {
+        handleUpdateProgress(event as { data: { phase: string; message: string; progress: number } });
+      } else if (event.type === 'update.complete') {
+        handleUpdateComplete(event as { data: { success: boolean; error?: string } });
+      }
+    });
 
     return () => {
-      socket.off('update.complete', handleUpdateComplete);
+      socket.off('event');
     };
   }, [socket, isAdmin, queryClient]);
 
@@ -478,6 +495,11 @@ export function ConfigPage() {
   const [updateResolutionError, setUpdateResolutionError] = useState<{
     message: string;
     options: Array<{ action: string; description: string; command?: string }>;
+  } | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<{
+    phase: string;
+    message: string;
+    progress: number;
   } | null>(null);
   const volumeKeys: Array<keyof AlarmConfig> = [
     'volumeInfo',
@@ -760,12 +782,12 @@ export function ConfigPage() {
   }, [firewallOverviewQuery.data?.config, firewallOverviewQuery.isLoading, firewallDirty]);
 
   useEffect(() => {
-    if (!configNotice) {
+    if (!configNotice || updateProgress) {
       return;
     }
     const timer = setTimeout(() => setConfigNotice(null), 6000);
     return () => clearTimeout(timer);
-  }, [configNotice]);
+  }, [configNotice, updateProgress]);
 
   useEffect(() => {
     const wasInProgress = previousFaaInProgress.current;
@@ -946,12 +968,12 @@ export function ConfigPage() {
     },
     onSuccess: () => {
       setShowUpdateConfirmation(false);
-      setConfigNotice({
-        type: 'info',
-        text: 'Update in progress... Page will reload when complete.',
+      setUpdateProgress({
+        phase: 'STARTING',
+        message: 'Initiating update...',
+        progress: 0,
       });
 
-      // Poll for completion (fallback if WebSocket fails)
       const pollInterval = setInterval(async () => {
         const status = await apiClient.get<{ status: string }>('/updates/status');
         if (status.status !== 'RUNNING') {
@@ -960,10 +982,10 @@ export function ConfigPage() {
         }
       }, 2000);
 
-      // Stop polling after 5 minutes
       setTimeout(() => clearInterval(pollInterval), 300000);
     },
     onError: (error: unknown) => {
+      setUpdateProgress(null);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const axiosError = error as {
         response?: {
@@ -4473,6 +4495,41 @@ export function ConfigPage() {
                             </ul>
                           </div>
                         )}
+                        {updateProgress && (
+                          <div
+                            style={{
+                              marginTop: '1rem',
+                              padding: '1rem',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+                              Update in Progress
+                            </div>
+                            <div style={{ fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+                              {updateProgress.message}
+                            </div>
+                            <div
+                              style={{
+                                height: '8px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                                borderRadius: '4px',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  height: '100%',
+                                  width: `${updateProgress.progress}%`,
+                                  backgroundColor: '#3b82f6',
+                                  transition: 'width 0.3s ease',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
                         <button
                           type="button"
                           className="submit-button"
@@ -4481,15 +4538,52 @@ export function ConfigPage() {
                             setUpdateConfirmationError(null);
                             setShowUpdateConfirmation(true);
                           }}
-                          disabled={!updateInfo.canUpdate || triggerUpdateMutation.isPending}
+                          disabled={!updateInfo.canUpdate || triggerUpdateMutation.isPending || updateProgress !== null}
                         >
                           {triggerUpdateMutation.isPending ? 'Initiating...' : 'Deploy Update'}
                         </button>
                       </>
                     ) : (
-                      <div className="form-success">
-                        System is running the latest version. No updates available.
-                      </div>
+                      <>
+                        <div className="form-success">
+                          System is running the latest version. No updates available.
+                        </div>
+                        {updateProgress && (
+                          <div
+                            style={{
+                              marginTop: '1rem',
+                              padding: '1rem',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+                              Update in Progress
+                            </div>
+                            <div style={{ fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+                              {updateProgress.message}
+                            </div>
+                            <div
+                              style={{
+                                height: '8px',
+                                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                                borderRadius: '4px',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  height: '100%',
+                                  width: `${updateProgress.progress}%`,
+                                  backgroundColor: '#3b82f6',
+                                  transition: 'width 0.3s ease',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
