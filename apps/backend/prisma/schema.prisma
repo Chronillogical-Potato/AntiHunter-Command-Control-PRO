@@ -47,6 +47,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   alertRules          AlertRule[]
   webhooks            Webhook[]
+  updateLogs          UpdateLog[]
 }
 
 enum Role {
@@ -869,4 +870,44 @@ model PasswordResetToken {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+enum UpdateStatus {
+  CHECKING
+  RUNNING
+  SUCCESS
+  FAILED
+  ROLLED_BACK
+}
+
+enum UpdatePhase {
+  PREFLIGHT
+  GIT_UPDATE
+  DEPENDENCIES
+  DATABASE
+  BUILD
+  RESTART
+  VALIDATION
+  COMPLETE
+  FAILED
+  ROLLING_BACK
+}
+
+model UpdateLog {
+  id              String        @id @default(cuid())
+  triggeredById   String
+  fromCommit      String
+  toCommit        String?
+  status          UpdateStatus  @default(CHECKING)
+  phase           UpdatePhase?
+  error           String?       @db.Text
+  backupPath      String?
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
+  durationSeconds Int?
+
+  triggeredBy User @relation(fields: [triggeredById], references: [id])
+
+  @@index([status, startedAt])
+  @@index([triggeredById])
 }

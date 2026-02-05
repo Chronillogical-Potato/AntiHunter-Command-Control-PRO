@@ -1,4 +1,4 @@
-﻿import { Injectable, UnauthorizedException } from '@nestjs/common';
+﻿import { Injectable, UnauthorizedException, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, Role, SiteAccessLevel } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -12,6 +12,8 @@ import { CommandCenterEvent, EventBusService } from '../events/event-bus.service
 import { FirewallService } from '../firewall/firewall.service';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateService } from '../update/update.service';
+import { UpdateInfo } from '../update/update.types';
 import { DEFAULT_FEATURES_BY_ROLE } from '../users/user-permissions.constants';
 
 interface PreferencesResponse {
@@ -103,6 +105,7 @@ export class AuthService {
     private readonly eventBus: EventBusService,
     private readonly mailService: MailService,
     configService: ConfigService,
+    @Optional() @Inject('UpdateService') private readonly updateService?: UpdateService,
   ) {
     const configValue = configService.get<number>('rateLimit.form.loginMinSubmitMs', 600);
     this.loginMinSubmitMs = Number.isFinite(configValue) ? Math.max(0, configValue) : 600;
@@ -238,6 +241,30 @@ export class AuthService {
         postLoginNotice =
           postLoginNotice ??
           'Unusual login detected. Enable two-factor authentication to avoid account lockouts.';
+      }
+    }
+
+    // Check for system updates (asynchronously, don't block login)
+    if (this.updateService && updatedUser.role === 'ADMIN') {
+      try {
+        // Check asynchronously without blocking the login response
+        this.updateService
+          .checkForUpdates()
+          .then((updateInfo: UpdateInfo) => {
+            if (updateInfo.available && updateInfo.commitsBehind) {
+              const message = `System update available (${updateInfo.commitsBehind} commit${updateInfo.commitsBehind > 1 ? 's' : ''} behind). Check Settings → System Updates.`;
+              // If there's already a notice, append to it
+              if (postLoginNotice) {
+                postLoginNotice += ' ' + message;
+              }
+            }
+          })
+          .catch((err: Error) => {
+            // Silently fail if update check fails - don't block login
+            console.error('Update check failed during login:', err.message);
+          });
+      } catch (error) {
+        // Silently fail if update service is not available
       }
     }
 

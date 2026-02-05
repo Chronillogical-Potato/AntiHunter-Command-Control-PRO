@@ -418,9 +418,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         this.logger.debug('Serial port already connected; returning existing connection state');
         return;
       }
-      throw new BadRequestException(
-        `Serial port already connected (${currentPath ?? 'unknown path'}). Disconnect first or restart backend.`,
-      );
+      // Auto-disconnect from current port before connecting to a different one
+      this.logger.log(`Switching serial port from ${currentPath ?? 'unknown'} to ${requestedPath}`);
+      await this.performDisconnect();
     }
 
     this.clearReconnectTimer();

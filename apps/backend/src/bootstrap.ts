@@ -99,7 +99,12 @@ function resolveHttpsOptions(): HttpsOptions | undefined {
   }
 }
 
-export async function bootstrap(): Promise<void> {
+export interface BootstrapResult {
+  app: NestExpressApplication;
+  redirectServer?: ReturnType<typeof createServer>;
+}
+
+export async function bootstrap(): Promise<BootstrapResult> {
   const httpsOptions = resolveHttpsOptions();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -162,10 +167,11 @@ export async function bootstrap(): Promise<void> {
     logger.log(`Command Center backend listening on port ${port}`, 'Bootstrap');
   });
 
+  let redirectServer: ReturnType<typeof createServer> | undefined;
   const redirectPort = configService.get<number>('http.redirectPort');
   if (httpsOptions && redirectPort && redirectPort !== port) {
     const httpsPortSuffix = port === 443 ? '' : `:${port}`;
-    const redirectServer = createServer((req, res) => {
+    redirectServer = createServer((req, res) => {
       // Validate and sanitize the Host header to prevent open redirect attacks
       const hostHeader = req.headers.host ?? '';
       const hostname = validateAndSanitizeHostname(hostHeader, logger);
@@ -219,4 +225,6 @@ export async function bootstrap(): Promise<void> {
       'Bootstrap',
     );
   }
+
+  return { app, redirectServer };
 }
