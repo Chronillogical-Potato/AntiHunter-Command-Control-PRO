@@ -37,6 +37,7 @@ import {
   type ThemePalette,
 } from '../constants/theme';
 import { useAlarm } from '../providers/alarm-provider';
+import { useSocket } from '../providers/socket-provider';
 import { useAuthStore } from '../stores/auth-store';
 import { useChatKeyStore } from '../stores/chat-key-store';
 import { useChatStore } from '../stores/chat-store';
@@ -279,6 +280,7 @@ const CONFIG_SECTIONS: Array<{ id: ConfigSectionId; label: string; description: 
 
 export function ConfigPage() {
   const queryClient = useQueryClient();
+  const socket = useSocket();
 
   const updateNodeSiteMeta = useNodeStore((state) => state.updateSiteMeta);
   const {
@@ -396,6 +398,21 @@ export function ConfigPage() {
     },
     enabled: isAdmin,
   });
+
+  useEffect(() => {
+    if (!socket || !isAdmin) return;
+
+    const handleUpdateComplete = () => {
+      queryClient.invalidateQueries({ queryKey: ['updates', 'check'] });
+      queryClient.invalidateQueries({ queryKey: ['updates', 'history'] });
+    };
+
+    socket.on('update.complete', handleUpdateComplete);
+
+    return () => {
+      socket.off('update.complete', handleUpdateComplete);
+    };
+  }, [socket, isAdmin, queryClient]);
 
   const [ouiMode, setOuiMode] = useState<'replace' | 'merge'>('replace');
   const [ouiError, setOuiError] = useState<string | null>(null);
@@ -4453,7 +4470,14 @@ export function ConfigPage() {
                 </div>
 
                 <div className="config-card__body">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '1rem',
+                    }}
+                  >
                     <h3 style={{ margin: 0 }}>Update History</h3>
                     {updateHistory && updateHistory.length > 0 && (
                       <button
@@ -4562,17 +4586,20 @@ export function ConfigPage() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {updateResolutionError.options.map((option) => (
-                <div
+                <button
                   key={option.action}
+                  type="button"
                   style={{
                     padding: '1rem',
                     border: '1px solid var(--border-color)',
                     borderRadius: '4px',
                     cursor: 'pointer',
                     transition: 'background-color 0.2s',
+                    backgroundColor: 'transparent',
+                    textAlign: 'left',
+                    width: '100%',
                   }}
                   onClick={() => {
-                    // For now, show the command to run
                     if (option.command) {
                       setConfigNotice({
                         type: 'info',
@@ -4611,7 +4638,7 @@ export function ConfigPage() {
                       {option.command}
                     </div>
                   )}
-                </div>
+                </button>
               ))}
             </div>
             <div className="controls-row" style={{ marginTop: '1rem' }}>

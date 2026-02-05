@@ -49,9 +49,12 @@ export class UpdateService implements OnModuleInit {
 
       for (const update of runningUpdates) {
         const isDevMode = process.env.NODE_ENV !== 'production';
-        const gitPullCompleted = update.phase === 'GIT_UPDATE' || update.phase === 'DEPENDENCIES' ||
-                                  update.phase === 'DATABASE' || update.phase === 'BUILD' ||
-                                  update.phase === 'VALIDATION';
+        const gitPullCompleted =
+          update.phase === 'GIT_UPDATE' ||
+          update.phase === 'DEPENDENCIES' ||
+          update.phase === 'DATABASE' ||
+          update.phase === 'BUILD' ||
+          update.phase === 'VALIDATION';
 
         if (isDevMode && gitPullCompleted) {
           await this.prisma.updateLog.update({
@@ -120,16 +123,12 @@ export class UpdateService implements OnModuleInit {
       const currentBranch = await this.gitService.getCurrentBranch();
       const trackingRemote = await this.gitService.getTrackingRemote(currentBranch);
 
-      this.logger.log(
-        `Detected: branch=${currentBranch}, tracking remote=${trackingRemote}`,
-      );
+      this.logger.log(`Detected: branch=${currentBranch}, tracking remote=${trackingRemote}`);
 
       const branch = process.env.AUTO_UPDATE_BRANCH || currentBranch || 'main';
       const remote = process.env.AUTO_UPDATE_REMOTE || trackingRemote || 'origin';
 
-      this.logger.log(
-        `Using: branch=${branch}, remote=${remote}`,
-      );
+      this.logger.log(`Using: branch=${branch}, remote=${remote}`);
 
       // Get git status
       const status = await this.gitService.getStatus(remote, branch);

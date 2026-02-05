@@ -219,18 +219,8 @@ export class UpdateGitService {
   ): Promise<{ message: string; date: string } | null> {
     try {
       const hash = await this.getRemoteCommit(remote, branch);
-      const messageResult = await this.execGit([
-        'log',
-        '-1',
-        '--format=%s',
-        hash,
-      ]);
-      const dateResult = await this.execGit([
-        'log',
-        '-1',
-        '--format=%aI',
-        hash,
-      ]);
+      const messageResult = await this.execGit(['log', '-1', '--format=%s', hash]);
+      const dateResult = await this.execGit(['log', '-1', '--format=%aI', hash]);
 
       return {
         message: messageResult.stdout,
