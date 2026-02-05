@@ -13,7 +13,7 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 > **Security disclosure:** The platform has **not** undergone formal penetration testing or hardening for Internet-exposed deployments. Run it on trusted networks only, behind your own perimeter controls, until a full security review is complete.
 
 ---
- 
+
 ## Table of Contents
 
 1. [Overview](#overview)
