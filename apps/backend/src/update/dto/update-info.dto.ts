@@ -11,4 +11,5 @@ export class UpdateInfoDto {
   lastCheckAt!: string;
   canUpdate!: boolean;
   blockers?: string[];
+  warning?: string;
 }

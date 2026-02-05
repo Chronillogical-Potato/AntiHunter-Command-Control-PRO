@@ -59,6 +59,7 @@ export class UpdateController {
         lastCheckAt: updateInfo.lastCheckAt,
         canUpdate: updateInfo.available && blockers.length === 0,
         blockers: blockers.length > 0 ? blockers : undefined,
+        warning: updateInfo.warning,
       };
     } catch (error: unknown) {
       const err = error as Error;

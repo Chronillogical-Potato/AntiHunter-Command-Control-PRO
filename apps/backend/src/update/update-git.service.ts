@@ -291,13 +291,27 @@ export class UpdateGitService {
         this.hasUncommittedChanges(),
       ]);
 
-      // Fetch first to get latest remote info
-      await this.fetch(remote);
+      let networkError: string | undefined;
+      try {
+        await this.fetch(remote, 10000);
+      } catch (fetchError: unknown) {
+        const err = fetchError as Error;
+        networkError = `Unable to connect to remote repository: ${err.message}`;
+        this.logger.warn(`Failed to fetch from remote: ${err.message}. Using cached remote refs.`);
+      }
 
-      const [commitsDiff, lastCommit] = await Promise.all([
-        this.getCommitsDiff(remote, branch),
-        this.getCommitInfo(currentCommit),
-      ]);
+      const lastCommit = await this.getCommitInfo(currentCommit);
+
+      let commitsDiff = { behind: 0, ahead: 0 };
+      try {
+        commitsDiff = await this.getCommitsDiff(remote, branch);
+      } catch (diffError: unknown) {
+        const err = diffError as Error;
+        if (!networkError) {
+          networkError = `Unable to compare with remote: ${err.message}`;
+        }
+        this.logger.warn(`Failed to get commits diff: ${err.message}. Assuming up to date.`);
+      }
 
       return {
         isRepository: true,
@@ -307,6 +321,7 @@ export class UpdateGitService {
         commitsAhead: commitsDiff.ahead,
         upToDate: commitsDiff.behind === 0 && commitsDiff.ahead === 0,
         lastCommit,
+        networkError,
       };
     } catch (error: unknown) {
       const err = error as Error;

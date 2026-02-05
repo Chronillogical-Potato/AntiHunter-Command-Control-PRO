@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { UpdatePhase } from '@prisma/client';
 import { writeFileSync, unlinkSync, existsSync } from 'fs';
 import { rm } from 'fs/promises';
@@ -13,7 +13,7 @@ import { EventBusService } from '../events/event-bus.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
-export class UpdateService {
+export class UpdateService implements OnModuleInit {
   private readonly logger = new Logger(UpdateService.name);
   private updateInProgress = false;
   private lastCheckResult: UpdateInfo | null = null;
@@ -26,9 +26,15 @@ export class UpdateService {
     private readonly configService: UpdateConfigService,
     private readonly backupService: UpdateBackupService,
     private readonly executor: UpdateExecutorService,
-  ) {
-    // Clean up any stuck RUNNING updates on startup
-    this.cleanupStuckUpdates();
+  ) {}
+
+  async onModuleInit() {
+    try {
+      await this.cleanupStuckUpdates();
+    } catch (error: unknown) {
+      const err = error as Error;
+      this.logger.error(`Failed to cleanup stuck updates during initialization: ${err.message}`);
+    }
   }
 
   /**
@@ -147,6 +153,7 @@ export class UpdateService {
         lastCommitMessage: remoteCommitDetails?.message || status.lastCommit?.message,
         lastCommitDate: remoteCommitDetails?.date || status.lastCommit?.date,
         lastCheckAt: new Date().toISOString(),
+        warning: status.networkError,
       };
 
       // Cache the result

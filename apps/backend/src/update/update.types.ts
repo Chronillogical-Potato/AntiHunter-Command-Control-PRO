@@ -33,6 +33,8 @@ export interface UpdateInfo {
   lastCommitMessage?: string;
   lastCommitDate?: string;
   lastCheckAt: string;
+  error?: string;
+  warning?: string;
 }
 
 export interface UpdateProgressEvent {
@@ -74,6 +76,7 @@ export interface GitStatus {
     date: string;
     author: string;
   };
+  networkError?: string;
 }
 
 export interface UpdateExecutionResult {
