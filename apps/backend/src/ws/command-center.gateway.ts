@@ -49,6 +49,7 @@ export class CommandCenterGateway
   private readonly clientDiffSubscriptions = new Map<string, Subscription>();
   private commandSubscription?: Subscription;
   private geofenceSubscription?: Subscription;
+  private eventBusSubscription?: Subscription;
   private readonly recentEventHashes = new Map<string, number>();
 
   constructor(
@@ -69,6 +70,12 @@ export class CommandCenterGateway
     this.geofenceSubscription = this.geofencesService
       .getChangesStream()
       .subscribe((event) => this.emitGeofenceEvent(event));
+
+    this.eventBusSubscription = this.eventBus.getStream().subscribe((event) => {
+      if (event.type === 'update.progress' || event.type === 'update.complete') {
+        server.emit('event', event);
+      }
+    });
   }
 
   async handleConnection(@ConnectedSocket() client: Socket): Promise<void> {
@@ -125,6 +132,7 @@ export class CommandCenterGateway
   onModuleDestroy(): void {
     this.commandSubscription?.unsubscribe();
     this.geofenceSubscription?.unsubscribe();
+    this.eventBusSubscription?.unsubscribe();
     this.clientDiffSubscriptions.forEach((subscription) => subscription.unsubscribe());
     this.clientDiffSubscriptions.clear();
   }
