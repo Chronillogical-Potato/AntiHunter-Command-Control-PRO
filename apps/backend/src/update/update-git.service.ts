@@ -277,19 +277,23 @@ export class UpdateGitService {
     branch: string = 'main',
     timeout: number = 300000,
   ): Promise<void> {
-    try {
-      this.logger.log(`Updating to ${remote}/${branch}...`);
+    this.logger.log(`Updating to ${remote}/${branch}...`);
 
-      // Try fast-forward merge first
+    // Try fast-forward merge first
+    try {
       const mergeResult = await this.execGit(['merge', '--ff-only', `${remote}/${branch}`], { timeout });
 
       if (mergeResult.exitCode === 0) {
         this.logger.log('Fast-forward merge completed successfully');
         return;
       }
+    } catch (mergeError) {
+      this.logger.warn('Fast-forward merge failed - will try force reset');
+    }
 
-      // If fast-forward fails, force reset to remote (for auto-updater)
-      this.logger.warn('Fast-forward not possible - forcing reset to remote');
+    // If fast-forward fails, force reset to remote
+    this.logger.warn('Forcing reset to remote');
+    try {
       const resetResult = await this.execGit(['reset', '--hard', `${remote}/${branch}`], { timeout });
 
       if (resetResult.exitCode !== 0) {
@@ -299,7 +303,7 @@ export class UpdateGitService {
       this.logger.log('Force reset completed successfully');
     } catch (error: unknown) {
       const err = error as Error;
-      this.logger.error(`Failed to update: ${err.message}`);
+      this.logger.error(`Failed to reset: ${err.message}`);
       throw error;
     }
   }
