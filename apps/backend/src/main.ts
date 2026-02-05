@@ -52,8 +52,13 @@ async function gracefulShutdown(signal: string): Promise<void> {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGHUP', () => gracefulShutdown('SIGHUP'));
-// SIGUSR2 is used by ts-node-dev for restarts
-process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2'));
+// SIGUSR2 is used by ts-node-dev for restarts - exit immediately without cleanup
+// to avoid port conflicts during rapid restarts
+process.on('SIGUSR2', () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  process.exit(0);
+});
 
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
