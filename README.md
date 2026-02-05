@@ -1471,4 +1471,3 @@ THE SOFTWARE IS PROVIDED AS IS AND AS AVAILABLE, WITHOUT WARRANTY OF ANY KIND, E
 You alone are responsible for ensuring your deployment complies with all applicable laws, regulations, licenses, permits, organizational policies, and third-party rights. No advice or information, whether oral or written, obtained from the project or through the Software, creates any warranty or obligation not expressly stated in this disclaimer. Continued use signifies your agreement to indemnify and hold harmless the authors, developers, maintainers, and contributors from claims arising out of or related to your activities with the Software.
 
 If you do not agree to these terms, **do not build, deploy, or run** AntiHunter Command & Control PRO.
-# Test update
