@@ -434,7 +434,9 @@ export function ConfigPage() {
 
     socket.on('event', (event: { type: string; data: unknown }) => {
       if (event.type === 'update.progress') {
-        handleUpdateProgress(event as { data: { phase: string; message: string; progress: number } });
+        handleUpdateProgress(
+          event as { data: { phase: string; message: string; progress: number } },
+        );
       } else if (event.type === 'update.complete') {
         handleUpdateComplete(event as { data: { success: boolean; error?: string } });
       }
@@ -4538,7 +4540,11 @@ export function ConfigPage() {
                             setUpdateConfirmationError(null);
                             setShowUpdateConfirmation(true);
                           }}
-                          disabled={!updateInfo.canUpdate || triggerUpdateMutation.isPending || updateProgress !== null}
+                          disabled={
+                            !updateInfo.canUpdate ||
+                            triggerUpdateMutation.isPending ||
+                            updateProgress !== null
+                          }
                         >
                           {triggerUpdateMutation.isPending ? 'Initiating...' : 'Deploy Update'}
                         </button>

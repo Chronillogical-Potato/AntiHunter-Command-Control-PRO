@@ -281,7 +281,9 @@ export class UpdateGitService {
 
     // Try fast-forward merge first
     try {
-      const mergeResult = await this.execGit(['merge', '--ff-only', `${remote}/${branch}`], { timeout });
+      const mergeResult = await this.execGit(['merge', '--ff-only', `${remote}/${branch}`], {
+        timeout,
+      });
 
       if (mergeResult.exitCode === 0) {
         this.logger.log('Fast-forward merge completed successfully');
@@ -294,7 +296,9 @@ export class UpdateGitService {
     // If fast-forward fails, force reset to remote
     this.logger.warn('Forcing reset to remote');
     try {
-      const resetResult = await this.execGit(['reset', '--hard', `${remote}/${branch}`], { timeout });
+      const resetResult = await this.execGit(['reset', '--hard', `${remote}/${branch}`], {
+        timeout,
+      });
 
       if (resetResult.exitCode !== 0) {
         throw new Error(`Git reset failed: ${resetResult.stderr || resetResult.stdout}`);
