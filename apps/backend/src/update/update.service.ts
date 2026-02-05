@@ -57,11 +57,19 @@ export class UpdateService implements OnModuleInit {
           update.phase === 'VALIDATION';
 
         if (isDevMode && gitPullCompleted) {
+          const completedAt = new Date();
+          const durationSeconds = Math.floor(
+            (completedAt.getTime() - update.startedAt.getTime()) / 1000,
+          );
+          const currentCommit = await this.gitService.getCurrentCommit();
+
           await this.prisma.updateLog.update({
             where: { id: update.id },
             data: {
               status: 'SUCCESS',
-              completedAt: new Date(),
+              toCommit: currentCommit,
+              completedAt,
+              durationSeconds,
               error: 'Code updated successfully. Manual restart required in dev mode.',
             },
           });
