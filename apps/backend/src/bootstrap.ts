@@ -3,14 +3,18 @@ import { HttpsOptions } from '@nestjs/common/interfaces/external/https-options.i
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { exec } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import helmet from 'helmet';
 import { createServer } from 'http';
 import { Logger } from 'nestjs-pino';
 import { join } from 'path';
+import { promisify } from 'util';
 
 import { AppModule } from './app.module';
 import { SanitizeInputPipe } from './utils/sanitize-input.pipe';
+
+const execAsync = promisify(exec);
 
 function validateAndSanitizeHostname(hostHeader: string, logger: Logger): string {
   // Extract hostname without port
@@ -99,6 +103,20 @@ function resolveHttpsOptions(): HttpsOptions | undefined {
   }
 }
 
+async function killPort(port: number): Promise<void> {
+  try {
+    const command =
+      process.platform === 'win32'
+        ? `netstat -ano | findstr :${port} && FOR /F "tokens=5" %P IN ('netstat -ano ^| findstr :${port}') DO taskkill /F /PID %P`
+        : `lsof -ti:${port} | xargs kill -9 2>/dev/null || true`;
+
+    await execAsync(command);
+    console.log(`Killed any existing process on port ${port}`);
+  } catch (error) {
+    // Ignore errors - port might not be in use
+  }
+}
+
 export interface BootstrapResult {
   app: NestExpressApplication;
   redirectServer?: ReturnType<typeof createServer>;
@@ -163,6 +181,9 @@ export async function bootstrap(): Promise<BootstrapResult> {
   });
 
   const port = configService.get<number>('http.port', 3000);
+
+  await killPort(port);
+
   await app.listen(port, () => {
     logger.log(`Command Center backend listening on port ${port}`, 'Bootstrap');
   });
@@ -170,6 +191,8 @@ export async function bootstrap(): Promise<BootstrapResult> {
   let redirectServer: ReturnType<typeof createServer> | undefined;
   const redirectPort = configService.get<number>('http.redirectPort');
   if (httpsOptions && redirectPort && redirectPort !== port) {
+    await killPort(redirectPort);
+
     const httpsPortSuffix = port === 443 ? '' : `:${port}`;
     redirectServer = createServer((req, res) => {
       // Validate and sanitize the Host header to prevent open redirect attacks
