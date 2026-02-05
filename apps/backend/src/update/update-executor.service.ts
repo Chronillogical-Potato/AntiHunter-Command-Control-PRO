@@ -133,20 +133,7 @@ export class UpdateExecutorService {
       throw new Error('Invalid arguments: must be array');
     }
 
-    const DANGEROUS_PATTERNS = [
-      ';',
-      '&&',
-      '||',
-      '|',
-      '$(',
-      '`',
-      '\n',
-      '\r',
-      '\0',
-      '>',
-      '<',
-      '&',
-    ];
+    const DANGEROUS_PATTERNS = [';', '&&', '||', '|', '$(', '`', '\n', '\r', '\0', '>', '<', '&'];
 
     for (const arg of args) {
       if (typeof arg !== 'string') {
