@@ -4440,7 +4440,7 @@ export function ConfigPage() {
                         )}
                         {updateInfo.blockers && updateInfo.blockers.length > 0 && (
                           <div className="form-error" style={{ marginTop: '1rem' }}>
-                            <strong>Update Blocked:</strong>
+                            <strong>Status:</strong>
                             <ul style={{ marginTop: '0.5rem', paddingLeft: '1.5rem' }}>
                               {updateInfo.blockers.map((blocker: string, idx: number) => (
                                 <li key={idx}>{blocker}</li>
