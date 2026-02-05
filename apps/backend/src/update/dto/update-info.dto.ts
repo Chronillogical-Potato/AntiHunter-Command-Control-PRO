@@ -2,6 +2,7 @@ export class UpdateInfoDto {
   available!: boolean;
   currentCommit!: string;
   currentBranch?: string;
+  remote?: string;
   latestCommit?: string;
   commitsBehind?: number;
   lastCommitMessage?: string;

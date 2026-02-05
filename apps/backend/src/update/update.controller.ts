@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   HttpCode,
   HttpStatus,
@@ -49,6 +50,8 @@ export class UpdateController {
       return {
         available: updateInfo.available,
         currentCommit: updateInfo.currentCommit,
+        currentBranch: updateInfo.currentBranch,
+        remote: updateInfo.remote,
         latestCommit: updateInfo.latestCommit,
         commitsBehind: updateInfo.commitsBehind,
         lastCommitMessage: updateInfo.lastCommitMessage,
@@ -149,6 +152,19 @@ export class UpdateController {
   @HttpCode(HttpStatus.OK)
   async getUpdateHistory() {
     return this.updateService.getUpdateLogs(20);
+  }
+
+  /**
+   * Clear all update logs
+   * DELETE /api/updates/history
+   * Admin only
+   */
+  @Delete('history')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async clearUpdateLogs() {
+    await this.updateService.clearUpdateLogs();
+    return { message: 'Update logs cleared successfully' };
   }
 
   /**

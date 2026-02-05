@@ -14,6 +14,7 @@ coverage/
 .DS_Store
 *.log
 npm-debug.log*
+.update-in-progress
 
 # Local tooling
 .vscode/
@@ -51,3 +52,4 @@ apps/backend/data/adsb/adsb-alert-rules.json
 
 # Local ACARS configuration (user-modifiable at runtime)
 apps/backend/data/acars/config.json
+apps/backend/backups/

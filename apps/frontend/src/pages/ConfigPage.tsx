@@ -49,6 +49,7 @@ interface UpdateInfo {
   available: boolean;
   currentCommit: string;
   currentBranch?: string;
+  remote?: string;
   latestCommit?: string;
   commitsBehind?: number;
   lastCommitMessage?: string;
@@ -441,7 +442,8 @@ export function ConfigPage() {
   const [firewallError, setFirewallError] = useState<string | null>(null);
   const [firewallDirty, setFirewallDirty] = useState(false);
   const [showUpdateConfirmation, setShowUpdateConfirmation] = useState(false);
-  const [updateConfirmationText, setUpdateConfirmationText] = useState('');
+  const [showClearLogsConfirmation, setShowClearLogsConfirmation] = useState(false);
+  const [updateConfirmationError, setUpdateConfirmationError] = useState<string | null>(null);
   const [updateResolutionError, setUpdateResolutionError] = useState<{
     message: string;
     options: Array<{ action: string; description: string; command?: string }>;
@@ -913,7 +915,6 @@ export function ConfigPage() {
     },
     onSuccess: () => {
       setShowUpdateConfirmation(false);
-      setUpdateConfirmationText('');
       queryClient.invalidateQueries({ queryKey: ['updates'] });
       setConfigNotice({
         type: 'success',
@@ -931,23 +932,39 @@ export function ConfigPage() {
         };
       };
 
-      // Check if we have resolution options
       const resolutionOptions = axiosError.response?.data?.resolutionOptions;
       const message = axiosError.response?.data?.message || errorMessage;
 
       if (resolutionOptions && resolutionOptions.length > 0) {
-        // Show resolution modal
+        setShowUpdateConfirmation(false);
         setUpdateResolutionError({
           message,
           options: resolutionOptions,
         });
       } else {
-        // Show generic error notification
-        setConfigNotice({
-          type: 'error',
-          text: `Failed to trigger update: ${message}`,
-        });
+        setUpdateConfirmationError(message);
       }
+    },
+  });
+
+  const clearUpdateLogsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiClient.delete('/updates/history');
+    },
+    onSuccess: () => {
+      setShowClearLogsConfirmation(false);
+      queryClient.invalidateQueries({ queryKey: ['updates', 'history'] });
+      setConfigNotice({
+        type: 'success',
+        text: 'Update logs cleared successfully.',
+      });
+    },
+    onError: (error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setConfigNotice({
+        type: 'error',
+        text: `Failed to clear logs: ${errorMessage}`,
+      });
     },
   });
 
@@ -4348,7 +4365,11 @@ export function ConfigPage() {
                     </div>
                     <div className="config-row">
                       <span className="config-label">Branch</span>
-                      <span className="mono-text">{updateInfo?.currentBranch || 'main'}</span>
+                      <span className="mono-text">{updateInfo?.currentBranch || 'unknown'}</span>
+                    </div>
+                    <div className="config-row">
+                      <span className="config-label">Remote</span>
+                      <span className="mono-text">{updateInfo?.remote || 'origin'}</span>
                     </div>
                     <div className="config-row">
                       <span className="config-label">Last Check</span>
@@ -4414,7 +4435,10 @@ export function ConfigPage() {
                           type="button"
                           className="submit-button"
                           style={{ marginTop: '1rem' }}
-                          onClick={() => setShowUpdateConfirmation(true)}
+                          onClick={() => {
+                            setUpdateConfirmationError(null);
+                            setShowUpdateConfirmation(true);
+                          }}
                           disabled={!updateInfo.canUpdate || triggerUpdateMutation.isPending}
                         >
                           {triggerUpdateMutation.isPending ? 'Initiating...' : 'Deploy Update'}
@@ -4429,7 +4453,19 @@ export function ConfigPage() {
                 </div>
 
                 <div className="config-card__body">
-                  <h3>Update History</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 style={{ margin: 0 }}>Update History</h3>
+                    {updateHistory && updateHistory.length > 0 && (
+                      <button
+                        type="button"
+                        className="control-chip"
+                        onClick={() => setShowClearLogsConfirmation(true)}
+                        disabled={clearUpdateLogsMutation.isPending}
+                      >
+                        {clearUpdateLogsMutation.isPending ? 'Clearing...' : 'Clear Logs'}
+                      </button>
+                    )}
+                  </div>
                   {updateHistory && updateHistory.length > 0 ? (
                     <div style={{ overflowX: 'auto' }}>
                       <table className="data-table">
@@ -4485,23 +4521,18 @@ export function ConfigPage() {
               <strong>System Downtime Expected:</strong> The Command Center will be unavailable for
               approximately 3-8 minutes during deployment.
             </div>
-            <label>
-              Type <strong className="mono-text">UPDATE</strong> to confirm:
-              <input
-                type="text"
-                value={updateConfirmationText}
-                onChange={(e) => setUpdateConfirmationText(e.target.value)}
-                placeholder="UPDATE"
-                style={{ marginTop: '0.5rem' }}
-              />
-            </label>
+            {updateConfirmationError && (
+              <div className="form-error" style={{ marginBottom: '1rem' }}>
+                <strong>Update Failed:</strong> {updateConfirmationError}
+              </div>
+            )}
             <div className="controls-row" style={{ marginTop: '1rem' }}>
               <button
                 type="button"
                 className="control-chip"
                 onClick={() => {
                   setShowUpdateConfirmation(false);
-                  setUpdateConfirmationText('');
+                  setUpdateConfirmationError(null);
                 }}
               >
                 Cancel
@@ -4510,9 +4541,9 @@ export function ConfigPage() {
                 type="button"
                 className="submit-button"
                 onClick={() => triggerUpdateMutation.mutate()}
-                disabled={updateConfirmationText !== 'UPDATE'}
+                disabled={triggerUpdateMutation.isPending}
               >
-                Execute Update
+                {triggerUpdateMutation.isPending ? 'Deploying...' : 'Deploy Update'}
               </button>
             </div>
           </div>
@@ -4590,6 +4621,33 @@ export function ConfigPage() {
                 onClick={() => setUpdateResolutionError(null)}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearLogsConfirmation && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Clear Update Logs</h3>
+            <div className="form-hint" style={{ marginBottom: '1rem' }}>
+              Are you sure you want to delete all update logs? This action cannot be undone.
+            </div>
+            <div className="controls-row" style={{ marginTop: '1rem' }}>
+              <button
+                type="button"
+                className="control-chip"
+                onClick={() => setShowClearLogsConfirmation(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="submit-button"
+                onClick={() => clearUpdateLogsMutation.mutate()}
+              >
+                Clear Logs
               </button>
             </div>
           </div>

@@ -79,6 +79,18 @@ export class UpdateGitService {
   }
 
   /**
+   * Get tracking remote for a branch
+   */
+  async getTrackingRemote(branch: string): Promise<string | null> {
+    try {
+      const result = await this.execGit(['config', '--get', `branch.${branch}.remote`]);
+      return result.stdout || null;
+    } catch (error: unknown) {
+      return null;
+    }
+  }
+
+  /**
    * Get current commit hash
    */
   async getCurrentCommit(): Promise<string> {
@@ -241,7 +253,9 @@ export class UpdateGitService {
   ): Promise<void> {
     try {
       this.logger.log(`Pulling from ${remote}/${branch} with fast-forward only...`);
-      const result = await this.execGit(['pull', '--ff-only', remote, branch], { timeout });
+      // Use merge instead of pull to avoid fetching from network
+      // This allows us to merge from local remote-tracking refs
+      const result = await this.execGit(['merge', '--ff-only', `${remote}/${branch}`], { timeout });
 
       if (result.exitCode !== 0) {
         throw new Error(`Git pull failed: ${result.stderr || result.stdout}`);

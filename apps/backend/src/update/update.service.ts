@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { UpdatePhase } from '@prisma/client';
+import { writeFileSync, unlinkSync, existsSync } from 'fs';
+import { join } from 'path';
 
 import { UpdateBackupService } from './update-backup.service';
 import { UpdateConfigService } from './update-config.service';
@@ -34,25 +36,42 @@ export class UpdateService {
    */
   private async cleanupStuckUpdates(): Promise<void> {
     try {
-      const result = await this.prisma.updateLog.updateMany({
-        where: {
-          status: 'RUNNING',
-        },
-        data: {
-          status: 'FAILED',
-          phase: 'FAILED',
-          error: 'Update process was interrupted (service restart detected)',
-          completedAt: new Date(),
-        },
+      const runningUpdates = await this.prisma.updateLog.findMany({
+        where: { status: 'RUNNING' },
       });
 
-      if (result.count > 0) {
-        this.logger.warn(`Cleaned up ${result.count} stuck update(s) from previous session`);
+      for (const update of runningUpdates) {
+        const isDevMode = process.env.NODE_ENV !== 'production';
+        const gitPullCompleted = update.phase === 'GIT_UPDATE' || update.phase === 'DEPENDENCIES' ||
+                                  update.phase === 'DATABASE' || update.phase === 'BUILD' ||
+                                  update.phase === 'VALIDATION';
+
+        if (isDevMode && gitPullCompleted) {
+          await this.prisma.updateLog.update({
+            where: { id: update.id },
+            data: {
+              status: 'SUCCESS',
+              completedAt: new Date(),
+              error: 'Code updated successfully. Manual restart required in dev mode.',
+            },
+          });
+          this.logger.log(`Marked update ${update.id} as SUCCESS (dev mode, git pull completed)`);
+        } else {
+          await this.prisma.updateLog.update({
+            where: { id: update.id },
+            data: {
+              status: 'FAILED',
+              phase: 'FAILED',
+              error: 'Update process was interrupted (service restart detected)',
+              completedAt: new Date(),
+            },
+          });
+          this.logger.warn(`Marked update ${update.id} as FAILED (interrupted)`);
+        }
       }
     } catch (error: unknown) {
       const err = error as Error;
       this.logger.error(`Failed to cleanup stuck updates: ${err.message}`);
-      // Don't throw - this is a non-critical cleanup operation
     }
   }
 
@@ -91,8 +110,19 @@ export class UpdateService {
         };
       }
 
-      const remote = process.env.AUTO_UPDATE_REMOTE || 'origin';
-      const branch = process.env.AUTO_UPDATE_BRANCH || 'main';
+      const currentBranch = await this.gitService.getCurrentBranch();
+      const trackingRemote = await this.gitService.getTrackingRemote(currentBranch);
+
+      this.logger.log(
+        `Detected: branch=${currentBranch}, tracking remote=${trackingRemote}`,
+      );
+
+      const branch = process.env.AUTO_UPDATE_BRANCH || currentBranch || 'main';
+      const remote = process.env.AUTO_UPDATE_REMOTE || trackingRemote || 'origin';
+
+      this.logger.log(
+        `Using: branch=${branch}, remote=${remote}`,
+      );
 
       // Get git status
       const status = await this.gitService.getStatus(remote, branch);
@@ -106,6 +136,8 @@ export class UpdateService {
       const updateInfo: UpdateInfo = {
         available: status.commitsBehind > 0,
         currentCommit: status.lastCommit?.hash || 'unknown',
+        currentBranch: status.currentBranch,
+        remote,
         latestCommit:
           status.commitsBehind > 0
             ? await this.gitService.getRemoteCommit(remote, branch)
@@ -226,6 +258,9 @@ export class UpdateService {
     }
 
     this.updateInProgress = true;
+
+    const updateLockFile = join(process.cwd(), '.update-in-progress');
+    writeFileSync(updateLockFile, new Date().toISOString());
     const remote = process.env.AUTO_UPDATE_REMOTE || 'origin';
     const branch = process.env.AUTO_UPDATE_BRANCH || 'main';
 
@@ -435,6 +470,11 @@ export class UpdateService {
       // ALWAYS reset the flag and clear the update ID, even if the catch block fails
       this.updateInProgress = false;
       this.currentUpdateLogId = null;
+
+      const updateLockFile = join(process.cwd(), '.update-in-progress');
+      if (existsSync(updateLockFile)) {
+        unlinkSync(updateLockFile);
+      }
     }
   }
 
@@ -515,5 +555,14 @@ export class UpdateService {
         },
       },
     });
+  }
+
+  /**
+   * Clear all update logs
+   */
+  async clearUpdateLogs() {
+    const count = await this.prisma.updateLog.deleteMany({});
+    this.logger.log(`Cleared ${count.count} update log entries`);
+    return count;
   }
 }

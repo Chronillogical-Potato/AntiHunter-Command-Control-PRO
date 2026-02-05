@@ -26,6 +26,8 @@ export enum UpdatePhase {
 export interface UpdateInfo {
   available: boolean;
   currentCommit: string;
+  currentBranch?: string;
+  remote?: string;
   latestCommit?: string;
   commitsBehind?: number;
   lastCommitMessage?: string;

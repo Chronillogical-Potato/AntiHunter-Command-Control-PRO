@@ -1,14 +1,11 @@
 import { bootstrap, BootstrapResult } from './bootstrap';
 
-// Check for silent flag (from command line or environment variable)
 const isSilent =
   process.argv.includes('--silent') || process.argv.includes('-s') || process.env.SILENT === 'true';
 
 if (isSilent) {
-  // Set log level to error to suppress all output except critical errors
   process.env.LOG_LEVEL = 'error';
 
-  // Suppress console output except for errors
   console.log = () => {};
   console.info = () => {};
   console.warn = () => {};
@@ -29,9 +26,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   if (bootstrapResult) {
     try {
       // Close redirect server first if it exists
-      if (bootstrapResult.redirectServer) {
+      const result = bootstrapResult; // Capture in const for TypeScript null check
+      if (result.redirectServer) {
         await new Promise<void>((resolve) => {
-          bootstrapResult.redirectServer?.close(() => {
+          result.redirectServer?.close(() => {
             console.log('Redirect server closed');
             resolve();
           });
@@ -39,7 +37,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
       }
 
       // Close NestJS app (this also closes the main HTTP/HTTPS server)
-      await bootstrapResult.app.close();
+      await result.app.close();
       console.log('Application closed successfully');
     } catch (error) {
       console.error('Error during graceful shutdown:', error);
