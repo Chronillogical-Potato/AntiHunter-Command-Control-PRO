@@ -4557,7 +4557,7 @@ export function ConfigPage() {
             </div>
             <div className="form-error" style={{ marginBottom: '1rem' }}>
               <strong>System Downtime Expected:</strong> The Command Center will be unavailable for
-              approximately 3-8 minutes during deployment.
+              approximately 20-60s during deployment The backend will restart upon completion.
             </div>
             {updateConfirmationError && (
               <div className="form-error" style={{ marginBottom: '1rem' }}>

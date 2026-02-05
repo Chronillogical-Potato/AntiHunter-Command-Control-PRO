@@ -284,7 +284,7 @@ export class UpdateService implements OnModuleInit {
     options: { force?: boolean; skipBackup?: boolean } = {},
   ): Promise<void> {
     if (this.updateInProgress) {
-      throw new Error('An update is already in progress');
+      throw new Error('An update is in progress');
     }
 
     if (!this.isUpdateEnabled()) {
