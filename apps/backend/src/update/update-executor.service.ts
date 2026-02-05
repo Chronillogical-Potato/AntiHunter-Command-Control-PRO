@@ -37,42 +37,160 @@ export class UpdateExecutorService {
       phase: UpdatePhase.PREFLIGHT,
     },
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    const timeout = options.timeout || 600000; // 10 minutes default
-    const cwd = options.cwd || this.repoRoot;
+    this.validateCommand(command);
+    this.validateCommandArgs(args);
+
+    const timeout = options.timeout || 600000;
+    const cwd = this.validateAndNormalizePath(options.cwd || this.repoRoot);
+    const MAX_OUTPUT_SIZE = 50 * 1024 * 1024;
+
+    this.logger.log(`Executing command: ${command} ${args.join(' ')}`);
 
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { cwd, shell: false });
+      const child = spawn(command, args, {
+        cwd,
+        shell: false,
+        env: this.getSafeEnv(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
 
       let stdout = '';
       let stderr = '';
+      let outputSize = 0;
 
       child.stdout.on('data', (data) => {
         const output = data.toString();
+        outputSize += output.length;
+        if (outputSize > MAX_OUTPUT_SIZE) {
+          child.kill('SIGTERM');
+          this.logger.error('Command output exceeded maximum size limit');
+          reject(new Error('Command output exceeded maximum size limit'));
+          return;
+        }
         stdout += output;
         this.publishLogEvent('info', output, options.phase);
       });
 
       child.stderr.on('data', (data) => {
         const output = data.toString();
+        outputSize += output.length;
+        if (outputSize > MAX_OUTPUT_SIZE) {
+          child.kill('SIGTERM');
+          this.logger.error('Command output exceeded maximum size limit');
+          reject(new Error('Command output exceeded maximum size limit'));
+          return;
+        }
         stderr += output;
         this.publishLogEvent('warn', output, options.phase);
       });
 
       const timeoutId = setTimeout(() => {
         child.kill('SIGTERM');
+        this.logger.warn(`Command timed out after ${timeout}ms: ${command} ${args.join(' ')}`);
         reject(new Error(`Command timed out after ${timeout}ms`));
       }, timeout);
 
       child.on('close', (code) => {
         clearTimeout(timeoutId);
+        if (code !== 0) {
+          this.logger.warn(`Command failed with exit code ${code}: ${command} ${args.join(' ')}`);
+        }
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code || 0 });
       });
 
       child.on('error', (err) => {
         clearTimeout(timeoutId);
+        this.logger.error(`Command error: ${err.message}`);
         reject(err);
       });
     });
+  }
+
+  private validateCommand(command: string): void {
+    if (!command || typeof command !== 'string') {
+      throw new Error('Invalid command: must be non-empty string');
+    }
+
+    const ALLOWED_COMMANDS = ['pnpm', 'node', 'npm'];
+
+    const commandName = command.split('/').pop() || command;
+
+    if (!ALLOWED_COMMANDS.includes(commandName)) {
+      throw new Error(`Command not allowed: ${command}`);
+    }
+
+    if (command.includes('\n') || command.includes('\r') || command.includes('\0')) {
+      throw new Error('Invalid command: contains control characters');
+    }
+
+    if (command.includes('..') || command.includes('~')) {
+      throw new Error('Invalid command: contains path traversal');
+    }
+  }
+
+  private validateCommandArgs(args: string[]): void {
+    if (!Array.isArray(args)) {
+      throw new Error('Invalid arguments: must be array');
+    }
+
+    const DANGEROUS_PATTERNS = [
+      ';',
+      '&&',
+      '||',
+      '|',
+      '$(',
+      '`',
+      '\n',
+      '\r',
+      '\0',
+      '>',
+      '<',
+      '&',
+    ];
+
+    for (const arg of args) {
+      if (typeof arg !== 'string') {
+        throw new Error('Invalid argument: must be string');
+      }
+
+      for (const pattern of DANGEROUS_PATTERNS) {
+        if (arg.includes(pattern)) {
+          throw new Error(`Dangerous pattern in argument: ${pattern}`);
+        }
+      }
+    }
+  }
+
+  private validateAndNormalizePath(path: string): string {
+    if (!path || typeof path !== 'string') {
+      throw new Error('Invalid path: must be non-empty string');
+    }
+
+    if (path.includes('\0') || path.includes('\n') || path.includes('\r')) {
+      throw new Error('Invalid path: contains control characters');
+    }
+
+    const normalizedPath = join(path);
+
+    if (!normalizedPath.startsWith(this.repoRoot)) {
+      throw new Error('Path traversal detected: path must be within repository');
+    }
+
+    return normalizedPath;
+  }
+
+  private getSafeEnv(): NodeJS.ProcessEnv {
+    const safeEnv: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      USER: process.env.USER,
+      NODE_ENV: process.env.NODE_ENV,
+      DATABASE_URL: process.env.DATABASE_URL,
+      LANG: process.env.LANG || 'en_US.UTF-8',
+      LC_ALL: process.env.LC_ALL || 'en_US.UTF-8',
+    };
+
+    return safeEnv;
   }
 
   /**

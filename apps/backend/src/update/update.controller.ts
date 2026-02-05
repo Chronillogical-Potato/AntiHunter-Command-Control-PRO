@@ -101,40 +101,33 @@ export class UpdateController {
     @Request() req: AuthenticatedRequest,
     @Body() dto: TriggerUpdateDto,
   ): Promise<{ message: string; updateId?: string }> {
-    // Validate confirmation
     if (dto.confirmation && dto.confirmation !== 'UPDATE') {
       throw new BadRequestException('Invalid confirmation. Type "UPDATE" to confirm.');
     }
 
-    // Check if update is already in progress
     if (this.updateService.isUpdateInProgress()) {
       throw new BadRequestException('An update is in progress');
     }
 
-    // Get user ID from request
     const userId = req.auth?.sub;
     if (!userId) {
       throw new ForbiddenException('User not authenticated');
     }
 
-    // Run pre-flight checks synchronously first
     const preflightResult = await this.updateService.runPreflightChecks();
     if (!preflightResult.success) {
-      // Return helpful error message with resolution options
       throw new BadRequestException({
         message: preflightResult.error,
         resolutionOptions: preflightResult.resolutionOptions,
       });
     }
 
-    // Execute update asynchronously
     this.updateService
       .executeUpdate(userId, {
         force: dto.force,
         skipBackup: dto.skipBackup,
       })
       .catch((error) => {
-        // Error is already logged and event is published by the service
         console.error('Update execution failed:', error);
       });
 

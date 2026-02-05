@@ -30,38 +30,155 @@ export class UpdateGitService {
     args: string[],
     options: { timeout?: number; cwd?: string } = {},
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    const timeout = options.timeout || 30000; // 30 second default
-    const cwd = options.cwd || this.repoRoot;
+    this.validateGitArgs(args);
+
+    const timeout = options.timeout || 30000;
+    const cwd = this.validateAndNormalizePath(options.cwd || this.repoRoot);
+    const MAX_OUTPUT_SIZE = 10 * 1024 * 1024;
+
+    this.logger.log(`Executing git command: git ${args.join(' ')}`);
 
     return new Promise((resolve, reject) => {
-      const child = spawn('git', args, { cwd, shell: false });
+      const child = spawn('git', args, {
+        cwd,
+        shell: false,
+        env: this.getSafeEnv(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
 
       let stdout = '';
       let stderr = '';
+      let outputSize = 0;
 
       child.stdout.on('data', (data) => {
-        stdout += data.toString();
+        const chunk = data.toString();
+        outputSize += chunk.length;
+        if (outputSize > MAX_OUTPUT_SIZE) {
+          child.kill('SIGTERM');
+          reject(new Error('Command output exceeded maximum size limit'));
+          return;
+        }
+        stdout += chunk;
       });
 
       child.stderr.on('data', (data) => {
-        stderr += data.toString();
+        const chunk = data.toString();
+        outputSize += chunk.length;
+        if (outputSize > MAX_OUTPUT_SIZE) {
+          child.kill('SIGTERM');
+          reject(new Error('Command output exceeded maximum size limit'));
+          return;
+        }
+        stderr += chunk;
       });
 
       const timeoutId = setTimeout(() => {
         child.kill('SIGTERM');
+        this.logger.warn(`Git command timed out after ${timeout}ms: git ${args.join(' ')}`);
         reject(new Error(`Git command timed out after ${timeout}ms`));
       }, timeout);
 
       child.on('close', (code) => {
         clearTimeout(timeoutId);
+        if (code !== 0) {
+          this.logger.warn(`Git command failed with exit code ${code}: git ${args.join(' ')}`);
+        }
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: code || 0 });
       });
 
       child.on('error', (err) => {
         clearTimeout(timeoutId);
+        this.logger.error(`Git command error: ${err.message}`);
         reject(err);
       });
     });
+  }
+
+  private validateGitArgs(args: string[]): void {
+    if (!Array.isArray(args) || args.length === 0) {
+      throw new Error('Invalid git arguments: must be non-empty array');
+    }
+
+    const DANGEROUS_ARGS = [
+      '-c',
+      '--config',
+      'upload-pack',
+      'upload-archive',
+      '--upload-pack',
+      '--exec',
+    ];
+
+    for (const arg of args) {
+      if (typeof arg !== 'string') {
+        throw new Error('Invalid git argument: must be string');
+      }
+
+      if (arg.includes('\n') || arg.includes('\r') || arg.includes('\0')) {
+        throw new Error('Invalid git argument: contains control characters');
+      }
+
+      const lowerArg = arg.toLowerCase();
+      for (const dangerous of DANGEROUS_ARGS) {
+        if (lowerArg.startsWith(dangerous)) {
+          throw new Error(`Dangerous git argument not allowed: ${dangerous}`);
+        }
+      }
+
+      if (arg.startsWith('-') && !this.isAllowedGitOption(arg)) {
+        this.logger.warn(`Potentially unsafe git option: ${arg}`);
+      }
+    }
+  }
+
+  private isAllowedGitOption(option: string): boolean {
+    const ALLOWED_OPTIONS = [
+      '--abbrev-ref',
+      '--get',
+      '--format',
+      '--porcelain',
+      '--left-right',
+      '--count',
+      '--ff-only',
+      '--hard',
+      '--soft',
+      '-s',
+      '-u',
+      '-m',
+      '-n',
+      '-1',
+    ];
+
+    return ALLOWED_OPTIONS.some((allowed) => option.startsWith(allowed));
+  }
+
+  private validateAndNormalizePath(path: string): string {
+    if (!path || typeof path !== 'string') {
+      throw new Error('Invalid path: must be non-empty string');
+    }
+
+    if (path.includes('\0') || path.includes('\n') || path.includes('\r')) {
+      throw new Error('Invalid path: contains control characters');
+    }
+
+    const normalizedPath = join(path);
+
+    if (!normalizedPath.startsWith(this.repoRoot)) {
+      throw new Error('Path traversal detected: path must be within repository');
+    }
+
+    return normalizedPath;
+  }
+
+  private getSafeEnv(): NodeJS.ProcessEnv {
+    const safeEnv: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      USER: process.env.USER,
+      LANG: process.env.LANG || 'en_US.UTF-8',
+      LC_ALL: process.env.LC_ALL || 'en_US.UTF-8',
+    };
+
+    return safeEnv;
   }
 
   /**
