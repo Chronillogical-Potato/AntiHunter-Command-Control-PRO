@@ -227,6 +227,25 @@ export class UpdateService implements OnModuleInit {
           };
         }
 
+        if (error.includes('diverged from remote')) {
+          return {
+            success: false,
+            error: 'Local branch has commits not on remote. Update requires force reset.',
+            resolutionOptions: [
+              {
+                action: 'force-reset',
+                description: 'Force reset to remote (DESTRUCTIVE - discards local commits)',
+                command: 'Update will force reset to match remote exactly',
+              },
+              {
+                action: 'cancel',
+                description: 'Cancel update and manually resolve divergence',
+                command: 'git rebase or git merge manually',
+              },
+            ],
+          };
+        }
+
         if (error.includes('disk space')) {
           return {
             success: false,

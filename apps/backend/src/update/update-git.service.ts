@@ -169,6 +169,23 @@ export class UpdateGitService {
   }
 
   /**
+   * Check if local branch has diverged from remote (has commits not on remote)
+   */
+  async hasDivergingBranches(branch: string, remote: string = 'origin'): Promise<boolean> {
+    try {
+      // Get commits in local branch not in remote
+      const result = await this.execGit(['rev-list', `${remote}/${branch}..HEAD`]);
+
+      // If there's output, local has commits not on remote (diverged)
+      return result.stdout.trim().length > 0;
+    } catch (error: unknown) {
+      const err = error as Error;
+      this.logger.error(`Failed to check for diverging branches: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
    * Fetch from remote
    */
   async fetch(remote: string = 'origin', timeout: number = 300000): Promise<void> {
@@ -261,19 +278,28 @@ export class UpdateGitService {
     timeout: number = 300000,
   ): Promise<void> {
     try {
-      this.logger.log(`Pulling from ${remote}/${branch} with fast-forward only...`);
-      // Use merge instead of pull to avoid fetching from network
-      // This allows us to merge from local remote-tracking refs
-      const result = await this.execGit(['merge', '--ff-only', `${remote}/${branch}`], { timeout });
+      this.logger.log(`Updating to ${remote}/${branch}...`);
 
-      if (result.exitCode !== 0) {
-        throw new Error(`Git pull failed: ${result.stderr || result.stdout}`);
+      // Try fast-forward merge first
+      const mergeResult = await this.execGit(['merge', '--ff-only', `${remote}/${branch}`], { timeout });
+
+      if (mergeResult.exitCode === 0) {
+        this.logger.log('Fast-forward merge completed successfully');
+        return;
       }
 
-      this.logger.log('Pull completed successfully');
+      // If fast-forward fails, force reset to remote (for auto-updater)
+      this.logger.warn('Fast-forward not possible - forcing reset to remote');
+      const resetResult = await this.execGit(['reset', '--hard', `${remote}/${branch}`], { timeout });
+
+      if (resetResult.exitCode !== 0) {
+        throw new Error(`Git reset failed: ${resetResult.stderr || resetResult.stdout}`);
+      }
+
+      this.logger.log('Force reset completed successfully');
     } catch (error: unknown) {
       const err = error as Error;
-      this.logger.error(`Failed to pull: ${err.message}`);
+      this.logger.error(`Failed to update: ${err.message}`);
       throw error;
     }
   }

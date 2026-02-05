@@ -152,6 +152,22 @@ export class UpdateExecutorService {
       this.publishProgressEvent(
         UpdatePhase.PREFLIGHT,
         'checks',
+        40,
+        'Checking for diverging branches...',
+      );
+
+      // Check if branches have diverged (local commits not on remote)
+      const currentBranch = await this.gitService.getCurrentBranch();
+      const hasDivergence = await this.gitService.hasDivergingBranches(currentBranch);
+      if (hasDivergence) {
+        throw new Error(
+          'Local branch has diverged from remote. This will require a force reset that discards local commits.',
+        );
+      }
+
+      this.publishProgressEvent(
+        UpdatePhase.PREFLIGHT,
+        'checks',
         50,
         'Verifying remote repository...',
       );
