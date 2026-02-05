@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { UpdatePhase } from '@prisma/client';
 import { writeFileSync, unlinkSync, existsSync } from 'fs';
+import { rm } from 'fs/promises';
 import { join } from 'path';
 
 import { UpdateBackupService } from './update-backup.service';
@@ -405,9 +406,6 @@ export class UpdateService {
         data: completeEvent,
       });
 
-      // Clean up old backups
-      await this.backupService.cleanupOldBackups(5);
-
       this.logger.log(`Update completed successfully in ${durationSeconds} seconds`);
       this.logger.warn('Service restart required to apply changes');
 
@@ -467,13 +465,31 @@ export class UpdateService {
 
       throw error;
     } finally {
-      // ALWAYS reset the flag and clear the update ID, even if the catch block fails
       this.updateInProgress = false;
       this.currentUpdateLogId = null;
 
       const updateLockFile = join(process.cwd(), '.update-in-progress');
       if (existsSync(updateLockFile)) {
         unlinkSync(updateLockFile);
+      }
+
+      // Clean up backup created for this update
+      if (backupPath && existsSync(backupPath)) {
+        try {
+          await rm(backupPath, { recursive: true, force: true });
+          this.logger.log(`Cleaned up update backup: ${backupPath}`);
+        } catch (cleanupError: unknown) {
+          const cleanupErr = cleanupError as Error;
+          this.logger.error(`Failed to cleanup backup: ${cleanupErr.message}`);
+        }
+      }
+
+      // Clean up all old backups
+      try {
+        await this.backupService.cleanupOldBackups(0);
+      } catch (cleanupError: unknown) {
+        const cleanupErr = cleanupError as Error;
+        this.logger.warn(`Failed to cleanup old backups: ${cleanupErr.message}`);
       }
     }
   }
