@@ -403,19 +403,21 @@ export function ConfigPage() {
     if (!socket || !isAdmin) return;
 
     const handleUpdateComplete = (event: { success: boolean; error?: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['updates', 'check'] });
-      queryClient.invalidateQueries({ queryKey: ['updates', 'history'] });
-
       if (event.success) {
         setConfigNotice({
           type: 'success',
-          text: 'Update completed successfully! Server has been restarted.',
+          text: 'Update completed successfully! Reloading page in 3 seconds...',
         });
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
       } else {
         setConfigNotice({
           type: 'error',
           text: `Update failed: ${event.error || 'Unknown error'}`,
         });
+        queryClient.invalidateQueries({ queryKey: ['updates', 'check'] });
+        queryClient.invalidateQueries({ queryKey: ['updates', 'history'] });
       }
     };
 

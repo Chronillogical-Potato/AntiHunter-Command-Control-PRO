@@ -141,12 +141,12 @@ export class UpdateExecutorService {
         'Checking for uncommitted changes...',
       );
 
-      // Check for uncommitted changes
+      // Auto-stash uncommitted changes
       const hasChanges = await this.gitService.hasUncommittedChanges();
       if (hasChanges) {
-        throw new Error(
-          'Repository has uncommitted changes. Commit or stash them before updating.',
-        );
+        this.logger.warn('Uncommitted changes detected - auto-stashing...');
+        await this.gitService.stash('Auto-stash before update');
+        this.logger.log('Changes stashed successfully');
       }
 
       this.publishProgressEvent(

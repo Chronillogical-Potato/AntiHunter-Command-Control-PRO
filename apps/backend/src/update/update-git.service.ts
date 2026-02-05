@@ -150,6 +150,25 @@ export class UpdateGitService {
   }
 
   /**
+   * Stash uncommitted changes
+   */
+  async stash(message: string = 'Auto-stash'): Promise<void> {
+    try {
+      const result = await this.execGit(['stash', 'push', '-u', '-m', message]);
+
+      if (result.exitCode !== 0) {
+        throw new Error(`Git stash failed: ${result.stderr}`);
+      }
+
+      this.logger.log(`Changes stashed: ${message}`);
+    } catch (error: unknown) {
+      const err = error as Error;
+      this.logger.error(`Failed to stash changes: ${err.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * Fetch from remote
    */
   async fetch(remote: string = 'origin', timeout: number = 300000): Promise<void> {
