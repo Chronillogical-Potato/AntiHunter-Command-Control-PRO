@@ -18,8 +18,9 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS builder
 COPY . .
 
-# Generate Prisma client and build the NestJS backend
-RUN pnpm --filter @command-center/backend prisma:generate  && pnpm --filter @command-center/backend build
+RUN pnpm --filter @command-center/backend prisma:generate \
+  && pnpm --filter @command-center/backend build \
+  && pnpm --filter @command-center/backend exec tsc -p tsconfig.seed.json --noEmit false
 
 FROM node:20.19.6-trixie-slim AS runtime
 WORKDIR /app
@@ -41,7 +42,9 @@ COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
 
 # Install production dependencies only for @command-center/backend
 RUN pnpm install --frozen-lockfile --prod --filter @command-center/backend...
-RUN pnpm --filter @command-center/backend prisma:generate
+
+# Copy the generated Prisma client from the builder stage
+COPY --from=builder /app/node_modules/.prisma /app/node_modules/.prisma
 
 # Provide udevadm for serialport enumeration inside the container
 RUN apt-get update  && apt-get install -y --no-install-recommends udev  && rm -rf /var/lib/apt/lists/*
