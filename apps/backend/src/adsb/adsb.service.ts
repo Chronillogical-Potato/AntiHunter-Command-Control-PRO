@@ -149,6 +149,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   private airportsByIcao: Map<string, AirportInfo> = new Map();
   private airportsByIata: Map<string, AirportInfo> = new Map();
   private alertRules: AdsbAlertRule[] = [];
+  private dataInitPromise: Promise<void> | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -201,34 +202,47 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    if (this.hardDisabled) {
+      return;
+    }
     await this.refreshGeofences();
     await this.loadConfigFromDisk();
     this.geofenceSubscription = this.geofencesService
       .getChangesStream()
       .subscribe((event) => this.handleGeofenceChange(event));
-    void this.loadAircraftDatabaseFromDisk().catch((error) => {
-      this.logger.warn(
-        `ADS-B aircraft database not loaded: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-    void this.loadAirportsDatabaseFromDisk().catch((error) => {
-      this.logger.warn(
-        `ADS-B airports database not loaded: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-    void this.loadAlertRulesFromDisk().catch((error) => {
-      this.logger.warn(
-        `ADS-B alert rules not loaded: ${error instanceof Error ? error.message : error}`,
-      );
-    });
-    void this.syncAllAlertRulesToDb().catch((error) => {
-      this.logger.warn(
-        `ADS-B alert rule DB sync skipped: ${error instanceof Error ? error.message : error}`,
-      );
-    });
     if (this.enabled) {
+      await this.ensureAdsbDataInitialized();
       this.startPolling();
     }
+  }
+
+  private ensureAdsbDataInitialized(): Promise<void> {
+    if (this.dataInitPromise) {
+      return this.dataInitPromise;
+    }
+    this.dataInitPromise = Promise.all([
+      this.loadAircraftDatabaseFromDisk().catch((error) => {
+        this.logger.warn(
+          `ADS-B aircraft database not loaded: ${error instanceof Error ? error.message : error}`,
+        );
+      }),
+      this.loadAirportsDatabaseFromDisk().catch((error) => {
+        this.logger.warn(
+          `ADS-B airports database not loaded: ${error instanceof Error ? error.message : error}`,
+        );
+      }),
+      this.loadAlertRulesFromDisk().catch((error) => {
+        this.logger.warn(
+          `ADS-B alert rules not loaded: ${error instanceof Error ? error.message : error}`,
+        );
+      }),
+      this.syncAllAlertRulesToDb().catch((error) => {
+        this.logger.warn(
+          `ADS-B alert rule DB sync skipped: ${error instanceof Error ? error.message : error}`,
+        );
+      }),
+    ]).then(() => undefined);
+    return this.dataInitPromise;
   }
 
   onModuleDestroy(): void {
@@ -384,7 +398,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     return { deleted };
   }
 
-  updateConfig(config: {
+  async updateConfig(config: {
     enabled?: boolean;
     feedUrl?: string;
     intervalMs?: number;
@@ -392,7 +406,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
     openskyClientId?: string | null;
     openskyClientSecret?: string | null;
     planespottersEnabled?: boolean;
-  }): AdsbStatus {
+  }): Promise<AdsbStatus> {
     if (this.hardDisabled) {
       this.enabled = false;
     } else if (config.enabled !== undefined) {
@@ -423,6 +437,7 @@ export class AdsbService implements OnModuleInit, OnModuleDestroy {
 
     this.stopPolling();
     if (this.enabled) {
+      await this.ensureAdsbDataInitialized();
       this.startPolling();
     }
     void this.persistConfig();

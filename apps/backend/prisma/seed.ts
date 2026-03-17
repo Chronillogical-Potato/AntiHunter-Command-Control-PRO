@@ -64,45 +64,41 @@ async function main() {
     },
   });
 
-  const existingAdmin = await prisma.user.findUnique({
+  const passwordHash = await argon2.hash(adminPassword);
+  await prisma.user.upsert({
     where: { email: adminEmail },
-  });
-
-  if (!existingAdmin) {
-    const passwordHash = await argon2.hash(adminPassword);
-    await prisma.user.create({
-      data: {
-        email: adminEmail,
-        passwordHash,
-        role: Role.ADMIN,
-        legalAcceptedAt: null,
-        firstName: 'Admin',
-        lastName: 'User',
-        jobTitle: 'System Administrator',
-        preferences: {
-          create: {
-            theme: 'dark',
-            density: 'compact',
-            language: 'en',
-            timeFormat: '24h',
-          },
-        },
-        permissions: {
-          create: (DEFAULT_FEATURES_BY_ROLE[Role.ADMIN] ?? []).map((feature) => ({
-            feature,
-          })),
-        },
-        siteAccess: {
-          create: [
-            {
-              siteId: seedSiteId,
-              level: SiteAccessLevel.MANAGE,
-            },
-          ],
+    update: {},
+    create: {
+      email: adminEmail,
+      passwordHash,
+      role: Role.ADMIN,
+      legalAcceptedAt: null,
+      firstName: 'Admin',
+      lastName: 'User',
+      jobTitle: 'System Administrator',
+      preferences: {
+        create: {
+          theme: 'dark',
+          density: 'compact',
+          language: 'en',
+          timeFormat: '24h',
         },
       },
-    });
-  }
+      permissions: {
+        create: (DEFAULT_FEATURES_BY_ROLE[Role.ADMIN] ?? []).map((feature) => ({
+          feature,
+        })),
+      },
+      siteAccess: {
+        create: [
+          {
+            siteId: seedSiteId,
+            level: SiteAccessLevel.MANAGE,
+          },
+        ],
+      },
+    },
+  });
 }
 
 main()

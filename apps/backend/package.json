@@ -85,6 +85,6 @@
     "typescript": "^5.5.4"
   },
   "prisma": {
-    "seed": "ts-node --transpile-only prisma/seed.ts"
+    "seed": "node dist/seed.js"
   }
 }
