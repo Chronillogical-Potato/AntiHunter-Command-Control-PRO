@@ -47,6 +47,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Supply chain audit
+        run: npx chain-audit --scan-code --exit-code --min-severity high
+
       - name: Generate Prisma client
         run: pnpm --filter @command-center/backend prisma:generate
 
