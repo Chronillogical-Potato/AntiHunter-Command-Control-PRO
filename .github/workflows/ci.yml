@@ -45,10 +45,13 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Supply chain audit
-        run: npx chain-audit --scan-code --exit-code --min-severity high
+        run: npx audit-ci@^7 --high
+
+      - name: Rebuild scripts
+        run: pnpm rebuild
 
       - name: Generate Prisma client
         run: pnpm --filter @command-center/backend prisma:generate
