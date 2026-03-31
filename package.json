@@ -55,7 +55,12 @@
       "minimatch@10": "10.2.4",
       "serialize-javascript": ">=7.0.0",
       "flatted": ">=3.4.0",
-      "file-type": ">=20.5.0"
+      "file-type": ">=20.5.0",
+      "path-to-regexp": "0.1.13",
+      "socket.io-parser": "4.2.6",
+      "picomatch@2": "2.3.2",
+      "picomatch@3": "3.0.2",
+      "picomatch@4": "4.0.4"
     }
   }
 }
