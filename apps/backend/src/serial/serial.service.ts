@@ -1,4 +1,4 @@
-import { create, toBinary } from '@bufbuild/protobuf';
+import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
 import {
   BadRequestException,
   Injectable,
@@ -14,6 +14,7 @@ import { SerialPortStream } from '@serialport/stream';
 import { randomUUID } from 'crypto';
 import { Observable, Subject } from 'rxjs';
 
+import { MeshtasticFrameEvent, MeshtasticFrameParser } from './meshtastic-frame-parser';
 import { createParser, ProtocolKey } from './protocol-registry';
 import {
   deserializeSerialParseResult,
@@ -259,8 +260,11 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     string,
     { timestamp: number; content: string; rawLine: string }
   >(); // dedupe key -> {timestamp, content, rawLine}
-  private readonly MESSAGE_CACHE_TTL_MS = 15000; // 15 seconds for mesh rebroadcasts
-  private readonly MESSAGE_DEDUPE_WAIT_MS = 250; // Wait 250ms for better version before emitting
+  private readonly MESSAGE_CACHE_TTL_MS = 15000;
+  private readonly MESSAGE_DEDUPE_WAIT_MS = 250;
+  private frameParser?: MeshtasticFrameParser;
+  private readonly meshNodeNames = new Map<number, string>();
+  private configNonce = 0;
 
   constructor(
     private readonly configService: ConfigService,
@@ -589,6 +593,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.lineParser.removeAllListeners();
       this.lineParser = undefined;
     }
+    if (this.frameParser) {
+      this.frameParser.removeAllListeners();
+      this.frameParser = undefined;
+    }
     if (this.port) {
       this.port.removeAllListeners();
     }
@@ -600,6 +608,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.globalRate.resetAt = 0;
     this.targetRates.clear();
     this.recentMessageCache.clear();
+    this.meshNodeNames.clear();
     this.packetIdCounter = Math.floor(Math.random() * 0xffff);
     this.broadcastState();
   }
@@ -908,27 +917,62 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.protocolParser = createParser(options.protocol);
     this.protocolParser.reset();
 
-    const readDelimiter = options.autoDetectDelimiter ? '\n' : options.delimiter;
-    this.lineParser = this.port.pipe(
-      new ReadlineParser({
-        delimiter: readDelimiter,
-      }),
-    );
+    if (options.protocol === 'meshtastic-rewrite') {
+      this.frameParser = new MeshtasticFrameParser();
+      this.port.pipe(this.frameParser);
 
-    this.lineParser.on('data', (data: string | Buffer) => {
-      const line = data
-        .toString()
-        .replace(/[\r\n]+$/, '')
-        .trim();
-      if (!line) {
-        return;
-      }
-      this.processIncomingLine(line, 'serial');
-    });
+      this.frameParser.on('data', (event: MeshtasticFrameEvent) => {
+        if (event.type === 'frame') {
+          void this.handleMeshtasticFrame(event.data);
+        } else if (event.type === 'text') {
+          // eslint-disable-next-line no-control-regex
+          const stripped = (event.data as string).replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').trim();
+          if (!stripped) return;
 
-    this.lineParser.on('error', (err) => {
-      this.logger.error(`Serial parser error: ${err.message}`, err.stack);
-    });
+          const msgMatch = /\bmsg=(.+)/i.exec(stripped);
+          if (msgMatch) {
+            this.processIncomingLine(msgMatch[1].trim(), 'serial');
+            return;
+          }
+
+          if (/^\s*(DEBUG|INFO|WARN|ERROR)\s*\|/i.test(stripped)) {
+            return;
+          }
+
+          this.processIncomingLine(stripped, 'serial');
+        }
+      });
+
+      this.frameParser.on('error', (err: Error) => {
+        this.logger.error(`Frame parser error: ${err.message}`, err.stack);
+      });
+
+      void this.initMeshtasticApi().catch((err) => {
+        this.logger.warn(`Meshtastic API init: ${err instanceof Error ? err.message : err}`);
+      });
+    } else {
+      const readDelimiter = options.autoDetectDelimiter ? '\n' : options.delimiter;
+      this.lineParser = this.port.pipe(
+        new ReadlineParser({
+          delimiter: readDelimiter,
+        }),
+      );
+
+      this.lineParser.on('data', (data: string | Buffer) => {
+        const line = data
+          .toString()
+          .replace(/[\r\n]+$/, '')
+          .trim();
+        if (!line) {
+          return;
+        }
+        this.processIncomingLine(line, 'serial');
+      });
+
+      this.lineParser.on('error', (err) => {
+        this.logger.error(`Serial parser error: ${err.message}`, err.stack);
+      });
+    }
 
     this.port.on('error', (err) => {
       this.lastError = err.message;
@@ -942,6 +986,268 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         this.scheduleReconnect('port closed');
       }
     });
+  }
+
+  private async initMeshtasticApi(): Promise<void> {
+    const { Mesh } = await loadMeshModule();
+
+    const nonce = (Math.random() * 0xffffffff) >>> 0;
+    this.configNonce = nonce;
+
+    const toRadio = create(Mesh.ToRadioSchema, {
+      payloadVariant: {
+        case: 'wantConfigId',
+        value: nonce,
+      },
+    });
+
+    const binary = toBinary(Mesh.ToRadioSchema, toRadio);
+    const payloadBuf = Buffer.from(binary);
+    const frame = Buffer.alloc(4 + payloadBuf.length);
+    frame[0] = 0x94;
+    frame[1] = 0xc3;
+    frame[2] = (payloadBuf.length >> 8) & 0xff;
+    frame[3] = payloadBuf.length & 0xff;
+    payloadBuf.copy(frame, 4);
+
+    await this.writeBuffer(frame);
+    this.logger.log(`Meshtastic API handshake sent (nonce=${nonce})`);
+  }
+
+  private async handleMeshtasticFrame(frame: Buffer): Promise<void> {
+    try {
+      const meshModule = await loadMeshModule();
+      const { Mesh, Portnums } = meshModule;
+      const TelemetryModule = meshModule.Telemetry as
+        | { TelemetrySchema?: unknown; DeviceMetricsSchema?: unknown }
+        | undefined;
+
+      const fromRadio = fromBinary(Mesh.FromRadioSchema, frame);
+      const variant = fromRadio.payloadVariant;
+      if (!variant) {
+        this.logger.warn(`FromRadio with no payload variant (${frame.length}B)`);
+        return;
+      }
+
+      this.logger.log(`FromRadio: case=${variant.case} (${frame.length}B)`);
+
+      switch (variant.case) {
+        case 'configCompleteId':
+          this.logger.log(
+            `Meshtastic config complete (id=${variant.value}), ` +
+              `${this.meshNodeNames.size} nodes known`,
+          );
+          break;
+
+        case 'nodeInfo': {
+          const info = variant.value as {
+            num?: number;
+            user?: { longName?: string; shortName?: string };
+            position?: { latitudeI?: number; longitudeI?: number };
+          };
+          if (info.num && info.user?.longName) {
+            this.meshNodeNames.set(info.num, info.user.longName);
+            const hex = info.num.toString(16);
+            this.logger.debug(`Node mapping: 0x${hex} → ${info.user.longName}`);
+          }
+          break;
+        }
+
+        case 'packet': {
+          const packet = variant.value as {
+            from?: number;
+            to?: number;
+            id?: number;
+            channel?: number;
+            rxRssi?: number;
+            rxSnr?: number;
+            payloadVariant?: {
+              case: string;
+              value?: {
+                portnum?: number;
+                payload?: Uint8Array;
+                wantResponse?: boolean;
+              };
+            };
+          };
+          await this.handleMeshtasticPacket(packet, Mesh, Portnums, TelemetryModule);
+          break;
+        }
+
+        case 'logRecord':
+          break;
+
+        default:
+          break;
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to decode Meshtastic frame (${frame.length}B): ` +
+          `${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  private async handleMeshtasticPacket(
+    packet: {
+      from?: number;
+      to?: number;
+      id?: number;
+      channel?: number;
+      rxRssi?: number;
+      rxSnr?: number;
+      payloadVariant?: {
+        case: string;
+        value?: {
+          portnum?: number;
+          payload?: Uint8Array;
+          wantResponse?: boolean;
+        };
+      };
+    },
+    Mesh: Awaited<ReturnType<typeof loadMeshModule>>['Mesh'],
+    Portnums: Awaited<ReturnType<typeof loadMeshModule>>['Portnums'],
+    TelemetryModule?: { TelemetrySchema?: unknown; DeviceMetricsSchema?: unknown },
+  ): Promise<void> {
+    const decoded = packet.payloadVariant;
+    if (!decoded || decoded.case !== 'decoded' || !decoded.value) return;
+
+    const data = decoded.value;
+    const fromNode = packet.from ?? 0;
+    const nodeName = this.meshNodeNames.get(fromNode) ?? `!${fromNode.toString(16)}`;
+    const rssi = packet.rxRssi;
+
+    switch (data.portnum) {
+      case Portnums.PortNum.TEXT_MESSAGE_APP: {
+        if (!data.payload?.length) return;
+        const text = new TextDecoder().decode(data.payload).trim();
+        if (!text) return;
+
+        this.logger.debug({ text, from: nodeName, rssi }, 'Meshtastic text message');
+        this.incoming$.next(text);
+
+        const parsed = this.protocolParser.parseLine(text);
+        if (parsed.length > 0) {
+          this.logger.debug({ parsed }, 'Parsed protobuf text events');
+          parsed.forEach((event) => this.parsed$.next(event));
+          this.broadcastParsedEvents(parsed);
+        }
+        break;
+      }
+
+      case Portnums.PortNum.POSITION_APP: {
+        if (!data.payload?.length) return;
+        try {
+          const position = fromBinary(Mesh.PositionSchema, data.payload) as {
+            latitudeI?: number;
+            longitudeI?: number;
+            altitude?: number;
+            satsInView?: number;
+            time?: number;
+          };
+          const lat = (position.latitudeI ?? 0) / 1e7;
+          const lon = (position.longitudeI ?? 0) / 1e7;
+          if (lat === 0 && lon === 0) return;
+
+          const raw = `${nodeName} GPS:${lat.toFixed(6)},${lon.toFixed(6)}`;
+          this.incoming$.next(raw);
+          const event: SerialParseResult = {
+            kind: 'node-telemetry',
+            nodeId: nodeName,
+            lat,
+            lon,
+            raw,
+            lastMessage: raw,
+          };
+          this.parsed$.next(event);
+          this.broadcastParsedEvents([event]);
+        } catch {
+          this.logger.debug(`Failed to decode position from ${nodeName}`);
+        }
+        break;
+      }
+
+      case Portnums.PortNum.NODEINFO_APP: {
+        if (!data.payload?.length) return;
+        try {
+          const user = fromBinary(Mesh.UserSchema, data.payload) as {
+            longName?: string;
+            shortName?: string;
+            id?: string;
+          };
+          if (user.longName && fromNode) {
+            this.meshNodeNames.set(fromNode, user.longName);
+            this.logger.debug(`Updated node name: 0x${fromNode.toString(16)} → ${user.longName}`);
+          }
+        } catch {
+          this.logger.debug(`Failed to decode nodeinfo from 0x${fromNode.toString(16)}`);
+        }
+        break;
+      }
+
+      case Portnums.PortNum.TELEMETRY_APP: {
+        if (!data.payload?.length || !TelemetryModule?.TelemetrySchema) return;
+        try {
+          const telemetry = fromBinary(
+            TelemetryModule.TelemetrySchema as Parameters<typeof fromBinary>[0],
+            data.payload,
+          ) as {
+            variant?: {
+              case: string;
+              value?: {
+                temperature?: number;
+                relativeHumidity?: number;
+                barometricPressure?: number;
+                batteryLevel?: number;
+                voltage?: number;
+                channelUtilization?: number;
+                airUtilTx?: number;
+                uptimeSeconds?: number;
+              };
+            };
+          };
+
+          const variant = telemetry.variant;
+          if (!variant) return;
+
+          if (variant.case === 'deviceMetrics' && variant.value) {
+            const dm = variant.value;
+            const raw = `${nodeName} battery:${dm.batteryLevel ?? '?'}% voltage:${dm.voltage?.toFixed(2) ?? '?'}V uptime:${dm.uptimeSeconds ?? 0}s`;
+            this.incoming$.next(raw);
+            const event: SerialParseResult = {
+              kind: 'node-telemetry',
+              nodeId: nodeName,
+              raw,
+              lastMessage: raw,
+            };
+            this.parsed$.next(event);
+            this.broadcastParsedEvents([event]);
+          }
+
+          if (variant.case === 'environmentMetrics' && variant.value) {
+            const em = variant.value;
+            const tempC = em.temperature;
+            const raw = `${nodeName} temp:${tempC?.toFixed(1) ?? '?'}°C humidity:${em.relativeHumidity?.toFixed(0) ?? '?'}%`;
+            this.incoming$.next(raw);
+            const event: SerialParseResult = {
+              kind: 'node-telemetry',
+              nodeId: nodeName,
+              raw,
+              lastMessage: raw,
+              temperatureC: tempC,
+            };
+            this.parsed$.next(event);
+            this.broadcastParsedEvents([event]);
+          }
+        } catch {
+          this.logger.debug(`Failed to decode telemetry from ${nodeName}`);
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
   }
 
   private async simulateLinesInternal(lines: string[]): Promise<void> {
