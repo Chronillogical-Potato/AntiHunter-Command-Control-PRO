@@ -90,7 +90,7 @@ export class SerialConfigService {
     const env = this.getEnvSerialDefaults();
     return {
       ...config,
-      devicePath: env.devicePath ?? config.devicePath ?? null,
+      devicePath: config.devicePath ?? env.devicePath ?? null,
       baud: config.baud ?? env.baud ?? null,
       dataBits: config.dataBits ?? env.dataBits ?? null,
       parity: config.parity ?? env.parity ?? null,

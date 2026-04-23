@@ -939,6 +939,12 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
             return;
           }
 
+          const bracketMatch = /^\[([A-Z][A-Z0-9_-]*)\]\s+(.+)$/i.exec(stripped);
+          if (bracketMatch) {
+            this.processIncomingLine(bracketMatch[2].trim(), 'serial');
+            return;
+          }
+
           this.processIncomingLine(stripped, 'serial');
         }
       });
@@ -1773,6 +1779,12 @@ function sanitizeLine(value: string): string {
 
   // Strip stray Unicode replacement characters so prefixes like "0? :" don't block parsing.
   cleaned = cleaned.replace(/\uFFFD/g, '');
+
+  // Strip firmware debug console prefixes like "[MESH TX] " or mangled "MESH TX] " to expose the actual payload.
+  const debugPrefixMatch = /^\[?MESH TX\]\s+(.+)$/i.exec(cleaned);
+  if (debugPrefixMatch?.[1]) {
+    cleaned = debugPrefixMatch[1];
+  }
 
   // Drop leading channel/slot markers like "1 :" or "10:" that some devices prepend.
   const channelMarker = /^\s*\d+\s*:\s*(.+)$/;
