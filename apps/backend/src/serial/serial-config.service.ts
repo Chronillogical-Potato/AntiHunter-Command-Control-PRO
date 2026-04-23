@@ -87,19 +87,19 @@ export class SerialConfigService {
   }
 
   private hydrateConfig(config: SerialConfig) {
-    const defaults = this.getEnvSerialDefaults();
+    const env = this.getEnvSerialDefaults();
     return {
       ...config,
-      devicePath: config.devicePath ?? defaults.devicePath ?? null,
-      baud: config.baud ?? defaults.baud ?? null,
-      dataBits: config.dataBits ?? defaults.dataBits ?? null,
-      parity: config.parity ?? defaults.parity ?? null,
-      stopBits: config.stopBits ?? defaults.stopBits ?? null,
-      reconnectBaseMs: config.reconnectBaseMs ?? defaults.reconnectBaseMs ?? null,
-      reconnectMaxMs: config.reconnectMaxMs ?? defaults.reconnectMaxMs ?? null,
-      reconnectJitter: config.reconnectJitter ?? defaults.reconnectJitter ?? null,
-      reconnectMaxAttempts: config.reconnectMaxAttempts ?? defaults.reconnectMaxAttempts ?? null,
-      delimiter: config.delimiter ?? defaults.delimiter ?? DEFAULT_SERIAL_DELIMITER,
+      devicePath: config.devicePath ?? env.devicePath ?? null,
+      baud: config.baud ?? env.baud ?? null,
+      dataBits: config.dataBits ?? env.dataBits ?? null,
+      parity: config.parity ?? env.parity ?? null,
+      stopBits: config.stopBits ?? env.stopBits ?? null,
+      reconnectBaseMs: config.reconnectBaseMs ?? env.reconnectBaseMs ?? null,
+      reconnectMaxMs: config.reconnectMaxMs ?? env.reconnectMaxMs ?? null,
+      reconnectJitter: config.reconnectJitter ?? env.reconnectJitter ?? null,
+      reconnectMaxAttempts: config.reconnectMaxAttempts ?? env.reconnectMaxAttempts ?? null,
+      delimiter: config.delimiter ?? env.delimiter ?? DEFAULT_SERIAL_DELIMITER,
     };
   }
 
