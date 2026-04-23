@@ -32,6 +32,7 @@ export interface UpdateInfo {
   commitsBehind?: number;
   lastCommitMessage?: string;
   lastCommitDate?: string;
+  lastCommitAuthor?: string;
   lastCheckAt: string;
   error?: string;
   warning?: string;

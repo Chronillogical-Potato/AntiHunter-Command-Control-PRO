@@ -138,6 +138,7 @@ export class UpdateGitService {
       '--porcelain',
       '--left-right',
       '--count',
+      '--verify',
       '--ff-only',
       '--hard',
       '--soft',
@@ -213,6 +214,9 @@ export class UpdateGitService {
   async getCurrentCommit(): Promise<string> {
     try {
       const result = await this.execGit(['rev-parse', 'HEAD']);
+      if (result.exitCode !== 0 || !result.stdout.match(/^[0-9a-f]{40}$/)) {
+        throw new Error(`Could not resolve HEAD: ${result.stderr || 'not a valid commit hash'}`);
+      }
       return result.stdout;
     } catch (error: unknown) {
       const err = error as Error;
@@ -330,12 +334,23 @@ export class UpdateGitService {
     branch: string = 'main',
   ): Promise<{ behind: number; ahead: number }> {
     try {
+      const ref = `${remote}/${branch}`;
+      const verifyResult = await this.execGit(['rev-parse', '--verify', ref]);
+      if (verifyResult.exitCode !== 0) {
+        this.logger.warn(`Remote ref ${ref} does not exist — cannot compare`);
+        return { ahead: 0, behind: 0 };
+      }
+
       const result = await this.execGit([
         'rev-list',
         '--left-right',
         '--count',
-        `HEAD...${remote}/${branch}`,
+        `HEAD...${ref}`,
       ]);
+
+      if (result.exitCode !== 0) {
+        throw new Error(`rev-list failed: ${result.stderr}`);
+      }
 
       const parts = result.stdout.split(/\s+/);
       return {
@@ -355,6 +370,11 @@ export class UpdateGitService {
   async getRemoteCommit(remote: string = 'origin', branch: string = 'main'): Promise<string> {
     try {
       const result = await this.execGit(['rev-parse', `${remote}/${branch}`]);
+      if (result.exitCode !== 0 || !result.stdout.match(/^[0-9a-f]{40}$/)) {
+        throw new Error(
+          `Could not resolve ${remote}/${branch}: ${result.stderr || 'not a valid commit hash'}`,
+        );
+      }
       return result.stdout;
     } catch (error: unknown) {
       const err = error as Error;
@@ -369,15 +389,16 @@ export class UpdateGitService {
   async getRemoteCommitDetails(
     remote: string = 'origin',
     branch: string = 'main',
-  ): Promise<{ message: string; date: string } | null> {
+  ): Promise<{ message: string; date: string; author: string } | null> {
     try {
       const hash = await this.getRemoteCommit(remote, branch);
-      const messageResult = await this.execGit(['log', '-1', '--format=%s', hash]);
-      const dateResult = await this.execGit(['log', '-1', '--format=%aI', hash]);
+      const result = await this.execGit(['log', '-1', '--format=%s%n%aI%n%an', hash]);
+      const lines = result.stdout.split('\n');
 
       return {
-        message: messageResult.stdout,
-        date: dateResult.stdout,
+        message: lines[0] || '',
+        date: lines[1] || '',
+        author: lines[2] || '',
       };
     } catch (error: unknown) {
       const err = error as Error;
