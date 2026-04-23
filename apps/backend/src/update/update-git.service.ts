@@ -341,12 +341,7 @@ export class UpdateGitService {
         return { ahead: 0, behind: 0 };
       }
 
-      const result = await this.execGit([
-        'rev-list',
-        '--left-right',
-        '--count',
-        `HEAD...${ref}`,
-      ]);
+      const result = await this.execGit(['rev-list', '--left-right', '--count', `HEAD...${ref}`]);
 
       if (result.exitCode !== 0) {
         throw new Error(`rev-list failed: ${result.stderr}`);
