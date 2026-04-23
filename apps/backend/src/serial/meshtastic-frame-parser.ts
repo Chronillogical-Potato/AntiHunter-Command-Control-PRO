@@ -80,7 +80,8 @@ export class MeshtasticFrameParser extends Transform {
     let idx: number;
     while ((idx = this.textAccumulator.search(/\r?\n|\r/)) >= 0) {
       const line = this.textAccumulator.slice(0, idx).trim();
-      const eol = this.textAccumulator[idx] === '\r' && this.textAccumulator[idx + 1] === '\n' ? 2 : 1;
+      const eol =
+        this.textAccumulator[idx] === '\r' && this.textAccumulator[idx + 1] === '\n' ? 2 : 1;
       this.textAccumulator = this.textAccumulator.slice(idx + eol);
       if (line) {
         this.push({ type: 'text', data: line } satisfies MeshtasticFrameEvent);

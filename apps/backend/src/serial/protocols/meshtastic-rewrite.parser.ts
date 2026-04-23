@@ -58,12 +58,10 @@ const BASELINE_STATUS_REGEX =
 const BATTERY_SAVER_STATUS_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*BATTERY_SAVER_STATUS:\s*Enabled:(?<enabled>YES|NO)(?:\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)[cC])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 
-const HEARTBEAT_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*HEARTBEAT:\s*(?<msg>.+)$/i;
+const HEARTBEAT_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HEARTBEAT:\s*(?<msg>.+)$/i;
 const ACK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|HB)_ACK):?(?<status>[A-Z_]*)/i;
-const HB_ACK_INTERVAL_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*HB_ACK:INTERVAL\s+(?<minutes>\d+)min/i;
+const HB_ACK_INTERVAL_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HB_ACK:INTERVAL\s+(?<minutes>\d+)min/i;
 const WIPE_TOKEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*WIPE_TOKEN:(?<token>[A-Za-z0-9_:-]+)/i;
 const ERASE_TOKEN_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_TOKEN:(?<token>[A-Za-z0-9_:-]+|\w+)(?:\s+Time:(?<time>\d+)s)?/i;
