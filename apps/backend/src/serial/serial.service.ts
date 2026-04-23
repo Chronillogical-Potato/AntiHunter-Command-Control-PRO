@@ -260,8 +260,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     string,
     { timestamp: number; content: string; rawLine: string }
   >(); // dedupe key -> {timestamp, content, rawLine}
-  private readonly MESSAGE_CACHE_TTL_MS = 15000;
-  private readonly MESSAGE_DEDUPE_WAIT_MS = 250;
+  private readonly MESSAGE_CACHE_TTL_MS = 3000;
   private frameParser?: MeshtasticFrameParser;
   private readonly meshNodeNames = new Map<number, string>();
   private configNonce = 0;
@@ -923,29 +922,13 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
 
       this.frameParser.on('data', (event: MeshtasticFrameEvent) => {
         if (event.type === 'frame') {
+          this.logger.log(`[FRAME] protobuf ${(event.data as Buffer).length}B`);
           void this.handleMeshtasticFrame(event.data);
         } else if (event.type === 'text') {
-          // eslint-disable-next-line no-control-regex
-          const stripped = (event.data as string).replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').trim();
-          if (!stripped) return;
-
-          const msgMatch = /\bmsg=(.+)/i.exec(stripped);
-          if (msgMatch) {
-            this.processIncomingLine(msgMatch[1].trim(), 'serial');
-            return;
-          }
-
-          if (/^\s*(DEBUG|INFO|WARN|ERROR)\s*\|/i.test(stripped)) {
-            return;
-          }
-
-          const bracketMatch = /^\[([A-Z][A-Z0-9_-]*)\]\s+(.+)$/i.exec(stripped);
-          if (bracketMatch) {
-            this.processIncomingLine(bracketMatch[2].trim(), 'serial');
-            return;
-          }
-
-          this.processIncomingLine(stripped, 'serial');
+          const line = (event.data as string).trim();
+          if (!line) return;
+          this.logger.log(`[TEXT] ${line.slice(0, 200)}`);
+          this.processIncomingLine(line, 'serial');
         }
       });
 
@@ -1137,6 +1120,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           this.logger.debug({ parsed }, 'Parsed protobuf text events');
           parsed.forEach((event) => this.parsed$.next(event));
           this.broadcastParsedEvents(parsed);
+        } else {
+          const rawEvent: SerialParseResult = { kind: 'raw', raw: text };
+          this.parsed$.next(rawEvent);
+          this.broadcastParsedEvents([rawEvent]);
         }
         break;
       }
@@ -1535,21 +1522,6 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private processAndEmitLine(part: string): void {
-    this.incoming$.next(part);
-    try {
-      const parsed = this.protocolParser.parseLine(part);
-      if (parsed.length > 0) {
-        this.logger.debug({ parsed }, 'Parsed serial events');
-        parsed.forEach((event) => this.parsed$.next(event));
-        this.broadcastParsedEvents(parsed);
-      }
-    } catch (err) {
-      this.logger.error(`Failed to parse buffered line: ${part}`, err as Error);
-      this.parsed$.next({ kind: 'raw', raw: part });
-    }
-  }
-
   private extractDedupeKey(content: string): string | null {
     // Extract a stable key from the message that ignores variable fields (RSSI, GPS, HDOP, temps, etc.)
     // This catches duplicates from Meshtastic 2.6 double-sends (SerialConsole + Router rebroadcast)
@@ -1668,7 +1640,11 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   private processIncomingLine(line: string, source: 'serial' | 'simulation'): void {
     const sanitized = sanitizeLine(line);
     if (!sanitized) {
+      this.logger.warn(`[SANITIZE_EMPTY] input=${line.slice(0, 200)}`);
       return;
+    }
+    if (sanitized !== line.trim()) {
+      this.logger.log(`[SANITIZE] "${line.slice(0, 100)}" => "${sanitized.slice(0, 100)}"`);
     }
     // Some devices bundle multiple payloads in one line separated by CR/LF.
     const parts = sanitized
@@ -1717,7 +1693,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       try {
         const parsed = this.protocolParser.parseLine(part);
         if (!parsed.length) {
-          this.logger.debug({ line: part }, 'Serial line ignored by parser');
+          this.logger.warn(`[PARSE_MISS] no match: "${part.slice(0, 150)}"`);
+          this.incoming$.next(part);
+          this.parsed$.next({ kind: 'raw', raw: part });
           continue;
         }
 
@@ -1759,61 +1737,58 @@ function delay(ms: number): Promise<void> {
 }
 
 function sanitizeLine(value: string): string {
-  // Strip BOM and control characters except standard whitespace.
-  let cleaned = value.replace(/\uFEFF/g, '');
-  cleaned = Array.from(cleaned)
-    .filter((ch) => {
-      const code = ch.codePointAt(0) ?? 0;
-      return code === 0x09 || code === 0x0a || code === 0x0d || code >= 0x20;
-    })
-    .join('');
-
-  // Remove leading non-printable/garbage prefixes before the first useful token.
-  const firstUseful = cleaned.search(/[A-Za-z0-9@]/);
-  if (firstUseful > 0) {
-    cleaned = cleaned.slice(firstUseful);
-  }
-
-  // Remove placeholder Fahrenheit fragments like "/undefinedF" or "undefinedF".
+  let cleaned = stripAnsi(value);
+  // eslint-disable-next-line no-control-regex
+  cleaned = cleaned.replace(/[\uFEFF\uFFFD\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
   cleaned = cleaned.replace(/\/?undefinedf\b/gi, '');
+  cleaned = cleaned.trim();
+  if (!cleaned) return '';
 
-  // Strip stray Unicode replacement characters so prefixes like "0? :" don't block parsing.
-  cleaned = cleaned.replace(/\uFFFD/g, '');
-
-  // Strip firmware debug console prefixes like "[MESH TX] " or mangled "MESH TX] " to expose the actual payload.
-  const debugPrefixMatch = /^\[?MESH TX\]\s+(.+)$/i.exec(cleaned);
-  if (debugPrefixMatch?.[1]) {
-    cleaned = debugPrefixMatch[1];
+  // Meshtastic 2.6+/2.7 text forwarding: extract payload after msg=
+  const msgIdx = cleaned.lastIndexOf('msg=');
+  if (msgIdx >= 0) {
+    cleaned = cleaned.slice(msgIdx + 4).trim();
   }
 
-  // Drop leading channel/slot markers like "1 :" or "10:" that some devices prepend.
-  const channelMarker = /^\s*\d+\s*:\s*(.+)$/;
-  const markerMatch = channelMarker.exec(cleaned);
-  if (markerMatch?.[1]) {
-    cleaned = markerMatch[1];
-  } else {
-    // Some firmwares prefix text frames with a single-letter marker (any case) like "C :" or "p :".
-    const alphaMarker = /^\s*[A-Za-z]\s*:\s*(.+)$/;
-    const alphaMatch = alphaMarker.exec(cleaned);
-    if (alphaMatch?.[1]) {
-      cleaned = alphaMatch[1];
+  // Strip Meshtastic log prefixes: DEBUG|INFO|WARN|ERROR | ...
+  if (/^\s*(DEBUG|INFO|WARN|ERROR)\s*\|/i.test(cleaned)) {
+    return '';
+  }
+
+  // Strip firmware debug console bracket prefixes: [MESH TX], [VIBRATION], etc.
+  const bracketMatch = /^\[([A-Z][A-Z0-9_ -]*)\]\s+(.+)$/i.exec(cleaned);
+  if (bracketMatch) {
+    cleaned = bracketMatch[2].trim();
+  }
+
+  // Strip Meshtastic TEXTMSG channel prefix: "0:" or "1 :" (channel 0-7)
+  const chanMatch = /^\s*(\d)\s*:\s*(.+)$/.exec(cleaned);
+  if (chanMatch && chanMatch[1].length === 1 && Number(chanMatch[1]) <= 7) {
+    cleaned = chanMatch[2].trim();
+  }
+
+  // Strip Meshtastic hop/relay prefix: when a node relays a text message, the
+  // relaying node's short name is prepended (e.g. "ah03: AH5: STATUS:..." or
+  // "RLAY: AH5: TAMPER_DETECTED:..."). The original format is "nodeId: KEYWORD"
+  // and the hop adds "relayName: " in front. We detect by checking if the second
+  // token is a plain node ID (not a keyword) and the third token IS a keyword.
+  const HOP_KEYWORD_RE =
+    /^(?:STATUS|Target|DEVICE|DRONE|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|Time:)/i;
+  const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
+  if (hopMatch) {
+    const secondToken = hopMatch[2].replace(/[:\s]+$/, '');
+    const thirdPart = hopMatch[3].trim();
+    const secondIsKeyword = HOP_KEYWORD_RE.test(secondToken);
+    const thirdIsKeyword = HOP_KEYWORD_RE.test(thirdPart);
+    if (!secondIsKeyword && thirdIsKeyword) {
+      cleaned = (hopMatch[2] + hopMatch[3]).trim();
     }
   }
 
-  // Drop any leftover leading symbols/punctuation before the actual node/text payload.
-  cleaned = cleaned.replace(/^[^A-Za-z0-9]+/, '');
+  // Strip leading ANSI fragment residue like "0m"
+  cleaned = cleaned.replace(/^0m\s*/i, '');
 
-  // Remove router hop prefixes like "0c58:" that precede the real node id.
-  const routerHop = /^\s*[0-9a-f]{4}:\s+(.+)$/i;
-  const hopMatch = routerHop.exec(cleaned);
-  if (hopMatch?.[1]) {
-    cleaned = hopMatch[1];
-  }
-
-  // Remove ANSI color/control codes.
-  cleaned = stripAnsi(cleaned);
-
-  return cleaned.trim();
+  return cleaned;
 }
 
 function stripAnsi(value: string): string {

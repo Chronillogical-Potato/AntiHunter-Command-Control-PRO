@@ -58,8 +58,10 @@ const BASELINE_STATUS_REGEX =
 const BATTERY_SAVER_STATUS_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*BATTERY_SAVER_STATUS:\s*Enabled:(?<enabled>YES|NO)(?:\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)[cC])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 
+const HEARTBEAT_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HEARTBEAT:\s*(?<msg>.+)$/i;
 const ACK_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?)_ACK):?(?<status>[A-Z_]*)/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|HB)_ACK):?(?<status>[A-Z_]*)/i;
+const HB_ACK_INTERVAL_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HB_ACK:INTERVAL\s+(?<minutes>\d+)min/i;
 const WIPE_TOKEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*WIPE_TOKEN:(?<token>[A-Za-z0-9_:-]+)/i;
 const ERASE_TOKEN_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_TOKEN:(?<token>[A-Za-z0-9_:-]+|\w+)(?:\s+Time:(?<time>\d+)s)?/i;
@@ -530,36 +532,27 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const resolvedNodeId = nodeId ?? m.groups.id;
     const lat = m.groups.lat ? Number(m.groups.lat) : undefined;
     const lon = m.groups.lon ? Number(m.groups.lon) : undefined;
-    const hdop = m.groups.hdop ? Number(m.groups.hdop) : undefined;
-    const msgBase = payload;
-    const msg = this.stripTrailingHash(msgBase);
-    const normalizedLat = Number.isFinite(lat) ? (lat as number) : 0;
-    const normalizedLon = Number.isFinite(lon) ? (lon as number) : 0;
+    const temperatureC = m.groups.tempC ? Number(m.groups.tempC) : undefined;
+    const temperatureF = m.groups.tempF ? Number(m.groups.tempF) : undefined;
+    const msg = this.stripTrailingHash(payload);
     const results: SerialParseResult[] = [];
-    // Only emit a single alert for STATUS messages (don't duplicate with telemetry)
     results.push({
-      kind: 'alert',
-      level: 'NOTICE',
-      category: 'status',
-      nodeId: resolvedNodeId,
-      message: msg,
+      kind: 'node-telemetry',
+      nodeId: resolvedNodeId ?? 'unknown',
+      lat,
+      lon,
       raw,
-      data: {
-        hdop,
-        lat: normalizedLat,
-        lon: normalizedLon,
-        temperatureC: m.groups.tempC ? Number(m.groups.tempC) : undefined,
-        temperatureF: m.groups.tempF ? Number(m.groups.tempF) : undefined,
-      },
+      lastMessage: msg,
+      temperatureC,
+      temperatureF,
     });
-    // If firmware prefixes an alias (e.g., "ah02: AH902: STATUS ..."), normalize the raw payload
-    // so downstream UI doesn't display the duplicate leading token.
-    if (resolvedNodeId) {
-      const normalizedRaw = payload.replace(/^[A-Za-z0-9_.:-]+:\s+([A-Za-z0-9_.:-]+:\s+)?/, '');
-      results.forEach((entry) => {
-        entry.raw = normalizedRaw;
-      });
-    }
+    results.push({
+      kind: 'command-result',
+      nodeId: resolvedNodeId ?? 'unknown',
+      command: 'STATUS',
+      payload: msg,
+      raw,
+    });
     return results;
   }
 
@@ -643,6 +636,19 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
         },
       ];
     }
+    const heartbeat = HEARTBEAT_REGEX.exec(payload);
+    if (heartbeat?.groups) {
+      return [
+        {
+          kind: 'alert',
+          level: 'INFO',
+          category: 'heartbeat',
+          nodeId: nodeId ?? heartbeat.groups.id,
+          message: payload,
+          raw,
+        },
+      ];
+    }
     const startup = STARTUP_REGEX.exec(payload);
     if (startup?.groups) {
       return [
@@ -664,6 +670,18 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     nodeId: string | undefined,
     raw: string,
   ): SerialParseResult[] | null {
+    const hbInterval = HB_ACK_INTERVAL_REGEX.exec(payload);
+    if (hbInterval?.groups) {
+      return [
+        {
+          kind: 'command-ack',
+          nodeId: nodeId ?? hbInterval.groups.id,
+          ackType: 'HB_ACK',
+          status: `INTERVAL ${hbInterval.groups.minutes}min`,
+          raw,
+        },
+      ];
+    }
     const ack = ACK_REGEX.exec(payload);
     if (ack?.groups) {
       return [

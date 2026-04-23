@@ -77,10 +77,12 @@ export class MeshtasticFrameParser extends Transform {
   }
 
   private emitCompleteLines(): void {
-    let newlineIndex: number;
-    while ((newlineIndex = this.textAccumulator.indexOf('\n')) >= 0) {
-      const line = this.textAccumulator.slice(0, newlineIndex).replace(/\r$/, '').trim();
-      this.textAccumulator = this.textAccumulator.slice(newlineIndex + 1);
+    let idx: number;
+    while ((idx = this.textAccumulator.search(/\r?\n|\r/)) >= 0) {
+      const line = this.textAccumulator.slice(0, idx).trim();
+      const eol =
+        this.textAccumulator[idx] === '\r' && this.textAccumulator[idx + 1] === '\n' ? 2 : 1;
+      this.textAccumulator = this.textAccumulator.slice(idx + eol);
       if (line) {
         this.push({ type: 'text', data: line } satisfies MeshtasticFrameEvent);
       }

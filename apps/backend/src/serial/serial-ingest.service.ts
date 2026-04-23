@@ -81,7 +81,7 @@ class SerialIngestQueue {
 export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SerialIngestService.name);
   private subscription?: Subscription;
-  private static readonly DUPLICATE_WINDOW_MS = 750;
+  private static readonly DUPLICATE_WINDOW_MS = 500;
   private static readonly DUPLICATE_CACHE_MAX = 512;
   private readonly duplicateKeys = new Map<string, number>();
   private readonly ingestQueue: SerialIngestQueue;
