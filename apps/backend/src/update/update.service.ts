@@ -147,18 +147,18 @@ export class UpdateService implements OnModuleInit {
         remoteCommitDetails = await this.gitService.getRemoteCommitDetails(remote, branch);
       }
 
+      const remoteCommit = await this.gitService.getRemoteCommit(remote, branch).catch(() => null);
+
       const updateInfo: UpdateInfo = {
         available: status.commitsBehind > 0,
         currentCommit: status.lastCommit?.hash || 'unknown',
         currentBranch: status.currentBranch,
         remote,
-        latestCommit:
-          status.commitsBehind > 0
-            ? await this.gitService.getRemoteCommit(remote, branch)
-            : undefined,
+        latestCommit: remoteCommit || undefined,
         commitsBehind: status.commitsBehind,
         lastCommitMessage: remoteCommitDetails?.message || status.lastCommit?.message,
         lastCommitDate: remoteCommitDetails?.date || status.lastCommit?.date,
+        lastCommitAuthor: remoteCommitDetails?.author || status.lastCommit?.author,
         lastCheckAt: new Date().toISOString(),
         warning: status.networkError,
       };

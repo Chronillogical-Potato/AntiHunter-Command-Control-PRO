@@ -59,6 +59,7 @@ interface UpdateInfo {
   lastCheckAt: string;
   canUpdate: boolean;
   blockers?: string[];
+  warning?: string;
 }
 
 interface UpdateLog {
@@ -4422,13 +4423,7 @@ export function ConfigPage() {
               <>
                 <div className="config-card__body">
                   <div className="config-subcard">
-                    <h3>Current Version</h3>
-                    <div className="config-row">
-                      <span className="config-label">Commit</span>
-                      <span className="mono-text">
-                        {updateInfo?.currentCommit?.substring(0, 8).toUpperCase() || 'Loading...'}
-                      </span>
-                    </div>
+                    <h3>Version Status</h3>
                     <div className="config-row">
                       <span className="config-label">Branch</span>
                       <span className="mono-text">{updateInfo?.currentBranch || 'unknown'}</span>
@@ -4437,6 +4432,99 @@ export function ConfigPage() {
                       <span className="config-label">Remote</span>
                       <span className="mono-text">{updateInfo?.remote || 'origin'}</span>
                     </div>
+                    {(() => {
+                      const localHash =
+                        updateInfo?.currentCommit?.substring(0, 8).toUpperCase() || '--------';
+                      const remoteRaw = updateInfo?.latestCommit || '';
+                      const hasRemoteHash = /^[0-9a-f]{40}$/i.test(remoteRaw);
+                      const remoteHash = hasRemoteHash
+                        ? remoteRaw.substring(0, 8).toUpperCase()
+                        : null;
+                      const hashesMatch = hasRemoteHash && remoteHash === localHash;
+                      const hashesDiffer = hasRemoteHash && remoteHash !== localHash;
+
+                      return (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: hasRemoteHash ? '1fr 1fr' : '1fr',
+                            gap: '0.75rem',
+                            margin: '0.75rem 0',
+                            padding: '0.75rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '4px',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                fontSize: '0.75rem',
+                                opacity: 0.6,
+                                marginBottom: '0.25rem',
+                              }}
+                            >
+                              {hasRemoteHash ? 'LOCAL' : 'COMMIT'}
+                            </div>
+                            <span className="mono-text" style={{ fontSize: '0.95rem' }}>
+                              {localHash}
+                            </span>
+                          </div>
+                          {hasRemoteHash && (
+                            <div>
+                              <div
+                                style={{
+                                  fontSize: '0.75rem',
+                                  opacity: 0.6,
+                                  marginBottom: '0.25rem',
+                                }}
+                              >
+                                REMOTE
+                              </div>
+                              <span
+                                className="mono-text"
+                                style={{
+                                  fontSize: '0.95rem',
+                                  color: hashesDiffer ? '#f59e0b' : undefined,
+                                }}
+                              >
+                                {remoteHash}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {(() => {
+                      const remoteRaw = updateInfo?.latestCommit || '';
+                      const hasRemoteHash = /^[0-9a-f]{40}$/i.test(remoteRaw);
+                      if (
+                        hasRemoteHash &&
+                        updateInfo?.currentCommit &&
+                        updateInfo.currentCommit === remoteRaw
+                      ) {
+                        return (
+                          <div
+                            style={{
+                              fontSize: '0.8rem',
+                              color: '#22c55e',
+                              marginBottom: '0.5rem',
+                            }}
+                          >
+                            Hashes match — confirmed up to date
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {updateInfo?.warning && (
+                      <div
+                        className="form-error"
+                        style={{ marginBottom: '0.75rem', fontSize: '0.85rem' }}
+                      >
+                        {updateInfo.warning}
+                      </div>
+                    )}
                     <div className="config-row">
                       <span className="config-label">Last Check</span>
                       <span>{updateInfo ? formatDate(updateInfo.lastCheckAt) : 'Never'}</span>

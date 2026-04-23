@@ -56,6 +56,7 @@ export class UpdateController {
         commitsBehind: updateInfo.commitsBehind,
         lastCommitMessage: updateInfo.lastCommitMessage,
         lastCommitDate: updateInfo.lastCommitDate,
+        lastCommitAuthor: updateInfo.lastCommitAuthor,
         lastCheckAt: updateInfo.lastCheckAt,
         canUpdate: updateInfo.available && blockers.length === 0,
         blockers: blockers.length > 0 ? blockers : undefined,
