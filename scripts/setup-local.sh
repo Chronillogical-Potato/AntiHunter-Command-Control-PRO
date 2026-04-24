@@ -317,7 +317,8 @@ prompt_yes_no() {
 
     while true; do
         read -p "$prompt (y/n): " -r response
-        case "${response,,}" in
+        response=$(printf '%s' "$response" | tr '[:upper:]' '[:lower:]')
+        case "$response" in
             y|yes) return 0 ;;
             n|no) return 1 ;;
             *) warn "Please enter 'y' or 'n'" ;;
