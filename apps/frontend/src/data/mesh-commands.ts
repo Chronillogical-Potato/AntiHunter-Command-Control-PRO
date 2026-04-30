@@ -81,6 +81,8 @@ export interface CommandDefinition {
   defaultTarget?: string;
   parameters: CommandParameter[];
   allowForever?: boolean;
+  allowProbe?: boolean;
+  allowBroadcastAll?: boolean;
   examples?: Array<{ target: string; params: string[]; label?: string }>;
 }
 
@@ -220,7 +222,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'DEVICE_SCAN_START',
     group: 'Scanning',
-    description: 'Start device scan for WiFi/BLE devices.',
+    description: 'Start device scan for WiFi/BLE devices. +PROBE enables probe request capture during the scan.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -246,8 +248,10 @@ export const MESH_COMMANDS: CommandDefinition[] = [
       },
     ],
     allowForever: true,
+    allowProbe: true,
     examples: [
       { target: '@ALL', params: ['2', '300'] },
+      { target: '@ALL', params: ['2', '300', '+PROBE'] },
       { target: '@NODE_22', params: ['2', '300', 'FOREVER'] },
     ],
   },
@@ -370,6 +374,49 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     ],
   },
   {
+    name: 'PROBE_START',
+    group: 'Scanning',
+    description: 'Start probe request scanner (mode 0=WiFi,1=BLE,2=Both). +ALL broadcasts every probe over mesh.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'mode',
+        label: 'Mode',
+        type: 'select',
+        options: [
+          { label: '0 - WiFi', value: '0' },
+          { label: '1 - BLE', value: '1' },
+          { label: '2 - Both', value: '2' },
+        ],
+        required: true,
+      },
+      {
+        key: 'duration',
+        label: 'Duration (seconds)',
+        type: 'duration',
+        placeholder: '300',
+        required: true,
+        min: 1,
+        max: 86400,
+        suffix: 'sec',
+      },
+    ],
+    allowForever: true,
+    allowBroadcastAll: true,
+    examples: [
+      { target: '@ALL', params: ['2', '300'] },
+      { target: '@ALL', params: ['2', '300', '+ALL'] },
+      { target: '@NODE_22', params: ['0', '300', 'FOREVER'] },
+    ],
+  },
+  {
+    name: 'PROBE_STOP',
+    group: 'Scanning',
+    description: 'Stop probe request scanner.',
+    defaultTarget: '@ALL',
+    parameters: [],
+  },
+  {
     name: 'TRIANGULATE_START',
     group: 'Triangulation',
     description: 'Initiate triangulation for MAC or identity (T-xxx).',
@@ -451,8 +498,22 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   },
   {
     name: 'VIBRATION_STATUS',
-    group: 'Status',
+    group: 'Security',
     description: 'Query tamper/vibration sensor status.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'VIBRATION_ON',
+    group: 'Security',
+    description: 'Enable tamper/vibration detection.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'VIBRATION_OFF',
+    group: 'Security',
+    description: 'Disable tamper/vibration detection.',
     defaultTarget: '@NODE_22',
     parameters: [],
   },
@@ -581,6 +642,42 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     examples: [
       { target: '@NODE_22', params: [], label: 'Check node status' },
       { target: '@ALL', params: [], label: 'Check all nodes' },
+    ],
+  },
+  {
+    name: 'HB_ON',
+    group: 'Status',
+    description: 'Enable periodic heartbeat broadcast over mesh.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'HB_OFF',
+    group: 'Status',
+    description: 'Disable heartbeat broadcast.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'HB_INTERVAL',
+    group: 'Status',
+    description: 'Set heartbeat interval (1-60 minutes).',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'minutes',
+        label: 'Interval (minutes)',
+        type: 'number',
+        placeholder: '5',
+        required: true,
+        min: 1,
+        max: 60,
+        suffix: 'min',
+      },
+    ],
+    examples: [
+      { target: '@NODE_22', params: ['5'] },
+      { target: '@ALL', params: ['10'] },
     ],
   },
 ];

@@ -95,9 +95,20 @@ export const useProbeStore = create<ProbeStoreState>()((set, get) => ({
     }),
 
   setDevices: (devices) =>
-    set(() => ({
-      devices: Object.fromEntries(devices.map((d) => [d.mac.toUpperCase(), d])),
-    })),
+    set((state) => {
+      const merged = { ...state.devices };
+      for (const d of devices) {
+        const key = d.mac.toUpperCase();
+        const existing = merged[key];
+        if (
+          !existing ||
+          new Date(d.lastSeen).getTime() >= new Date(existing.lastSeen).getTime()
+        ) {
+          merged[key] = d;
+        }
+      }
+      return { devices: merged };
+    }),
 
   clear: () => set({ devices: {} }),
 

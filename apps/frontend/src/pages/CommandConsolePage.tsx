@@ -19,6 +19,8 @@ type CommandFormState = {
   target: string;
   paramValues: Record<string, string>;
   includeForever: boolean;
+  includeProbe: boolean;
+  includeBroadcastAll: boolean;
   siteId?: string;
 };
 
@@ -80,9 +82,10 @@ function createFormState(
   const presetParams = preset?.params ?? command.examples?.[0]?.params ?? [];
   const paramValues: Record<string, string> = {};
 
+  const tokenSet = new Set(['FOREVER', '+PROBE', '+ALL']);
   command.parameters.forEach((param, index) => {
     const exampleValue = presetParams[index];
-    if (exampleValue && exampleValue !== 'FOREVER') {
+    if (exampleValue && !tokenSet.has(exampleValue.toUpperCase())) {
       paramValues[param.key] = exampleValue;
       return;
     }
@@ -93,9 +96,16 @@ function createFormState(
     paramValues[param.key] = '';
   });
 
+  const upperPreset = presetParams.map((p) => p.toUpperCase());
   const includeForever =
     command.allowForever === true &&
-    (presetParams.includes('FOREVER') || (preset?.params?.includes('FOREVER') ?? false));
+    (upperPreset.includes('FOREVER') || (preset?.params?.includes('FOREVER') ?? false));
+  const includeProbe =
+    command.allowProbe === true &&
+    (upperPreset.includes('+PROBE') || (preset?.params?.includes('+PROBE') ?? false));
+  const includeBroadcastAll =
+    command.allowBroadcastAll === true &&
+    (upperPreset.includes('+ALL') || (preset?.params?.includes('+ALL') ?? false));
 
   const targetCandidate =
     preset?.target ?? command.examples?.[0]?.target ?? command.defaultTarget ?? '@ALL';
@@ -104,6 +114,8 @@ function createFormState(
     target: normalizeTarget(targetCandidate),
     paramValues,
     includeForever,
+    includeProbe,
+    includeBroadcastAll,
     siteId: undefined,
   };
 }
@@ -115,6 +127,12 @@ function buildCommandParams(command: CommandDefinition, form: CommandFormState):
 
   if (command.allowForever && form.includeForever) {
     parts.push('FOREVER');
+  }
+  if (command.allowProbe && form.includeProbe) {
+    parts.push('+PROBE');
+  }
+  if (command.allowBroadcastAll && form.includeBroadcastAll) {
+    parts.push('+ALL');
   }
 
   return parts;
@@ -902,6 +920,44 @@ export function CommandConsolePage() {
                 Append FOREVER
               </label>
               <span>Command continues until a STOP is issued.</span>
+            </div>
+          ) : null}
+
+          {selectedCommand.allowProbe ? (
+            <div className="form-row forever-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.includeProbe}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      includeProbe: event.target.checked,
+                    }))
+                  }
+                />
+                +PROBE
+              </label>
+              <span>Capture probe requests during device scan.</span>
+            </div>
+          ) : null}
+
+          {selectedCommand.allowBroadcastAll ? (
+            <div className="form-row forever-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.includeBroadcastAll}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      includeBroadcastAll: event.target.checked,
+                    }))
+                  }
+                />
+                +ALL
+              </label>
+              <span>Broadcast every probe over mesh, not just target matches.</span>
             </div>
           ) : null}
 

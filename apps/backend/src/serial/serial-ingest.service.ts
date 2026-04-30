@@ -738,6 +738,29 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
       case 'probe-hit': {
         const probeEvent = event as SerialProbeHit;
         const device = this.probeInventoryService.record(probeEvent, siteId);
+
+        const asTarget: SerialTargetDetected = {
+          kind: 'target-detected',
+          nodeId: probeEvent.nodeId ?? 'unknown',
+          mac: probeEvent.mac,
+          rssi: probeEvent.rssi,
+          type: 'WiFi',
+          name: probeEvent.ssid,
+          channel: probeEvent.channel,
+          lat: probeEvent.lat,
+          lon: probeEvent.lon,
+          raw: probeEvent.raw,
+        };
+        const nodeSnapshot = probeEvent.nodeId
+          ? this.nodesService.getSnapshotById(probeEvent.nodeId)
+          : undefined;
+        await this.inventoryService.recordDetection(
+          asTarget,
+          siteId,
+          nodeSnapshot?.lat,
+          nodeSnapshot?.lon,
+        );
+
         this.gateway.emitEvent({
           type: 'event.probe-hit',
           timestamp: new Date().toISOString(),
@@ -753,6 +776,21 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           hits: device.hits,
           siteId,
           raw: probeEvent.raw,
+        });
+
+        this.gateway.emitEvent({
+          type: 'event.target',
+          timestamp: new Date().toISOString(),
+          nodeId: probeEvent.nodeId,
+          mac: probeEvent.mac,
+          rssi: probeEvent.rssi,
+          deviceType: 'WiFi',
+          lat: probeEvent.lat ?? nodeSnapshot?.lat ?? null,
+          lon: probeEvent.lon ?? nodeSnapshot?.lon ?? null,
+          channel: probeEvent.channel ?? null,
+          message: `Probe ${probeEvent.mac} (RSSI ${probeEvent.rssi})`,
+          raw: probeEvent.raw,
+          siteId,
         });
         break;
       }

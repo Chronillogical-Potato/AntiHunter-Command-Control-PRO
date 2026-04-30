@@ -60,7 +60,7 @@ const BATTERY_SAVER_STATUS_REGEX =
 
 const HEARTBEAT_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HEARTBEAT:\s*(?<msg>.+)$/i;
 const ACK_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|PROBE|HB)_ACK):?(?<status>[A-Z_]*)/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|VIBRATION_(?:ON|OFF)|PROBE|HB)_ACK):?(?<status>[A-Z_]*)/i;
 
 const PROBE_HIT_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*PROBE_HIT:?\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(?<vendor>\S+)\s+RSSI[=:](?<rssi>-?\d+)(?:\s+CH[=:](?<channel>\d+))?(?:\s+SSID[=:"]*(?<ssid>[^"\s]+)"?)?(?:\s+(?<ghost>GHOST))?(?:\s+(?<dst>DST))?(?:\s+GPS[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
@@ -88,6 +88,11 @@ const TIME_SYNC_REQ_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*TIME_SYNC_REQ:(?<time>\d+):(?<window>\d+):(?<seq>\d+)(?::(?<offset>-?\d+))?/i;
 const TIME_SYNC_RESP_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*TIME_SYNC_RESP:(?<time>\d+):(?<window>\d+):(?<seq>\d+)(?::(?<offset>-?\d+))?/i;
+
+const DONE_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<op>SCAN|DEAUTH|DRONE|BASELINE|LIST_SCAN|PROBE)_DONE:\s*(?<body>.+)$/i;
+
+const CODES_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*CODES:(?<codes>.*)$/i;
 
 const NODE_ID_FALLBACK = /^([A-Za-z0-9_.:-]+)/;
 
@@ -144,8 +149,10 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseAnomaly(payload, sourceId, sanitized) ||
       this.parseAttack(payload, sourceId, sanitized) ||
       this.parseRandomization(payload, sourceId, sanitized) ||
+      this.parseDoneSummary(payload, sourceId, sanitized) ||
       this.parseVibration(payload, sourceId, sanitized) ||
       this.parseTamper(payload, sourceId, sanitized) ||
+      this.parseCodes(payload, sourceId, sanitized) ||
       this.parseTriangulationMeta(payload, sourceId, sanitized) ||
       this.parseStatus(payload, sourceId, sanitized) ||
       this.parseTimeSync(payload, sourceId, sanitized) ||
@@ -449,6 +456,92 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       ];
     }
     return null;
+  }
+
+  private parseDoneSummary(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const m = DONE_REGEX.exec(payload);
+    if (!m?.groups) return null;
+    const id = nodeId ?? m.groups.id;
+    const op = m.groups.op.toUpperCase();
+    const data = this.parseKVBody(m.groups.body);
+    const ackType = `${op}_DONE_ACK`;
+    const categoryMap: Record<string, string> = {
+      SCAN: 'scan-done',
+      DEAUTH: 'deauth-done',
+      DRONE: 'drone-done',
+      BASELINE: 'baseline-done',
+      LIST_SCAN: 'list-scan-done',
+      PROBE: 'probe-done',
+    };
+    return [
+      {
+        kind: 'alert',
+        nodeId: id,
+        category: categoryMap[op] ?? `${op.toLowerCase()}-done`,
+        level: 'INFO',
+        message: `${op}_DONE`,
+        data,
+        raw,
+      },
+      {
+        kind: 'command-ack',
+        nodeId: id,
+        ackType,
+        status: 'DONE',
+        raw,
+      },
+    ];
+  }
+
+  private parseCodes(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const m = CODES_REGEX.exec(payload);
+    if (!m?.groups) return null;
+    const id = nodeId ?? m.groups.id;
+    const body = m.groups.codes.trim();
+    const codes =
+      body.toUpperCase() === 'NONE' || !body
+        ? []
+        : body.split(',').map((c) => c.trim()).filter(Boolean);
+    return [
+      {
+        kind: 'alert',
+        nodeId: id,
+        category: 'gate-codes',
+        level: 'INFO',
+        message: `CODES:${body || 'NONE'}`,
+        data: { codes },
+        raw,
+      },
+      {
+        kind: 'command-ack',
+        nodeId: id,
+        ackType: 'CODE_LIST_ACK',
+        status: 'OK',
+        raw,
+      },
+    ];
+  }
+
+  private parseKVBody(body: string): Record<string, number | string> {
+    const result: Record<string, number | string> = {};
+    const pairs = body.match(/[A-Za-z_]+=\S+/g);
+    if (!pairs) return result;
+    for (const pair of pairs) {
+      const eqIdx = pair.indexOf('=');
+      const key = pair.slice(0, eqIdx);
+      const val = pair.slice(eqIdx + 1);
+      const num = Number(val);
+      result[key] = Number.isFinite(num) ? num : val;
+    }
+    return result;
   }
 
   private parseVibration(
