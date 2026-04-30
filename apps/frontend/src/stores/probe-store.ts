@@ -100,10 +100,7 @@ export const useProbeStore = create<ProbeStoreState>()((set, get) => ({
       for (const d of devices) {
         const key = d.mac.toUpperCase();
         const existing = merged[key];
-        if (
-          !existing ||
-          new Date(d.lastSeen).getTime() >= new Date(existing.lastSeen).getTime()
-        ) {
+        if (!existing || new Date(d.lastSeen).getTime() >= new Date(existing.lastSeen).getTime()) {
           merged[key] = d;
         }
       }

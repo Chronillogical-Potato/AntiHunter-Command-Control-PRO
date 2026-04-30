@@ -222,7 +222,8 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'DEVICE_SCAN_START',
     group: 'Scanning',
-    description: 'Start device scan for WiFi/BLE devices. +PROBE enables probe request capture during the scan.',
+    description:
+      'Start device scan for WiFi/BLE devices. +PROBE enables probe request capture during the scan.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -376,7 +377,8 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'PROBE_START',
     group: 'Scanning',
-    description: 'Start probe request scanner (mode 0=WiFi,1=BLE,2=Both). +ALL broadcasts every probe over mesh.',
+    description:
+      'Start probe request scanner (mode 0=WiFi,1=BLE,2=Both). +ALL broadcasts every probe over mesh.',
     defaultTarget: '@ALL',
     parameters: [
       {

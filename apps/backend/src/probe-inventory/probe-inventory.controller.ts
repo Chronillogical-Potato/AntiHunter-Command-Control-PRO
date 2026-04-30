@@ -1,8 +1,8 @@
 import { Controller, Delete, Get, HttpCode } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
-import { Roles } from '../auth/auth.decorators';
 import { ProbeDevice, ProbeInventoryService } from './probe-inventory.service';
+import { Roles } from '../auth/auth.decorators';
 
 @Controller('probe-inventory')
 export class ProbeInventoryController {

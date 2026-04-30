@@ -509,7 +509,10 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const codes =
       body.toUpperCase() === 'NONE' || !body
         ? []
-        : body.split(',').map((c) => c.trim()).filter(Boolean);
+        : body
+            .split(',')
+            .map((c) => c.trim())
+            .filter(Boolean);
     return [
       {
         kind: 'alert',

@@ -5,7 +5,15 @@ import { apiClient } from '../api/client';
 import { useAuthStore } from '../stores/auth-store';
 import { ProbeDevice, useProbeStore } from '../stores/probe-store';
 
-type SortKey = 'mac' | 'vendor' | 'hits' | 'lastRssi' | 'minRssi' | 'maxRssi' | 'channel' | 'lastSeen';
+type SortKey =
+  | 'mac'
+  | 'vendor'
+  | 'hits'
+  | 'lastRssi'
+  | 'minRssi'
+  | 'maxRssi'
+  | 'channel'
+  | 'lastSeen';
 
 function rssiColor(rssi: number): string {
   if (rssi >= -60) return '#22c55e';
@@ -28,7 +36,11 @@ export function ProbeInventoryPage() {
   const setDevices = useProbeStore((state) => state.setDevices);
   const clearStore = useProbeStore((state) => state.clear);
 
-  const { data: queryData, isLoading, isError } = useQuery<ProbeDevice[]>({
+  const {
+    data: queryData,
+    isLoading,
+    isError,
+  } = useQuery<ProbeDevice[]>({
     queryKey: ['probe-inventory'],
     queryFn: () => apiClient.get<ProbeDevice[]>('/probe-inventory'),
     refetchInterval: 5_000,
@@ -161,12 +173,20 @@ export function ProbeInventoryPage() {
                   </button>
                 </th>
                 <th>
-                  <button type="button" className="table-sort" onClick={() => handleSort('lastRssi')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('lastRssi')}
+                  >
                     RSSI {sortIcon('lastRssi')}
                   </button>
                 </th>
                 <th>
-                  <button type="button" className="table-sort" onClick={() => handleSort('channel')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('channel')}
+                  >
                     CH {sortIcon('channel')}
                   </button>
                 </th>
@@ -177,7 +197,11 @@ export function ProbeInventoryPage() {
                   </button>
                 </th>
                 <th>
-                  <button type="button" className="table-sort" onClick={() => handleSort('lastSeen')}>
+                  <button
+                    type="button"
+                    className="table-sort"
+                    onClick={() => handleSort('lastSeen')}
+                  >
                     Last Seen {sortIcon('lastSeen')}
                   </button>
                 </th>
@@ -220,7 +244,8 @@ export function ProbeInventoryPage() {
                   <td>
                     <span style={{ color: rssiColor(d.lastRssi) }}>{d.lastRssi}</span>
                     <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>
-                      {' '}({d.minRssi}/{d.maxRssi})
+                      {' '}
+                      ({d.minRssi}/{d.maxRssi})
                     </span>
                   </td>
                   <td>{d.channel ?? '—'}</td>
@@ -238,7 +263,8 @@ export function ProbeInventoryPage() {
                         {d.ssids[0]}
                         {d.ssids.length > 1 && (
                           <span style={{ color: 'var(--color-text-muted)' }}>
-                            {' '}+{d.ssids.length - 1}
+                            {' '}
+                            +{d.ssids.length - 1}
                           </span>
                         )}
                       </span>

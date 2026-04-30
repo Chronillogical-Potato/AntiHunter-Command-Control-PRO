@@ -4,13 +4,18 @@ import { DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { SerialService } from './serial.service';
-import { SerialAlertEvent, SerialParseResult, SerialProbeHit, SerialTargetDetected } from './serial.types';
-import { ProbeInventoryService } from '../probe-inventory/probe-inventory.service';
+import {
+  SerialAlertEvent,
+  SerialParseResult,
+  SerialProbeHit,
+  SerialTargetDetected,
+} from './serial.types';
 import { AlertRulesEngineService } from '../alert-rules/alert-rules-engine.service';
 import { CommandsService } from '../commands/commands.service';
 import { DronesService } from '../drones/drones.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { NodesService } from '../nodes/nodes.service';
+import { ProbeInventoryService } from '../probe-inventory/probe-inventory.service';
 import { TakService } from '../tak/tak.service';
 import { TargetsService } from '../targets/targets.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
