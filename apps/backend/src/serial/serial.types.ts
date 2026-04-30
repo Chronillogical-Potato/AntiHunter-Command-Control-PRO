@@ -3,6 +3,7 @@ export type SerialParseResult =
   | SerialTargetDetected
   | SerialAlertEvent
   | SerialDroneTelemetry
+  | SerialProbeHit
   | SerialCommandAck
   | SerialCommandResult
   | SerialRawFrame;
@@ -57,6 +58,23 @@ export interface SerialDroneTelemetry {
   operatorLat?: number;
   operatorLon?: number;
   rssi?: number;
+  raw: string;
+  timestamp?: Date;
+}
+
+export interface SerialProbeHit {
+  kind: 'probe-hit';
+  nodeId?: string;
+  mac: string;
+  vendor?: string;
+  isRandomized: boolean;
+  rssi: number;
+  channel?: number;
+  ssid?: string;
+  isGhost: boolean;
+  isDst: boolean;
+  lat?: number;
+  lon?: number;
   raw: string;
   timestamp?: Date;
 }

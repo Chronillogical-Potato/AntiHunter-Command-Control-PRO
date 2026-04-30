@@ -28,6 +28,7 @@ import { ConfigPage } from './pages/ConfigPage';
 import { ExportsPage } from './pages/ExportsPage';
 import { GeofencePage } from './pages/GeofencePage';
 import { InventoryPage } from './pages/InventoryPage';
+import { ProbeInventoryPage } from './pages/ProbeInventoryPage';
 import { MapPage } from './pages/MapPage';
 import { NodesPage } from './pages/NodesPage';
 import { SchedulerPage } from './pages/SchedulerPage';
@@ -133,6 +134,7 @@ export default function App() {
               <Route path="/targets" element={<TargetsPage />} />
               <Route path="/strategy" element={<StrategyAdvisorPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
+              <Route path="/probes" element={<ProbeInventoryPage />} />
               <Route path="/alerts" element={<Navigate to="/alerts/custom" replace />} />
               <Route path="/alerts/custom" element={<AlertsPage />} />
               <Route path="/alerts/adsb" element={<AdsbAlertsPage />} />

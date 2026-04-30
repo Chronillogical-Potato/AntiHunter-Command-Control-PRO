@@ -1,4 +1,4 @@
-import { SerialParseResult, SerialProtocolParser } from '../serial.types';
+import { SerialParseResult, SerialProtocolParser, SerialProbeHit } from '../serial.types';
 
 // Parser rewritten from catalog in meshmessages.xlsx/README.
 // Triangulation multi-line results are left as raw.
@@ -60,7 +60,10 @@ const BATTERY_SAVER_STATUS_REGEX =
 
 const HEARTBEAT_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HEARTBEAT:\s*(?<msg>.+)$/i;
 const ACK_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|HB)_ACK):?(?<status>[A-Z_]*)/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|PROBE|HB)_ACK):?(?<status>[A-Z_]*)/i;
+
+const PROBE_HIT_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*PROBE_HIT:?\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(?<vendor>\S+)\s+RSSI[=:](?<rssi>-?\d+)(?:\s+CH[=:](?<channel>\d+))?(?:\s+SSID[=:"]*(?<ssid>[^"\s]+)"?)?(?:\s+(?<ghost>GHOST))?(?:\s+(?<dst>DST))?(?:\s+GPS[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 const HB_ACK_INTERVAL_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HB_ACK:INTERVAL\s+(?<minutes>\d+)min/i;
 const WIPE_TOKEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*WIPE_TOKEN:(?<token>[A-Za-z0-9_:-]+)/i;
 const ERASE_TOKEN_REGEX =
@@ -137,6 +140,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseTriangulationTarget(payload, sourceId, sanitized) ||
       this.parseDevice(payload, sourceId, sanitized) ||
       this.parseDrone(payload, sourceId, sanitized) ||
+      this.parseProbeHit(payload, sourceId, sanitized) ||
       this.parseAnomaly(payload, sourceId, sanitized) ||
       this.parseAttack(payload, sourceId, sanitized) ||
       this.parseRandomization(payload, sourceId, sanitized) ||
@@ -285,6 +289,40 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
         raw,
       },
     ];
+  }
+
+  private parseProbeHit(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const m = PROBE_HIT_REGEX.exec(payload);
+    if (!m?.groups) return null;
+    const vendor = m.groups.vendor?.trim();
+    const vendorLower = vendor?.toLowerCase();
+    const macOctet = parseInt(m.groups.mac.split(':')[0] ?? '0', 16);
+    const laaFlagSet = (macOctet & 0x02) !== 0 && (macOctet & 0x01) === 0;
+    const fwSaysRandomized = vendorLower === 'randomized';
+    const fwSaysUnknown = vendorLower === 'unknown';
+    const hasKnownVendor = vendor != null && !fwSaysRandomized && !fwSaysUnknown;
+    const isRandomized = fwSaysRandomized || (!hasKnownVendor && laaFlagSet);
+    const resolvedVendor = hasKnownVendor ? vendor : undefined;
+    const result: SerialProbeHit = {
+      kind: 'probe-hit',
+      nodeId: nodeId ?? m.groups.id,
+      mac: m.groups.mac.toUpperCase(),
+      vendor: resolvedVendor,
+      isRandomized,
+      rssi: Number(m.groups.rssi),
+      channel: m.groups.channel ? Number(m.groups.channel) : undefined,
+      ssid: m.groups.ssid ?? undefined,
+      isGhost: Boolean(m.groups.ghost),
+      isDst: Boolean(m.groups.dst),
+      lat: m.groups.lat ? Number(m.groups.lat) : undefined,
+      lon: m.groups.lon ? Number(m.groups.lon) : undefined,
+      raw,
+    };
+    return [result];
   }
 
   private parseAnomaly(

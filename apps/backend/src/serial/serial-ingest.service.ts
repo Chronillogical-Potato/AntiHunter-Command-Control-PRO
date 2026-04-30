@@ -4,7 +4,8 @@ import { DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { SerialService } from './serial.service';
-import { SerialAlertEvent, SerialParseResult, SerialTargetDetected } from './serial.types';
+import { SerialAlertEvent, SerialParseResult, SerialProbeHit, SerialTargetDetected } from './serial.types';
+import { ProbeInventoryService } from '../probe-inventory/probe-inventory.service';
 import { AlertRulesEngineService } from '../alert-rules/alert-rules-engine.service';
 import { CommandsService } from '../commands/commands.service';
 import { DronesService } from '../drones/drones.service';
@@ -102,6 +103,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly dronesService: DronesService,
     private readonly alertRulesEngine: AlertRulesEngineService,
     private readonly targetsService: TargetsService,
+    private readonly probeInventoryService: ProbeInventoryService,
     configService: ConfigService,
   ) {
     const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
@@ -733,6 +735,27 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             );
         }
         break;
+      case 'probe-hit': {
+        const probeEvent = event as SerialProbeHit;
+        const device = this.probeInventoryService.record(probeEvent, siteId);
+        this.gateway.emitEvent({
+          type: 'event.probe-hit',
+          timestamp: new Date().toISOString(),
+          nodeId: probeEvent.nodeId,
+          mac: probeEvent.mac,
+          vendor: probeEvent.vendor ?? null,
+          isRandomized: probeEvent.isRandomized,
+          rssi: probeEvent.rssi,
+          channel: probeEvent.channel ?? null,
+          ssid: probeEvent.ssid ?? null,
+          isGhost: probeEvent.isGhost,
+          isDst: probeEvent.isDst,
+          hits: device.hits,
+          siteId,
+          raw: probeEvent.raw,
+        });
+        break;
+      }
       case 'raw':
       default:
         this.gateway.emitEvent({ type: 'raw', raw: event.raw });
@@ -860,6 +883,14 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           event.mac,
           event.channel ?? 'na',
           event.type ?? '',
+        ].join(':');
+      case 'probe-hit':
+        return [
+          'probe',
+          siteId ?? 'local',
+          event.nodeId ?? 'unknown',
+          event.mac,
+          event.ssid ?? '',
         ].join(':');
       case 'command-ack':
         return ['ack', event.nodeId ?? 'unknown', event.ackType, event.status].join(':');
