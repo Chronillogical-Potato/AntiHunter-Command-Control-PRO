@@ -1597,6 +1597,12 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         return `${nodeId}:ANOMALY:${kind}:${type}:${mac.toUpperCase()}`;
       }
 
+      case 'PROBE_HIT': {
+        const mac = /((?:[0-9A-F]{2}:){5}[0-9A-F]{2})/i.exec(content)?.[1] || '';
+        const ssid = /SSID[=:"]*([^"\s]+)/i.exec(content)?.[1] || '';
+        return `${nodeId}:PROBE_HIT:${mac.toUpperCase()}:${ssid}`;
+      }
+
       case 'IDENTITY': {
         const tag = /IDENTITY:([^\s]+)/.exec(content)?.[1] || '';
         const band = /\s([WB])\s/.exec(content)?.[1] || '';
@@ -1773,7 +1779,7 @@ function sanitizeLine(value: string): string {
   // and the hop adds "relayName: " in front. We detect by checking if the second
   // token is a plain node ID (not a keyword) and the third token IS a keyword.
   const HOP_KEYWORD_RE =
-    /^(?:STATUS|Target|DEVICE|DRONE|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|Time:)/i;
+    /^(?:STATUS|Target|DEVICE|DRONE|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PROBE_HIT|PROBE_ACK|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|Time:)/i;
   const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
   if (hopMatch) {
     const secondToken = hopMatch[2].replace(/[:\s]+$/, '');

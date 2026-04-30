@@ -36,6 +36,13 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['BASELINE_STATUS', expectNoParams],
   ['STOP', expectNoParams],
   ['VIBRATION_STATUS', expectNoParams],
+  ['VIBRATION_ON', expectNoParams],
+  ['VIBRATION_OFF', expectNoParams],
+  ['HB_ON', expectNoParams],
+  ['HB_OFF', expectNoParams],
+  ['HB_INTERVAL', handleHbInterval],
+  ['PROBE_START', handleProbeStart],
+  ['PROBE_STOP', expectNoParams],
   ['TRIANGULATE_START', handleTriangulateStart],
   ['TRIANGULATE_STOP', expectNoParams],
   ['TRIANGULATE_RESULTS', expectNoParams],
@@ -173,16 +180,25 @@ function handleScanStart(params: string[]): string[] {
 }
 
 function handleDeviceScanStart(params: string[]): string[] {
-  if (params.length < 2 || params.length > 3) {
+  if (params.length < 2 || params.length > 4) {
     throw new BadRequestException(
-      'DEVICE_SCAN_START expects mode, duration (seconds), and optional FOREVER token.',
+      'DEVICE_SCAN_START expects mode, duration (seconds), and optional FOREVER and/or +PROBE tokens.',
     );
   }
   const mode = normalizeMode(params[0]);
   const duration = normalizeDuration(params[1]);
   const output = [mode, duration];
-  if (params.length === 3) {
-    output.push(normalizeForever(params[2]));
+  for (let i = 2; i < params.length; i++) {
+    const token = params[i].trim().toUpperCase();
+    if (token === 'FOREVER') {
+      output.push('FOREVER');
+    } else if (token === '+PROBE') {
+      output.push('+PROBE');
+    } else {
+      throw new BadRequestException(
+        `Invalid DEVICE_SCAN_START token: ${params[i]}. Expected FOREVER or +PROBE.`,
+      );
+    }
   }
   return output;
 }
@@ -402,6 +418,41 @@ function validateChannel(channel: number): void {
   if (channel < 1 || channel > 14) {
     throw new BadRequestException('Channel values must be between 1 and 14.');
   }
+}
+
+function handleHbInterval(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('HB_INTERVAL expects a single interval parameter (minutes).');
+  }
+  const interval = Number.parseInt(params[0].trim(), 10);
+  if (!Number.isFinite(interval) || interval < 1 || interval > 1440) {
+    throw new BadRequestException('Heartbeat interval must be between 1 and 1440 minutes.');
+  }
+  return [interval.toString()];
+}
+
+function handleProbeStart(params: string[]): string[] {
+  if (params.length < 1) {
+    throw new BadRequestException(
+      'PROBE_START expects mode:secs[:FOREVER][:+ALL]. Mode: 0=WiFi, 1=BLE, 2=Both.',
+    );
+  }
+  const joined = params.join(':');
+  const segments = joined.split(':').map((s) => s.trim());
+  const result: string[] = [];
+  for (const seg of segments) {
+    const upper = seg.toUpperCase();
+    if (upper === 'FOREVER' || upper === '+ALL') {
+      result.push(upper);
+    } else {
+      const num = Number.parseInt(seg, 10);
+      if (!Number.isFinite(num) || num < 0) {
+        throw new BadRequestException(`Invalid PROBE_START parameter: ${seg}`);
+      }
+      result.push(num.toString());
+    }
+  }
+  return result;
 }
 
 function handleBatterySaverStart(params: string[]): string[] {

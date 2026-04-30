@@ -25,6 +25,7 @@ import { useGeofenceStore } from '../stores/geofence-store';
 import type { GeofenceEvent } from '../stores/geofence-store';
 import { useMapPreferences } from '../stores/map-store';
 import { canonicalNodeId, NodeDiffPayload, NodeSummary, useNodeStore } from '../stores/node-store';
+import { useProbeStore } from '../stores/probe-store';
 import { TerminalEntry, TerminalLevel, useTerminalStore } from '../stores/terminal-store';
 import { useTrackingBannerStore } from '../stores/tracking-banner-store';
 import { useTrackingSessionStore } from '../stores/tracking-session-store';
@@ -55,6 +56,7 @@ export function SocketBridge() {
   const addChatIncoming = useChatStore((state) => state.addIncoming);
   const appendAdsbTrail = useAdsbStore((state) => state.appendTrailPoint);
   const pruneAdsbTrails = useAdsbStore((state) => state.pruneInactiveTracks);
+  const addProbeHit = useProbeStore((state) => state.addHit);
 
   useEffect(() => {
     if (!socket) {
@@ -470,6 +472,32 @@ export function SocketBridge() {
         return;
       }
 
+      if (isProbeHitEvent(payload)) {
+        addProbeHit({
+          mac: payload.mac,
+          vendor: payload.vendor,
+          isRandomized: payload.isRandomized,
+          rssi: payload.rssi,
+          channel: payload.channel,
+          ssid: payload.ssid,
+          isGhost: payload.isGhost,
+          isDst: payload.isDst,
+          hits: payload.hits,
+          nodeId: payload.nodeId ?? undefined,
+          siteId: payload.siteId,
+          timestamp: payload.timestamp ?? new Date().toISOString(),
+        });
+        const label = payload.vendor ?? (payload.isRandomized ? 'Randomized' : payload.mac);
+        addEntry({
+          message: `Probe: ${payload.mac} [${label}] RSSI:${payload.rssi}${payload.ssid ? ` SSID:${payload.ssid}` : ''}${payload.isGhost ? ' GHOST' : ''}`,
+          level: 'info',
+          source: 'inventory',
+          timestamp: payload.timestamp,
+          siteId: payload.siteId ?? undefined,
+        });
+        return;
+      }
+
       const entry = parseEventPayload(payload, {
         onTriangulationComplete: () => {
           void queryClient.invalidateQueries({ queryKey: ['targets'] });
@@ -696,6 +724,7 @@ export function SocketBridge() {
     setDroneStatus,
     appendAdsbTrail,
     pruneAdsbTrails,
+    addProbeHit,
   ]);
 
   useEffect(() => {
@@ -1483,6 +1512,26 @@ function isTriangulationDetectionEvent(payload: unknown): payload is {
     Number.isFinite(base.nodeLat) &&
     Number.isFinite(base.nodeLon)
   );
+}
+
+function isProbeHitEvent(payload: unknown): payload is {
+  type: 'event.probe-hit';
+  mac: string;
+  vendor?: string | null;
+  isRandomized: boolean;
+  rssi: number;
+  channel?: number | null;
+  ssid?: string | null;
+  isGhost: boolean;
+  isDst: boolean;
+  hits: number;
+  nodeId?: string | null;
+  siteId?: string | null;
+  timestamp?: string;
+} {
+  if (!payload || typeof payload !== 'object') return false;
+  const base = payload as { type?: string; mac?: string };
+  return base.type === 'event.probe-hit' && typeof base.mac === 'string';
 }
 
 function isTriangulationCompleteEvent(payload: unknown): payload is {

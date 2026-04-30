@@ -27,6 +27,7 @@ import { MqttModule } from './mqtt/mqtt.module';
 import { NodesModule } from './nodes/nodes.module';
 import { OuiModule } from './oui/oui.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProbeInventoryModule } from './probe-inventory/probe-inventory.module';
 import { SerialModule } from './serial/serial.module';
 import { SitesModule } from './sites/sites.module';
 import { TakModule } from './tak/tak.module';
@@ -101,6 +102,7 @@ import { WsModule } from './ws/ws.module';
     ExportsModule,
     WebhooksModule,
     UpdateModule,
+    ProbeInventoryModule,
   ],
 })
 export class AppModule implements NestModule {

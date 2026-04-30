@@ -4,12 +4,18 @@ import { DroneStatus } from '@prisma/client';
 import { Subscription } from 'rxjs';
 
 import { SerialService } from './serial.service';
-import { SerialAlertEvent, SerialParseResult, SerialTargetDetected } from './serial.types';
+import {
+  SerialAlertEvent,
+  SerialParseResult,
+  SerialProbeHit,
+  SerialTargetDetected,
+} from './serial.types';
 import { AlertRulesEngineService } from '../alert-rules/alert-rules-engine.service';
 import { CommandsService } from '../commands/commands.service';
 import { DronesService } from '../drones/drones.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { NodesService } from '../nodes/nodes.service';
+import { ProbeInventoryService } from '../probe-inventory/probe-inventory.service';
 import { TakService } from '../tak/tak.service';
 import { TargetsService } from '../targets/targets.service';
 import { TargetTrackingService } from '../tracking/target-tracking.service';
@@ -102,6 +108,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly dronesService: DronesService,
     private readonly alertRulesEngine: AlertRulesEngineService,
     private readonly targetsService: TargetsService,
+    private readonly probeInventoryService: ProbeInventoryService,
     configService: ConfigService,
   ) {
     const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
@@ -733,6 +740,65 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             );
         }
         break;
+      case 'probe-hit': {
+        const probeEvent = event as SerialProbeHit;
+        const device = this.probeInventoryService.record(probeEvent, siteId);
+
+        const asTarget: SerialTargetDetected = {
+          kind: 'target-detected',
+          nodeId: probeEvent.nodeId ?? 'unknown',
+          mac: probeEvent.mac,
+          rssi: probeEvent.rssi,
+          type: 'WiFi',
+          name: probeEvent.ssid,
+          channel: probeEvent.channel,
+          lat: probeEvent.lat,
+          lon: probeEvent.lon,
+          raw: probeEvent.raw,
+        };
+        const nodeSnapshot = probeEvent.nodeId
+          ? this.nodesService.getSnapshotById(probeEvent.nodeId)
+          : undefined;
+        await this.inventoryService.recordDetection(
+          asTarget,
+          siteId,
+          nodeSnapshot?.lat,
+          nodeSnapshot?.lon,
+        );
+
+        this.gateway.emitEvent({
+          type: 'event.probe-hit',
+          timestamp: new Date().toISOString(),
+          nodeId: probeEvent.nodeId,
+          mac: probeEvent.mac,
+          vendor: probeEvent.vendor ?? null,
+          isRandomized: probeEvent.isRandomized,
+          rssi: probeEvent.rssi,
+          channel: probeEvent.channel ?? null,
+          ssid: probeEvent.ssid ?? null,
+          isGhost: probeEvent.isGhost,
+          isDst: probeEvent.isDst,
+          hits: device.hits,
+          siteId,
+          raw: probeEvent.raw,
+        });
+
+        this.gateway.emitEvent({
+          type: 'event.target',
+          timestamp: new Date().toISOString(),
+          nodeId: probeEvent.nodeId,
+          mac: probeEvent.mac,
+          rssi: probeEvent.rssi,
+          deviceType: 'WiFi',
+          lat: probeEvent.lat ?? nodeSnapshot?.lat ?? null,
+          lon: probeEvent.lon ?? nodeSnapshot?.lon ?? null,
+          channel: probeEvent.channel ?? null,
+          message: `Probe ${probeEvent.mac} (RSSI ${probeEvent.rssi})`,
+          raw: probeEvent.raw,
+          siteId,
+        });
+        break;
+      }
       case 'raw':
       default:
         this.gateway.emitEvent({ type: 'raw', raw: event.raw });
@@ -860,6 +926,14 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           event.mac,
           event.channel ?? 'na',
           event.type ?? '',
+        ].join(':');
+      case 'probe-hit':
+        return [
+          'probe',
+          siteId ?? 'local',
+          event.nodeId ?? 'unknown',
+          event.mac,
+          event.ssid ?? '',
         ].join(':');
       case 'command-ack':
         return ['ack', event.nodeId ?? 'unknown', event.ackType, event.status].join(':');

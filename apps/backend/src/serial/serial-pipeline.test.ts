@@ -57,7 +57,7 @@ function sanitizeLine(value: string): string {
   }
 
   const HOP_KEYWORD_RE =
-    /^(?:STATUS|Target|DEVICE|DRONE|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|Time:)/i;
+    /^(?:STATUS|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|Time:)/i;
   const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
   if (hopMatch) {
     const secondToken = hopMatch[2].replace(/[:\s]+$/, '');
@@ -160,6 +160,40 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     name: 'DRONE minimal',
     input: 'AH5: DRONE: 11:22:33:44:55:66 ID:Unknown R-90 GPS:40.0,-105.0',
     expectKinds: ['drone-telemetry'],
+  },
+
+  // ─── PROBE_HIT ───
+  {
+    name: 'PROBE_HIT with SSID',
+    input: 'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Apple RSSI=-65 CH=6 SSID="HomeNetwork"',
+    expectKinds: ['probe-hit'],
+    expectNodeId: 'AH5',
+  },
+  {
+    name: 'PROBE_HIT no SSID (wildcard)',
+    input: 'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Apple RSSI=-72 CH=1',
+    expectKinds: ['probe-hit'],
+  },
+  {
+    name: 'PROBE_HIT randomized MAC',
+    input: 'AH5: PROBE_HIT 02:AB:CD:EF:12:34 Randomized RSSI=-80 CH=11',
+    expectKinds: ['probe-hit'],
+  },
+  {
+    name: 'PROBE_HIT GHOST flag',
+    input: 'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Samsung RSSI=-55 CH=6 GHOST',
+    expectKinds: ['probe-hit'],
+  },
+  {
+    name: 'PROBE_HIT DST flag',
+    input: 'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Unknown RSSI=-68 CH=1 DST',
+    expectKinds: ['probe-hit'],
+  },
+  {
+    name: 'PROBE_HIT with GPS',
+    input:
+      'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Intel RSSI=-60 CH=6 SSID="CorpNet" GPS=12.345,-54.321',
+    expectKinds: ['probe-hit'],
   },
 
   // ─── ANOMALY ───
@@ -400,6 +434,16 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     expectKinds: ['command-ack'],
   },
   {
+    name: 'PROBE_ACK STARTED',
+    input: 'AH5: PROBE_ACK:STARTED',
+    expectKinds: ['command-ack'],
+  },
+  {
+    name: 'PROBE_ACK STOPPED',
+    input: 'AH5: PROBE_ACK:STOPPED',
+    expectKinds: ['command-ack'],
+  },
+  {
     name: 'TRIANGULATE_STOP_ACK',
     input: 'AH5: TRIANGULATE_STOP_ACK',
     expectKinds: ['command-ack'],
@@ -464,6 +508,64 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     name: 'TIME_SYNC_RESP',
     input: 'AH5: TIME_SYNC_RESP:1700000000:60:1:3',
     expectKinds: ['alert'],
+  },
+
+  // ─── *_DONE SUMMARIES ───
+  {
+    name: 'SCAN_DONE',
+    input: 'AH5: SCAN_DONE: W=42 B=18 U=60 H=125 TX=60 PEND=0',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'scan-done',
+  },
+  {
+    name: 'DEAUTH_DONE',
+    input: 'AH5: DEAUTH_DONE: Total=42 Deauth=30 Disassoc=12 TX=42 PEND=0',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'deauth-done',
+  },
+  {
+    name: 'DRONE_DONE',
+    input: 'AH5: DRONE_DONE: Detected=3 Unique=3 TX=3 PEND=0',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'drone-done',
+  },
+  {
+    name: 'BASELINE_DONE',
+    input: 'AH5: BASELINE_DONE: Devices=39 Anomalies=0 WiFi=23 BLE=16 TX=19 PEND=20',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'baseline-done',
+  },
+  {
+    name: 'LIST_SCAN_DONE',
+    input: 'AH5: LIST_SCAN_DONE: Hits=250 Unique=15 Targets=15 TX=15 PEND=0',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'list-scan-done',
+  },
+
+  // ─── CODES ───
+  {
+    name: 'CODES with values',
+    input: 'AH5: CODES:150910,999888',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'gate-codes',
+  },
+  {
+    name: 'CODES none',
+    input: 'AH5: CODES:NONE',
+    expectKinds: ['alert', 'command-ack'],
+    expectCategory: 'gate-codes',
+  },
+
+  // ─── VIBRATION ACKs ───
+  {
+    name: 'VIBRATION_ON_ACK',
+    input: 'AH5: VIBRATION_ON_ACK:OK',
+    expectKinds: ['command-ack'],
+  },
+  {
+    name: 'VIBRATION_OFF_ACK',
+    input: 'AH5: VIBRATION_OFF_ACK:OK',
+    expectKinds: ['command-ack'],
   },
 ];
 

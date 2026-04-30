@@ -5,6 +5,7 @@ import { CommandsModule } from '../commands/commands.module';
 import { DronesModule } from '../drones/drones.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { NodesModule } from '../nodes/nodes.module';
+import { ProbeInventoryModule } from '../probe-inventory/probe-inventory.module';
 import { SerialIngestService } from '../serial/serial-ingest.service';
 import { SerialModule } from '../serial/serial.module';
 import { TakModule } from '../tak/tak.module';
@@ -27,6 +28,7 @@ import { WsModule } from '../ws/ws.module';
     AlertRulesModule,
     WebhooksModule,
     TriangulationModule,
+    ProbeInventoryModule,
   ],
   providers: [SerialIngestService, TargetTrackingService],
 })
