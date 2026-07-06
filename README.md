@@ -25,22 +25,22 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 3. [Architecture](#architecture)
 4. [Security & Hardening](#security--hardening)
 5. [Repository Layout](#repository-layout)
-6. [Quick Start](#quick-start)
-7. [Prerequisites](#prerequisites)
-8. [Platform Setup](#platform-setup)
-9. [Installation](#installation)
-10. [Configuration](#configuration)
-11. [Database & Migrations](#database--migrations)
-12. [Running the Stack](#running-the-stack)
-    - [Updating an Existing Deployment](#updating-an-existing-deployment)
-13. [Running with Docker](#running-with-docker)
-14. [Building for Production](#building-for-production)
-15. [Production Deployment](#production-deployment)
-16. [Serial Hardware & Meshtastic Sniffer](#serial-hardware--meshtastic-sniffer)
-17. [Useful Scripts](#useful-scripts)
-18. [Operations & Maintenance](#operations--maintenance)
-19. [Troubleshooting](#troubleshooting)
-20. [Legal Disclaimer](#legal-disclaimer)
+6. [Installation](#installation)
+   - [Scripted — Linux / macOS](#scripted--linux--macos)
+   - [Scripted — Windows 10/11](#scripted--windows-1011)
+   - [Docker](#docker)
+   - [Manual](#manual)
+7. [Configuration](#configuration)
+8. [Database & Migrations](#database--migrations)
+9. [Running the Stack](#running-the-stack)
+   - [Updating an Existing Deployment](#updating-an-existing-deployment)
+10. [Building for Production](#building-for-production)
+11. [Production Deployment](#production-deployment)
+12. [Serial Hardware & Meshtastic Sniffer](#serial-hardware--meshtastic-sniffer)
+13. [Useful Scripts](#useful-scripts)
+14. [Operations & Maintenance](#operations--maintenance)
+15. [Troubleshooting](#troubleshooting)
+16. [Legal Disclaimer](#legal-disclaimer)
 
 ---
 
@@ -388,34 +388,131 @@ Keep certificates, mail credentials, and site identifiers in environment variabl
 `- README.md
 ```
 
-## Quick Start
+## Installation
 
-### Automated Setup (Ubuntu, Debian Linux/macOS)
+Three ways to install, easiest first:
 
-The fastest way to get AntiHunter Command Center running locally. Script is a work in progress (to support more systems):
+- **Scripted** — one command installs prerequisites (Node, pnpm, PostgreSQL), clones, configures the database, runs migrations, and seeds an admin login. Linux, macOS, and Windows.
+- **Docker** — `docker compose` brings up backend, frontend, and Postgres; no local Node or PostgreSQL needed.
+- **Manual** — install each piece yourself for full control.
+
+### Scripted — Linux / macOS
 
 ```bash
-# Download and run the setup script
 curl -o setup-local.sh https://raw.githubusercontent.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO/main/scripts/setup-local.sh
 chmod +x setup-local.sh
 ./setup-local.sh
 ```
 
-**The script will:**
-- Check and install prerequisites (Node.js, pnpm, PostgreSQL)
-- Clone the repository
-- Configure the database with secure credentials
-- Install dependencies
-- Set up environment files
-- Run database migrations and seed data
+Run it as a regular user (not `sudo`) — it prompts for sudo when needed. Then open `http://localhost:5173` and log in with the credentials printed after setup.
 
-**Important:** Run the script as a regular user (not with `sudo`). The script will prompt for sudo when needed.
+### Scripted — Windows 10/11
 
-Access the web interface at `http://localhost:5173` and log in with the credentials displayed after setup.
+`scripts\setup-windows.ps1` installs Node, pnpm, and PostgreSQL, sets up the database, and creates your admin login. It doesn't start the app for you — it leaves a `Start-AntiHunter.cmd` launcher you run when you're ready.
 
-For production deployments, Docker, and advanced configuration, follow the directions below:
+Follow these steps in order:
 
-## Prerequisites
+1. **Install Git.** Open any PowerShell window and run:
+
+   ```powershell
+   winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements
+   ```
+
+   Close that window afterward so Git is on your PATH.
+
+2. **Open PowerShell as Administrator.** Click Start, type `powershell`, right-click **Windows PowerShell**, and choose **Run as administrator**. (The installer needs admin rights to install system software.)
+
+3. **Download and run the installer:**
+
+   ```powershell
+   cd $HOME
+   git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
+   cd AntiHunter-Command-Control-PRO
+   powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+   ```
+
+4. **Answer the prompts.** Press **Enter** to accept the defaults. The first run takes a few minutes. When it finishes, **write down the admin email and password it shows you.**
+
+5. **Start the app.** Double-click **`Start-AntiHunter.cmd`** in the project folder (or run `pnpm AHCC` in a normal PowerShell window).
+
+6. **Open the app.** Go to **http://localhost:5173** and log in with the admin email and password from step 4.
+
+To update later, open the app's update page or run `git pull` in the project folder.
+
+<details>
+<summary>Windows notes (firewall, serial, ARM64, WSL)</summary>
+
+- **Windows Firewall** may ask to allow Node.js the first time you start the app. Only using it on this PC? Click **Cancel** — `localhost` works regardless. Want to reach it from other devices on your network? Click **Allow**, and tick **Private** only (leave **Public** off).
+- **Serial hardware:** put `SERIAL_DEVICE=COM3` in `apps\backend\.env` (your port from **Device Manager -> Ports (COM & LPT)**), then restart the app.
+- **ARM64 Windows** (VM on Apple Silicon): the x64 builds install automatically — nothing extra to do.
+- **Don't use WSL** — COM ports don't pass through cleanly.
+</details>
+
+### Docker
+
+> Needs Docker Desktop (Windows/macOS) or Docker Engine (Linux), version 25 or newer, with virtualization enabled. On Windows/macOS, share the repository folder in Docker's file-sharing settings.
+
+#### 1. Check Docker
+
+```bash
+docker compose version
+docker info
+```
+
+The `docker compose` command (with a space) ships with current Docker; the old `docker-compose` is not used.
+
+#### 2. Serial adapter — comment out if you don't have one
+
+`docker-compose.yml` pins a Meshtastic adapter at `/dev/ttyUSB0`. Without that device (any macOS/Windows host, or Linux with no adapter plugged in) the backend container fails to start. Comment these lines out under the `backend` service first:
+
+```yaml
+# devices:
+#   - /dev/ttyUSB0:/dev/ttyUSB0
+# group_add:
+#   - dialout
+```
+
+#### 3. Clone and start
+
+```bash
+git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
+cd AntiHunter-Command-Control-PRO
+docker compose up -d --build
+```
+
+This brings up three containers:
+
+- `cc_postgres` — stores data in the `postgres-data` volume.
+- `cc_backend` — applies Prisma migrations and runs the seed on startup, serves HTTP/WebSocket on `http://localhost:3000`.
+- `cc_frontend` — serves the SPA on `http://localhost:8080` and proxies API calls.
+
+Log in at `http://localhost:8080` with the seeded admin, then change the password immediately:
+
+| Variable         | Default             |
+| ---------------- | ------------------- |
+| `ADMIN_EMAIL`    | `admin@example.com` |
+| `ADMIN_PASSWORD` | `admin`             |
+
+To change the admin login, database URL, mail server, or serial port, edit the `environment` block of the `backend` service in `docker-compose.yml` before the first run — `docker/.env.example` lists every variable. Compose uses those literal values; it does not read a separate `.env` file.
+
+#### 4. Logs and shutdown
+
+```bash
+docker compose logs -f backend      # or frontend, or postgres
+docker compose down                 # add --volumes to also delete the database
+```
+
+#### Upgrades and other settings
+
+- **Upgrade:** `git pull && docker compose up -d --build`. The backend re-applies migrations on boot. Stuck migration (Prisma `P3009`/`P3018`)? See [Troubleshooting](#troubleshooting).
+- **Skip auto-migrations:** set `RUN_MIGRATIONS=false` in the `backend` environment if you deploy schema changes another way.
+- **Development:** the containers run a compiled build, not a dev server. For hot reload, use the [pnpm setup](#running-the-stack).
+
+### Manual
+
+Install system dependencies, clone, set up PostgreSQL, then [configure](#configuration) and [run](#running-the-stack).
+
+### Prerequisites
 
 - **Node.js** 20 or newer (ships with Corepack for pnpm)
 
@@ -432,122 +529,40 @@ For production deployments, Docker, and advanced configuration, follow the direc
 
 - Optional: Docker Desktop (for Postgres), Git, serial drivers (FTDI/CH340)
 
-## Platform Setup
+### System Dependencies
 
-### Linux (Debian/Ubuntu)
+**Linux (Debian/Ubuntu)**
 
 ```bash
-
 sudo apt update
-
-sudo apt install -y curl git build-essential pkg-config libssl-dev \
-
-    python3 make gcc g++ postgresql-client
-
+sudo apt install -y curl git build-essential pkg-config libssl-dev python3 make gcc g++
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-
 sudo apt install -y nodejs
-
 sudo corepack enable
-
 corepack prepare pnpm@latest --activate
-
 sudo usermod -aG dialout "$USER"   # access to /dev/ttyUSB*
-
 ```
 
-### macOS
+**macOS**
 
 ```bash
 xcode-select --install
-brew install node@20 pnpm git postgresql
-brew services start postgresql
+brew install node@20 pnpm git
 ```
 
-<details>
-<summary>macOS Command Center install checklist</summary>
+For serial adapters, install the USB driver (Silicon Labs CP210x: `brew install --cask silicon-labs-vcp-driver`) and reboot so `/dev/tty.SLAB_USBtoUART*` (or `/dev/tty.wchusbserial*`) appears.
 
-1. **Clone & install dependencies**
+> PostgreSQL is installed in the [PostgreSQL Setup](#postgresql-setup) step below.
 
-   ```bash
-   git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
-   cd AntiHunter-Command-Control-PRO
-   pnpm install
-   ```
-
-2. **Install the USB serial driver for your adapter**
-   - Silicon Labs CP210x: `brew install --cask silicon-labs-vcp-driver`
-   - Reboot so `/dev/tty.wchusbserial*` (or `/dev/tty.SLAB_USBtoUART*`) appears.
-
-3. **Create `.env` with a unique `SITE_ID` before seeding**
-
-   ```env
-   SITE_ID=ahcc
-   SITE_NAME=AHCC
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/command_center
-   FPV_DECODER_ENABLED=true
-   PORT=3000
-   ```
-
-4. **Seed the database**
-
-   ```bash
-   pnpm --filter @command-center/backend prisma db seed
-   ```
-
-5. **Start backend (and frontend if desired)**
-
-   ```bash
-   pnpm --filter @command-center/backend dev
-   pnpm --filter @command-center/frontend dev
-   ```
-
-6. **Configure serial** – list ports, then set Config -> Serial
-
-   ```bash
-   pnpm --filter @command-center/backend exec node -e "const { SerialPortStream } = require('@serialport/stream'); SerialPortStream.list().then(list => console.log(list));"
-   ```
-
-7. **Enable MQTT federation** in Config -> MQTT (set broker URL/credentials and enable replication).
-
-8. **Verify runtime site**
-   ```bash
-   curl http://localhost:3000/api/config/runtime
-   ```
-   Should return `"siteId":"ahcc"`.
-   </details>
-
-### Windows 10/11 (PowerShell)
-
-```powershell
-
-# Install Node.js 20+ from https://nodejs.org
-
-corepack enable
-
-corepack prepare pnpm@latest --activate
-
-git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
-
-# Optional: Docker Desktop for Postgres
-
-# Serial ports appear under Device Manager -> Ports (COM & LPT)
-
-```
-
-> **WSL2**: Use the Linux instructions inside WSL. For USB passthrough, either run the backend on Windows or enable USBIP (`usbipd-win`).
-
-## Installation
+### Clone & Install
 
 ```bash
-
 git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
-
 cd AntiHunter-Command-Control-PRO
-
 pnpm install
-
 ```
+
+### PostgreSQL Setup
 
 <details>
 <summary>PostgreSQL Database Setup Guide</summary>
@@ -1046,149 +1061,6 @@ When you already have AntiHunter Command & Control PRO running in a live environ
    - If a release introduces issues you cannot fix quickly, restore the snapshot and redeploy the previous commit.
 
 > **Tip:** For multi-site or federated deployments, run the migration step once (against the shared database) before restarting each site. Keeping every instance on the same schema prevents replication drift.
-
-## Running with Docker
-
-> Tested with Docker Engine 25+ and Compose V2. Make sure virtualization is enabled and (on Windows/macOS) that file sharing is configured for the repository folder.
-
-### 1. Prerequisites
-
-- Docker Desktop (Windows/macOS) **or** Docker Engine (Linux).
-
-- Docker Compose V2 (bundled with recent Docker releases). Verify with:
-
-  ```bash
-
-  docker compose version
-
-  docker info
-
-  ```
-
-### 2. Clone and prepare the repo
-
-```bash
-
-git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
-
-cd AntiHunter-Command-Control-PRO
-
-```
-
-Optional: copy the sample Docker environment file and adjust credentials/secrets before the first run.
-
-```bash
-
-cp docker/.env.example docker/.env.local
-
-# edit docker/.env.local with your DATABASE_URL, JWT secret, etc.
-
-```
-
-Compose auto-loads `.env` files adjacent to `docker-compose.yml`. To use the custom file above, launch with `docker compose --env-file docker/.env.local ...`. If you skip this step the defaults baked into `docker-compose.yml` are used (admin email `admin@example.com`, password `admin`).
-
-### 3. Build the images
-
-```bash
-
-docker compose build
-
-# or if you created docker/.env.local:
-
-docker compose --env-file docker/.env.local build
-
-```
-
-This compiles the backend (NestJS) and frontend (Vite) and caches dependencies in intermediate layers.
-
-### 4. Start the stack
-
-```bash
-
-docker compose up -d
-
-# or with a custom env file
-
-docker compose --env-file docker/.env.local up -d
-
-```
-
-- `cc_postgres` stores data in the `postgres-data` named volume.
-
-- `cc_backend` runs Prisma migrations on boot (`RUN_MIGRATIONS=true` by default) and exposes HTTP/WebSocket on `http://localhost:3000`.
-
-- `cc_frontend` serves the SPA on `http://localhost:8080` and proxies API calls to the backend.
-
-On first boot the seed script provisions:
-
-| Variable         | Default             | Override                              |
-| ---------------- | ------------------- | ------------------------------------- |
-| `ADMIN_EMAIL`    | `admin@example.com` | set `ADMIN_EMAIL` in your env file    |
-| `ADMIN_PASSWORD` | `admin`             | set `ADMIN_PASSWORD` in your env file |
-
-Log in at `http://localhost:8080` with those credentials and change the password immediately.
-
-> **Upgrades / existing databases:** When pulling a new release against an existing Postgres volume, apply migrations before restarting services:
->
-> ```bash
-> docker compose run --rm --no-deps backend \
->   pnpm --filter @command-center/backend exec prisma migrate deploy
-> ```
->
-> If you ever hit a stuck migration (e.g., Prisma `P3009/P3018`), see the [Troubleshooting](#troubleshooting) section for recovery steps.
-
-> **Seeding inside Docker:** The production image omits dev dependencies. If you need to re-run the seed (e.g., to recreate the default admin), first install the backend dev deps inside a temporary container:
->
-> ```bash
-> docker compose run --rm --no-deps backend sh -lc "
->   pnpm install --filter @command-center/backend --prod=false --ignore-scripts &&
->   pnpm --filter @command-center/backend prisma:seed
-> "
-> ```
-
-### 5. Monitor logs
-
-```bash
-
-docker compose logs -f backend
-
-docker compose logs -f frontend
-
-docker compose logs -f postgres
-
-```
-
-When the backend finishes migrations you should see `Starting backend...` followed by NestJS bootstrap output.
-
-### 6. Stop and clean up
-
-```bash
-
-docker compose down
-
-```
-
-Add `--volumes` if you also want to delete the Postgres data volume.
-
-### Customizing the deployment
-
-- **Environment overrides:** edit the `environment` block in `docker-compose.yml`, supply an override file (e.g. `docker-compose.override.yml`), or use `--env-file` as noted above. Common overrides include `LOG_LEVEL`, `SERIAL_DEVICE`, `ALLOW_FOREVER`, and mail server settings.
-
-- **Serial passthrough (Linux):** add the following to the `backend` service and ensure the container user can access the device:
-
-  ```yaml
-  devices:
-    - '/dev/ttyUSB0:/dev/ttyUSB0'
-
-  group_add:
-    - dialout
-  ```
-
-  On macOS/Windows Docker Desktop, direct serial passthrough is not supported; run the backend natively or via WSL if hardware access is required.
-
-- **Skipping migrations:** set `RUN_MIGRATIONS=false` if you manage schema deploys externally or if your database role cannot create shadow databases (then run `pnpm prisma:migrate` from a privileged environment).
-
-- **Live reload:** the Docker workflow runs compiled artefacts. For day-to-day development, prefer the pnpm workflow described earlier (`pnpm dev` + hot reload).
 
 ## Building for Production
 

@@ -4440,7 +4440,6 @@ export function ConfigPage() {
                       const remoteHash = hasRemoteHash
                         ? remoteRaw.substring(0, 8).toUpperCase()
                         : null;
-                      const hashesMatch = hasRemoteHash && remoteHash === localHash;
                       const hashesDiffer = hasRemoteHash && remoteHash !== localHash;
 
                       return (
