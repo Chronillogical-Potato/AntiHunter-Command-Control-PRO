@@ -179,9 +179,20 @@ export class UpdateExecutorService {
 
     if (process.platform === 'win32') {
       for (const key of [
-        'SystemRoot', 'SYSTEMROOT', 'USERPROFILE', 'USERNAME', 'APPDATA',
-        'LOCALAPPDATA', 'TEMP', 'TMP', 'PATHEXT', 'ComSpec', 'HOMEDRIVE',
-        'HOMEPATH', 'ProgramFiles', 'ProgramData',
+        'SystemRoot',
+        'SYSTEMROOT',
+        'USERPROFILE',
+        'USERNAME',
+        'APPDATA',
+        'LOCALAPPDATA',
+        'TEMP',
+        'TMP',
+        'PATHEXT',
+        'ComSpec',
+        'HOMEDRIVE',
+        'HOMEPATH',
+        'ProgramFiles',
+        'ProgramData',
       ]) {
         if (process.env[key] !== undefined) safeEnv[key] = process.env[key];
       }
