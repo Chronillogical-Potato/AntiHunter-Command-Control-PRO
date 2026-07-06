@@ -517,25 +517,55 @@ brew services start postgresql
    Should return `"siteId":"ahcc"`.
    </details>
 
-### Windows 10/11 (PowerShell)
+### Windows 10/11
 
-```powershell
+`scripts\setup-windows.ps1` installs everything you need — Node, pnpm, and PostgreSQL — creates the database, and seeds an admin login. It does **not** auto-start the app: when it finishes it prints how to start it and writes a `Start-AntiHunter.cmd` launcher. `winget` (built into Windows 10/11) does the installing.
 
-# Install Node.js 20+ from https://nodejs.org
+> **Run the installer as Administrator** — installing system software requires it. Starting the app afterward does not.
 
-corepack enable
+#### Install
 
-corepack prepare pnpm@latest --activate
+1. Install **Git** (the in-app updater needs a real `git clone`, not a ZIP). In any PowerShell:
 
-git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
+   ```powershell
+   winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements
+   ```
 
-# Optional: Docker Desktop for Postgres
+   Close that window so Git lands on the PATH.
 
-# Serial ports appear under Device Manager -> Ports (COM & LPT)
+2. Open **PowerShell as Administrator**: Start -> type `powershell` -> right-click **Windows PowerShell** -> **Run as administrator**.
 
-```
+3. Clone and run the installer:
 
-> **WSL2**: Use the Linux instructions inside WSL. For USB passthrough, either run the backend on Windows or enable USBIP (`usbipd-win`).
+   ```powershell
+   cd $HOME
+   git clone https://github.com/TheRealSirHaXalot/AntiHunter-Command-Control-PRO.git
+   cd AntiHunter-Command-Control-PRO
+   powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
+   ```
+
+4. Answer the prompts (or press **Enter** for defaults). First run takes a few minutes. **Save the admin email/password it prints.**
+
+#### Start the app
+
+Setup finishes without launching it — you start it yourself, the same way every time:
+
+- **Double-click `Start-AntiHunter.cmd`** in the app folder, **or**
+- run this in PowerShell (non-admin is fine):
+
+  ```powershell
+  cd $HOME\AntiHunter-Command-Control-PRO
+  pnpm AHCC
+  ```
+
+Then open **http://localhost:5173** and log in with the admin email/password from setup. Update later from the app's update page, or `git pull` in the app folder.
+
+#### Notes
+
+- **Windows Firewall** may ask to allow Node.js the first time you start the app. Only using it on this PC? Click **Cancel** — `localhost` works regardless. Want to reach it from other devices on your network? Click **Allow**, and tick **Private** only (leave **Public** off).
+- **Serial hardware:** put `SERIAL_DEVICE=COM3` in `apps\backend\.env` (your port from **Device Manager -> Ports (COM & LPT)**), then restart the app.
+- **ARM64 Windows** (VM on Apple Silicon): the x64 builds install automatically — nothing extra to do.
+- **Don't use WSL** — COM ports don't pass through cleanly.
 
 ## Installation
 

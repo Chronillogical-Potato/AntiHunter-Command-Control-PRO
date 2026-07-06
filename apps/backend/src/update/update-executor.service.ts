@@ -49,7 +49,7 @@ export class UpdateExecutorService {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
         cwd,
-        shell: false,
+        shell: process.platform === 'win32',
         env: this.getSafeEnv(),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -176,6 +176,16 @@ export class UpdateExecutorService {
       LANG: process.env.LANG || 'en_US.UTF-8',
       LC_ALL: process.env.LC_ALL || 'en_US.UTF-8',
     };
+
+    if (process.platform === 'win32') {
+      for (const key of [
+        'SystemRoot', 'SYSTEMROOT', 'USERPROFILE', 'USERNAME', 'APPDATA',
+        'LOCALAPPDATA', 'TEMP', 'TMP', 'PATHEXT', 'ComSpec', 'HOMEDRIVE',
+        'HOMEPATH', 'ProgramFiles', 'ProgramData',
+      ]) {
+        if (process.env[key] !== undefined) safeEnv[key] = process.env[key];
+      }
+    }
 
     return safeEnv;
   }

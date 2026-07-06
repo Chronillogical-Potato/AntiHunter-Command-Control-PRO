@@ -11,6 +11,7 @@ coverage/
 .env
 .env.*
 !.env.example
+.pg-superuser
 .DS_Store
 *.log
 npm-debug.log*
