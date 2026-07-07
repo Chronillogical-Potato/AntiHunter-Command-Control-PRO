@@ -431,7 +431,7 @@ Follow these steps in order:
    powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
    ```
 
-4. **Answer the prompts.** Press **Enter** to accept the defaults. The first run takes a few minutes. When it finishes, **write down the admin email and password it shows you.**
+4. **Answer the prompts.** Press **Enter** to accept the defaults or set your own. The first run takes a few minutes. Mod the .env file to change values later on. When it finishes, **write down the admin email and password you set.**
 
 5. **Start the app.** Double-click **`Start-AntiHunter.cmd`** in the project folder (or run `pnpm AHCC` in a normal PowerShell window).
 
@@ -444,8 +444,6 @@ To update later, open the app's update page or run `git pull` in the project fol
 
 - **Windows Firewall** may ask to allow Node.js the first time you start the app. Only using it on this PC? Click **Cancel** — `localhost` works regardless. Want to reach it from other devices on your network? Click **Allow**, and tick **Private** only (leave **Public** off).
 - **Serial hardware:** put `SERIAL_DEVICE=COM3` in `apps\backend\.env` (your port from **Device Manager -> Ports (COM & LPT)**), then restart the app.
-- **ARM64 Windows** (VM on Apple Silicon): the x64 builds install automatically — nothing extra to do.
-- **Don't use WSL** — COM ports don't pass through cleanly.
 </details>
 
 ### Docker
