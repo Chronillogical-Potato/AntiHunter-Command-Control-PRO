@@ -91,6 +91,7 @@ export class AuthService {
   private readonly jwtSecret: jwt.Secret = process.env.JWT_SECRET ?? 'command-center-dev-secret';
   private readonly tokenTtl = process.env.JWT_EXPIRY ?? '12h';
   private readonly twoFactorTokenTtl = process.env.TWO_FACTOR_TOKEN_EXPIRY ?? '10m';
+  private readonly rememberTtl = process.env.REMEMBER_ME_EXPIRY ?? '10d';
   private readonly loginMinSubmitMs: number;
   private readonly lockoutEnabled: boolean;
   private readonly lockoutThreshold: number;
@@ -272,7 +273,9 @@ export class AuthService {
     const legalAccepted = !!updatedUser.legalAcceptedAt;
 
     if (!legalAccepted) {
-      const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, false);
+      const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, false, {
+        rememberMe: dto.rememberMe,
+      });
       return {
         token,
         user: userResponse,
@@ -286,6 +289,7 @@ export class AuthService {
       const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, true, {
         twoFactorPending: true,
         expiresIn: this.twoFactorTokenTtl,
+        rememberMe: dto.rememberMe,
       });
       return {
         token,
@@ -296,7 +300,9 @@ export class AuthService {
       };
     }
 
-    const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, true);
+    const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, true, {
+      rememberMe: dto.rememberMe,
+    });
     return {
       token,
       user: userResponse,
@@ -305,7 +311,7 @@ export class AuthService {
     };
   }
 
-  async acknowledgeLegal(userId: string): Promise<LoginResult> {
+  async acknowledgeLegal(userId: string, rememberMe = false): Promise<LoginResult> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { legalAcceptedAt: new Date() },
@@ -316,6 +322,7 @@ export class AuthService {
       const token = this.createToken(user.id, user.email, user.role, true, {
         twoFactorPending: true,
         expiresIn: this.twoFactorTokenTtl,
+        rememberMe,
       });
       return {
         token,
@@ -325,7 +332,7 @@ export class AuthService {
       };
     }
 
-    const token = this.createToken(user.id, user.email, user.role, true);
+    const token = this.createToken(user.id, user.email, user.role, true, { rememberMe });
 
     return {
       token,
@@ -366,7 +373,7 @@ export class AuthService {
     email: string,
     role: Role,
     legalAccepted: boolean,
-    options?: { twoFactorPending?: boolean; expiresIn?: string | number },
+    options?: { twoFactorPending?: boolean; expiresIn?: string | number; rememberMe?: boolean },
   ): string {
     const payload: Partial<AuthTokenPayload> = {
       sub: id,
@@ -374,10 +381,13 @@ export class AuthService {
       role,
       legalAccepted,
       twoFactorPending: options?.twoFactorPending ?? false,
+      rememberMe: options?.rememberMe ?? false,
     };
 
+    const defaultTtl =
+      options?.rememberMe && !options?.twoFactorPending ? this.rememberTtl : this.tokenTtl;
     return jwt.sign(payload, this.jwtSecret, {
-      expiresIn: (options?.expiresIn ?? this.tokenTtl) as jwt.SignOptions['expiresIn'],
+      expiresIn: (options?.expiresIn ?? defaultTtl) as jwt.SignOptions['expiresIn'],
     });
   }
 
