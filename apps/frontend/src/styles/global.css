@@ -3492,6 +3492,17 @@ body.theme-dark .control-chip[disabled] {
   font-size: 0.95rem;
   color: #334155;
 }
+.auth-overlay__form label.auth-overlay__remember {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.auth-overlay__remember input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
 .auth-overlay__form input[type='email'],
 .auth-overlay__form input[type='password'],
 .auth-overlay__form input[type='text'],
