@@ -29,6 +29,7 @@ import type {
   FaaRegistryStatusResponse,
   StartFaaSyncResponse,
 } from '../api/types';
+import { DatabaseStatsCard } from '../components/DatabaseStatsCard';
 import { RadioCard } from '../components/RadioCard';
 import { StatusBroadcastCard } from '../components/StatusBroadcastCard';
 import { applyAlertOverrides, extractAlertColors } from '../constants/alert-colors';
@@ -4480,6 +4481,8 @@ export function ConfigPage() {
               </div>
             </div>
           </section>
+
+          <DatabaseStatsCard className={cardClass('system-updates')} isAdmin={isAdmin} />
 
           <section className={cardClass('system-updates')}>
             <header>
