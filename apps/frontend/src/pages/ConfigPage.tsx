@@ -29,6 +29,7 @@ import type {
   FaaRegistryStatusResponse,
   StartFaaSyncResponse,
 } from '../api/types';
+import { RadioCard } from '../components/RadioCard';
 import { StatusBroadcastCard } from '../components/StatusBroadcastCard';
 import { applyAlertOverrides, extractAlertColors } from '../constants/alert-colors';
 import {
@@ -3333,6 +3334,8 @@ export function ConfigPage() {
             onChange={updateAppSetting}
             canSend={authUser?.role === 'ADMIN' || authUser?.role === 'OPERATOR'}
           />
+
+          <RadioCard className={cardClass('serial')} role={authUser?.role} />
 
           <section className={cardClass('tak')}>
             <header>
