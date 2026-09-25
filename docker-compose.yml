@@ -42,10 +42,14 @@ services:
       SERIAL_BAUD: '115200'
       ALLOW_FOREVER: 'true'
       ALLOW_ERASE_FORCE: 'false'
+      AHCC_TILE_CACHE: /app/data/tiles
+      AHCC_TILE_CACHE_MAX_MB: ${AHCC_TILE_CACHE_MAX_MB:-2048}
     ports:
       - '3000:3000'
     volumes:
       - ./.git:/app/.git:ro
+      - backend-secrets:/app/apps/backend/.secrets
+      - tile-cache:/app/data/tiles
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
       interval: 10s
@@ -76,3 +80,5 @@ services:
 
 volumes:
   postgres-data:
+  backend-secrets:
+  tile-cache:
