@@ -37,12 +37,12 @@ Your data stays in place. The branch adds new database tables and columns and do
 `git stash pop`
 
 **5. Start the app**
-  - Normal install (setup-local.sh, Windows installer, or manual):
+  - Pull in the new things 
     ```
-    pnpm build
+    pnpm install
+    pnpm --filter @command-center/backend exec prisma generate
     pnpm AHCC:silent
     ```
-  -  Windows users can double-click Start-AntiHunter.cmd after `pnpm install`.
   -	Docker:
     `docker compose up -d --build`
 
