@@ -14,7 +14,7 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 
 ---
 
-## Try this branch
+## Try the feature branch
 
 Your data stays in place. The branch adds new database tables and columns and does not remove any. Switching back to main works with the same database.
 
