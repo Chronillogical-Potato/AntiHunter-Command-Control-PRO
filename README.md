@@ -39,8 +39,8 @@ Your data stays in place. The branch adds new database tables and columns and do
 **5. Start the app**
   - Normal install (setup-local.sh, Windows installer, or manual):
     ```
-    pnpm install
-    pnpm AHCC
+    pnpm build
+    pnpm AHCC:silent
     ```
   -  Windows users can double-click Start-AntiHunter.cmd after `pnpm install`.
   -	Docker:
