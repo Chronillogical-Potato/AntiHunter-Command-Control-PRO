@@ -18,6 +18,7 @@ AntiHunter Command & Control PRO is the companion operations platform for the An
 
 Your data stays in place. The branch adds new database tables and columns and does not remove any. Switching back to main works with the same database.
 
+
 **1. Stop the app**
   - Started with `pnpm AHCC` or Start-AntiHunter.cmd: press Ctrl+C in that window, or close it.
   - Docker: `docker compose down`. Do not add --volumes; that deletes your database.
@@ -34,19 +35,24 @@ Your data stays in place. The branch adds new database tables and columns and do
   ```
 
 **4. If you saved edits in step 2, put them back:**
-`git stash pop`
+`git stash pop` 
 
-**5. Start the app**
-  - Pull in the new things 
+> **Values in `.env` files for your serial device may not carry over**. Set them again in the file or using the AHCC config panel.
+> 
+**5. Install updated pnpm. Start the app:**
     ```
-    pnpm install
+    pnpm install 
     pnpm --filter @command-center/backend exec prisma generate
-    pnpm AHCC:silent
+    pnpm AHCC
     ```
   -	Docker:
     `docker compose up -d --build`
 
-Open the app at the same address as before: http://localhost:5173 for a normal install, http://localhost:8080 for Docker.
+**Open the app at the same address as before: http://localhost:5173 for a normal install, http://localhost:8080 for Docker.**
+
+Try out the protobuf support under the serial tab, and the new remote alerts and remote connection config options.
+
+**Report back with any issues you have**
 
 ---
 
