@@ -1255,23 +1255,22 @@ Serve `apps/frontend/dist` with your preferred static host (Nginx, S3, etc.) and
 
 For a guided production rollout on Debian/Ubuntu servers we ship `scripts/deploy-production.sh`. It is interactive and will:
 
-1. Validate prerequisites (non-root sudo user, supported distro).
+1. Validate prerequisites (your own admin account with sudo, supported distro).
 2. Install Node.js LTS, pnpm, PostgreSQL, nginx, certbot, fail2ban, and UFW.
 3. Clone/update this repository under `/opt/ahcc`, install dependencies, run Prisma migrations/seeds, and build backend/frontend artifacts.
 4. Generate a backend `.env` from your answers (DB password, JWT secret, SITE_ID, serial defaults, etc.) and configure systemd + nginx (self-signed or LetsEncrypt TLS).
 5. Optionally enable nightly backups and fail2ban rules.
 
-> **Important:** Audit the script before running it. Run it as the dedicated service user (not root) with passwordless sudo:
+> **Important:** Audit the script before running it. Run it from your own admin account (not root, not `ahcc`):
 >
 > ```bash
-> sudo adduser --system --group --home /opt/ahcc --shell /bin/bash ahcc
-> sudo usermod -aG sudo,dialout ahcc
-> sudo -iu ahcc
-> chmod +x scripts/deploy-production.sh
-> ./scripts/deploy-production.sh
+> sudo -v
+> bash scripts/deploy-production.sh
 > ```
 
-The script prints a deployment summary (URLs, generated credentials). Store it securely and delete the file afterward.
+The script creates `ahcc` as an unprivileged service account: no login shell, no sudo, member of `dialout` for serial access only. If an earlier install added `ahcc` to `sudo`, `admin`, or `wheel`, the script removes it and warns about any sudoers rule that still names it. The backend runs as `ahcc` under systemd with no capabilities, a read-only system, and kernel and namespace restrictions. Nginx serves the frontend from a root-owned, read-only directory.
+
+The script prints a deployment summary and writes the generated credentials to `/root/ahcc-deployment-credentials.txt` (root only, mode 600). Read it with `sudo`, store the values securely, and delete the file.
 
 #### Updating a server set up by deploy-production.sh
 

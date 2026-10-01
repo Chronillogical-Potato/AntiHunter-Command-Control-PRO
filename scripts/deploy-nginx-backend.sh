@@ -76,7 +76,7 @@ publish() {
   log "Publishing frontend to $NGINX_ROOT..."
   mkdir -p "$NGINX_ROOT"
   rsync -a --delete "$FRONTEND_DIR/dist/" "$NGINX_ROOT/"
-  chown -R www-data:www-data "$NGINX_ROOT"
+  chown -R root:root "$NGINX_ROOT"
   find "$NGINX_ROOT" -type d -exec chmod 755 {} +
   find "$NGINX_ROOT" -type f -exec chmod 644 {} +
 
