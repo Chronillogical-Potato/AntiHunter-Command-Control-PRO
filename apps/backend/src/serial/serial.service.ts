@@ -291,6 +291,8 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   private reconnectTimer?: NodeJS.Timeout;
   private radioHeartbeatTimer?: NodeJS.Timeout;
   private manualDisconnect = false;
+  private lifecycle: Promise<void> = Promise.resolve();
+  private heldTextLines?: string[];
   private readonly clusterRole: SerialClusterRole;
   private readonly clusterMessagingEnabled: boolean;
   private readonly rpcTimeoutMs: number;
@@ -370,7 +372,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    await this.autoConnect().catch((error) => {
+    await this.serializeLifecycle(() => this.autoConnect()).catch((error) => {
       this.handleAutoConnectFailure(error);
     });
     this.broadcastState();
@@ -1050,7 +1052,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.updateReplicaState(state);
       return;
     }
-    await this.connectInternal(options);
+    await this.serializeLifecycle(() => this.connectInternal(options));
     this.broadcastState();
   }
 
@@ -1058,14 +1060,25 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     if (this.clusterRole === 'replica') {
       return;
     }
-    await this.performDisconnect();
-    this.manualDisconnect = false;
-    try {
-      await this.autoConnect();
-    } catch (error) {
-      this.handleAutoConnectFailure(error);
-    }
+    await this.serializeLifecycle(async () => {
+      await this.performDisconnect();
+      this.manualDisconnect = false;
+      try {
+        await this.autoConnect();
+      } catch (error) {
+        this.handleAutoConnectFailure(error);
+      }
+    });
     this.broadcastState();
+  }
+
+  private serializeLifecycle<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.lifecycle.then(task);
+    this.lifecycle = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   async disconnect(): Promise<void> {
@@ -1074,7 +1087,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.updateReplicaState(state);
       return;
     }
-    await this.performDisconnect();
+    await this.serializeLifecycle(() => this.performDisconnect());
     this.broadcastState();
   }
 
@@ -1133,6 +1146,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           writeDelimiters,
           autoDetectDelimiter: autoDetect,
           rawDelimiter: delimiterToken,
+          sendMode: options?.sendMode,
         });
         this.connectionOptions = {
           path: candidatePath,
@@ -1263,6 +1277,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   private cleanup(): void {
+    this.heldTextLines = undefined;
     if (this.radioHeartbeatTimer) {
       clearInterval(this.radioHeartbeatTimer);
       this.radioHeartbeatTimer = undefined;
@@ -1331,7 +1346,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.reconnectAttempts = nextAttempt;
-      this.autoConnect().catch((error) => this.handleAutoConnectFailure(error));
+      this.serializeLifecycle(() => this.autoConnect()).catch((error) =>
+        this.handleAutoConnectFailure(error),
+      );
     }, delay);
   }
 
@@ -1568,14 +1585,16 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       writeDelimiters: string[];
       autoDetectDelimiter: boolean;
       rawDelimiter?: string;
+      sendMode?: string;
     },
   ): Promise<void> {
     this.logger.log(
       `Opening serial port ${path} @ ${options.baudRate} using protocol ${options.protocol}`,
     );
 
+    let port: SerialPortStream;
     try {
-      this.port = new SerialPortStream({
+      port = new SerialPortStream({
         binding: Binding,
         path,
         baudRate: options.baudRate,
@@ -1588,12 +1607,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     }
 
     await new Promise<void>((resolve, reject) => {
-      if (!this.port) {
-        reject(new Error('Serial port not initialised'));
-        return;
-      }
-
-      if (this.port.isOpen) {
+      if (port.isOpen) {
         resolve();
         return;
       }
@@ -1608,14 +1622,15 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         reject(err);
       };
       const cleanup = () => {
-        this.port?.off('open', handleOpen);
-        this.port?.off('error', handleError);
+        port.off('open', handleOpen);
+        port.off('error', handleError);
       };
 
-      this.port.once('open', handleOpen);
-      this.port.once('error', handleError);
+      port.once('open', handleOpen);
+      port.once('error', handleError);
     });
 
+    this.port = port;
     this.protocolParser = createParser(options.protocol);
     this.protocolParser.reset();
 
@@ -1631,6 +1646,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         if (this.localRadio.num !== undefined) return;
         const line = (event.data as string).trim();
         if (!line) return;
+        if (this.heldTextLines) {
+          this.heldTextLines.push(line);
+          return;
+        }
         this.logger.log(`[TEXT] ${line.slice(0, 200)}`);
         this.processIncomingLine(line, 'serial');
       }
@@ -1640,13 +1659,18 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Frame parser error: ${err.message}`, err.stack);
     });
 
-    void this.identifyRadioWithRetry();
+    const plainMode =
+      (
+        options.sendMode ??
+        this.configService.get<string>('serial.sendMode') ??
+        'protobuf'
+      ).toLowerCase() === 'plain';
+    if (!plainMode) {
+      void this.identifyRadioWithRetry();
+    }
 
-    let heartbeatTicks = 0;
     this.radioHeartbeatTimer = setInterval(() => {
-      heartbeatTicks += 1;
-      const task = heartbeatTicks % 40 === 0 ? this.initMeshtasticApi() : this.sendRadioHeartbeat();
-      void task.catch((err) =>
+      void this.sendRadioHeartbeat().catch((err) =>
         this.logger.warn(`Meshtastic keepalive: ${err instanceof Error ? err.message : err}`),
       );
     }, 15 * 1000);
@@ -1657,6 +1681,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.port.on('close', () => {
+      if (this.port !== port) {
+        return;
+      }
       this.logger.warn('Serial port connection closed');
       this.cleanup();
       if (!this.manualDisconnect) {
@@ -1692,7 +1719,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sendRadioHeartbeat(): Promise<void> {
-    if (!this.port?.isOpen) {
+    if (!this.port?.isOpen || this.localRadio.num === undefined) {
       return;
     }
     const { Mesh } = await loadMeshModule();
@@ -1713,8 +1740,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async identifyRadioWithRetry(): Promise<void> {
+    const port = this.port;
+    this.heldTextLines = [];
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      if (!this.port) {
+      if (!this.port || this.port !== port) {
         return;
       }
       try {
@@ -1723,9 +1752,19 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`Meshtastic API init: ${err instanceof Error ? err.message : err}`);
       }
       await delay(3000);
-      if (this.localRadio.num) {
+      if (this.port !== port) {
         return;
       }
+      if (this.localRadio.num) {
+        this.heldTextLines = undefined;
+        return;
+      }
+    }
+    const held = this.heldTextLines ?? [];
+    this.heldTextLines = undefined;
+    for (const line of held) {
+      this.logger.log(`[TEXT] ${line.slice(0, 200)}`);
+      this.processIncomingLine(line, 'serial');
     }
   }
 
@@ -2275,12 +2314,14 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       let result: unknown;
       switch (action) {
         case 'connect':
-          await this.connectInternal(payload as Partial<SerialConnectionOptions>);
+          await this.serializeLifecycle(() =>
+            this.connectInternal(payload as Partial<SerialConnectionOptions>),
+          );
           this.broadcastState();
           result = this.buildState();
           break;
         case 'disconnect':
-          await this.performDisconnect();
+          await this.serializeLifecycle(() => this.performDisconnect());
           this.broadcastState();
           result = this.buildState();
           break;
