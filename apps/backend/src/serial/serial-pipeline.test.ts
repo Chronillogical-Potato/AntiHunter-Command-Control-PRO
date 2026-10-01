@@ -57,7 +57,7 @@ function sanitizeLine(value: string): string {
   }
 
   const HOP_KEYWORD_RE =
-    /^(?:STATUS|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|Time:)/i;
+    /^(?:STATUS|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|CSI_|Time:)/i;
   const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
   if (hopMatch) {
     const secondToken = hopMatch[2].replace(/[:\s]+$/, '');
@@ -127,12 +127,12 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   {
     name: 'DEVICE WiFi',
     input: 'AH5: DEVICE:AA:BB:CC:DD:EE:FF W -72 C6 N:HomeRouter',
-    expectKinds: ['target-detected'],
+    expectKinds: ['device-seen'],
   },
   {
     name: 'DEVICE BLE',
     input: 'AH5: DEVICE:11:22:33:44:55:66 B -85',
-    expectKinds: ['target-detected'],
+    expectKinds: ['device-seen'],
   },
 
   // ─── TARGET_DATA / T_D ───
@@ -249,9 +249,11 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   // ─── VIBRATION ───
   {
     name: 'VIBRATION',
-    input: 'AH5: VIBRATION: Motion detected GPS:39.906,-105.069 TAMPER_ERASE_IN:30s',
+    input:
+      'AH5: VIBRATION: Movement detected at 2026-10-01 14:02:11 GPS:10.500000,-20.250000 TAMPER_ERASE_IN:30s',
     expectKinds: ['alert'],
     expectCategory: 'vibration',
+    expectData: { lat: 10.5, lon: -20.25, eraseIn: 30 },
   },
   {
     name: 'VIBRATION_STATUS',
@@ -299,7 +301,7 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   },
   {
     name: 'ERASE_COMPLETE',
-    input: 'AH5: ERASE_COMPLETE:Done',
+    input: 'AH5: ERASE_COMPLETE',
     expectKinds: ['alert'],
     expectCategory: 'erase',
   },
@@ -535,20 +537,17 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   {
     name: 'SCAN_DONE',
     input: 'AH5: SCAN_DONE: W=42 B=18 U=60 H=125 TX=60 PEND=0',
-    expectKinds: ['alert', 'command-ack'],
-    expectCategory: 'scan-done',
+    expectKinds: ['command-ack'],
   },
   {
     name: 'DEAUTH_DONE',
     input: 'AH5: DEAUTH_DONE: Total=42 Deauth=30 Disassoc=12 TX=42 PEND=0',
-    expectKinds: ['alert', 'command-ack'],
-    expectCategory: 'deauth-done',
+    expectKinds: ['command-ack'],
   },
   {
     name: 'DRONE_DONE',
     input: 'AH5: DRONE_DONE: Detected=3 Unique=3 TX=3 PEND=0',
-    expectKinds: ['alert', 'command-ack'],
-    expectCategory: 'drone-done',
+    expectKinds: ['command-ack'],
   },
   {
     name: 'BASELINE_DONE',
@@ -559,8 +558,7 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   {
     name: 'LIST_SCAN_DONE',
     input: 'AH5: LIST_SCAN_DONE: Hits=250 Unique=15 Targets=15 TX=15 PEND=0',
-    expectKinds: ['alert', 'command-ack'],
-    expectCategory: 'list-scan-done',
+    expectKinds: ['command-ack'],
   },
 
   // ─── CODES ───
@@ -797,6 +795,36 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     expectKinds: ['command-ack'],
   },
   { name: 'DEDUP_CLEAR_ACK', input: 'AH5: DEDUP_CLEAR_ACK:OK', expectKinds: ['command-ack'] },
+
+  // ─── CSI ───
+  {
+    name: 'CSI_MOTION',
+    input: 'AH5: CSI_MOTION: CH=6 N=2 S=0.45',
+    expectKinds: ['alert'],
+    expectCategory: 'sentinel',
+  },
+  {
+    name: 'CSI_CLEAR',
+    input: 'AH5: CSI_CLEAR: CH=6 D=42s',
+    expectKinds: ['alert'],
+    expectCategory: 'sentinel',
+  },
+  { name: 'CSI_ACK STARTED', input: 'AH5: CSI_ACK:STARTED', expectKinds: ['command-ack'] },
+  { name: 'CSI_ACK BUSY', input: 'AH5: CSI_ACK:BUSY', expectKinds: ['command-ack'] },
+  {
+    name: 'CSI_CFG_ACK',
+    input:
+      'AH5: CSI_CFG_ACK:SENSITIVITY=0.077 MIN_MOTION=8s CLEAR_AFTER=8s SPOTS=1 CH=0 BROADCAST=ON REQUIRE_CE=OFF ALLOW_RANDOM=OFF',
+    expectKinds: ['command-ack'],
+  },
+  { name: 'CSI_RECAL_ACK', input: 'AH5: CSI_RECAL_ACK:OK', expectKinds: ['command-ack'] },
+  {
+    name: 'CSI_EXCLUDE_ACK',
+    input: 'AH5: CSI_EXCLUDE_ACK:AA:BB:CC:DD:EE:FF (matches the first five bytes)',
+    expectKinds: ['command-ack'],
+  },
+  { name: 'CSI_STATUS_LEN', input: 'AH5: CSI_STATUS_LEN:512', expectKinds: ['command-result'] },
+  { name: 'CSI_JSON_LEN', input: 'AH5: CSI_JSON_LEN:900', expectKinds: ['command-result'] },
   {
     name: 'FACTORY_RESET_ACK',
     input: 'AH5: FACTORY_RESET_ACK:FULL - rebooting',

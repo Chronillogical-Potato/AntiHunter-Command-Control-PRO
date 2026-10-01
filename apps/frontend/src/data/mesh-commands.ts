@@ -91,8 +91,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'STATUS',
     group: 'Status',
-    description:
-      'Reports system status (mode, scan state, hits, targets, unique MACs, temperature, uptime, GPS).',
+    description: 'Report node status.',
     defaultTarget: '@ALL',
     parameters: [],
     examples: [
@@ -182,7 +181,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'SCAN_START',
     group: 'Scanning',
-    description: 'Start scanning. mode: 0=WiFi, 1=BLE, 2=Both.',
+    description: 'Start scanning.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -223,8 +222,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'DEVICE_SCAN_START',
     group: 'Scanning',
-    description:
-      'Start device scan for WiFi/BLE devices. +PROBE enables probe request capture during the scan.',
+    description: 'Start device scan for WiFi/BLE devices.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -344,7 +342,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'RANDOMIZATION_START',
     group: 'Detection',
-    description: 'Start MAC randomization detection (mode 0=WiFi,1=BLE,2=Both).',
+    description: 'Start MAC randomization detection.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -378,8 +376,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'PROBE_START',
     group: 'Scanning',
-    description:
-      'Start probe request scanner (mode 0=WiFi,1=BLE,2=Both). +ALL broadcasts every probe over mesh.',
+    description: 'Start the probe request scanner.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -422,8 +419,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'PCAP_START',
     group: 'Scanning',
-    description:
-      'Record raw traffic to the node SD card as a pcap. Retrieve the file from the node web UI; it is not transferred over mesh.',
+    description: 'Record a pcap to the node SD card.',
     defaultTarget: '@ALL',
     parameters: [
       {
@@ -888,6 +884,110 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     examples: [{ target: '@NODE_22', params: [] }],
   },
   {
+    name: 'CSI_MOTION_START',
+    group: 'Sentinel',
+    description: 'Start CSI motion detection.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'secs',
+        label: 'Duration (seconds)',
+        type: 'number',
+        placeholder: '300',
+        helper: '0-86400. Use 0 with FOREVER.',
+        required: true,
+        min: 0,
+        max: 86400,
+        step: 1,
+        suffix: 'sec',
+      },
+      {
+        key: 'forever',
+        label: 'Forever',
+        type: 'select',
+        required: false,
+        options: [
+          { label: 'No', value: '' },
+          { label: 'Yes', value: 'FOREVER' },
+        ],
+      },
+      {
+        key: 'channel',
+        label: 'Channel',
+        type: 'text',
+        placeholder: 'CH6',
+        helper: 'Optional. CH0 = auto survey, CH1-CH14 pins the channel.',
+        required: false,
+      },
+    ],
+    examples: [
+      { target: '@NODE_22', params: ['300'] },
+      { target: '@ALL', params: ['0', 'FOREVER'] },
+    ],
+  },
+  {
+    name: 'CSI_STATUS',
+    group: 'Sentinel',
+    description: 'Print the CSI report on the node.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'CSI_JSON',
+    group: 'Sentinel',
+    description: 'Print the CSI JSON state on the node.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'CSI_RECAL',
+    group: 'Sentinel',
+    description: 'Reset the CSI threshold override to the firmware default.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'CSI_EXCLUDE',
+    group: 'Sentinel',
+    description: 'Exclude a transmitter MAC from CSI.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'mac',
+        label: 'MAC or NONE',
+        type: 'text',
+        placeholder: 'AA:BB:CC:DD:EE:FF',
+        required: true,
+      },
+    ],
+    examples: [
+      { target: '@NODE_22', params: ['AA:BB:CC:DD:EE:FF'] },
+      { target: '@NODE_22', params: ['NONE'] },
+    ],
+  },
+  {
+    name: 'CSI_CFG',
+    group: 'Sentinel',
+    description: 'Set a CSI motion setting.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'setting',
+        label: 'Setting',
+        type: 'text',
+        placeholder: 'SENSITIVITY=MEDIUM',
+        required: true,
+      },
+    ],
+    examples: [
+      { target: '@ALL', params: ['SENSITIVITY=LOW'] },
+      { target: '@NODE_22', params: ['CLEAR_AFTER=10'] },
+    ],
+  },
+  {
     name: 'CONFIG_DEDUP_TTL',
     group: 'Configuration',
     description: 'Set the mesh de-duplication TTL (seconds).',
@@ -938,7 +1038,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'CONFIG_ERASE_PSK',
     group: 'Security',
-    description: 'Set the pre-shared key used to authorize erase and factory reset.',
+    description: 'Set the erase and factory reset key.',
     defaultTarget: '@NODE_22',
     parameters: [
       {

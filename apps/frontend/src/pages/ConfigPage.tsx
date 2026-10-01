@@ -29,6 +29,9 @@ import type {
   FaaRegistryStatusResponse,
   StartFaaSyncResponse,
 } from '../api/types';
+import { DatabaseStatsCard } from '../components/DatabaseStatsCard';
+import { RadioCard } from '../components/RadioCard';
+import { StatusBroadcastCard } from '../components/StatusBroadcastCard';
 import { applyAlertOverrides, extractAlertColors } from '../constants/alert-colors';
 import {
   THEME_PRESETS,
@@ -350,9 +353,11 @@ export function ConfigPage() {
     queryKey: ['sites'],
     queryFn: () => apiClient.get<SiteSummary[]>('/sites'),
   });
+  const canManageMqtt = useAuthStore((state) => state.user?.role === 'ADMIN');
   const mqttSitesQuery = useQuery({
     queryKey: ['mqttSites'],
     queryFn: () => apiClient.get<MqttSiteConfig[]>('/mqtt/sites'),
+    enabled: canManageMqtt,
   });
   const chatAddonEnabled =
     useAuthStore((state) => state.user?.preferences?.notifications?.addons?.chat ?? false) ?? false;
@@ -372,6 +377,7 @@ export function ConfigPage() {
     queryKey: ['mqttStatus'],
     queryFn: () => apiClient.get<MqttSiteStatus[]>('/mqtt/sites-status'),
     refetchInterval: 15_000,
+    enabled: canManageMqtt,
   });
 
   const takConfigQuery = useQuery({
@@ -515,6 +521,9 @@ export function ConfigPage() {
   const [appSettingsState, setAppSettings] = useState<AppSettings | null>(null);
   const [serialConfigState, setSerialConfig] = useState<SerialConfig | null>(null);
   const [siteSettings, setSiteSettings] = useState<SiteSummary[]>([]);
+  const [siteDeleteError, setSiteDeleteError] = useState<{ id: string; message: string } | null>(
+    null,
+  );
   const [mqttConfigs, setMqttConfigs] = useState<MqttSiteConfig[]>([]);
   const [mqttPasswords, setMqttPasswords] = useState<Record<string, string>>({});
   const [mqttNotices, setMqttNotices] = useState<Record<string, MqttNotice>>({});
@@ -1127,17 +1136,15 @@ export function ConfigPage() {
   });
 
   const updateSerialSetting = (patch: Partial<SerialConfig>) => {
-    setSerialConfig((previous) => {
-      if (!previous) {
-        return previous;
-      }
-      const optimistic = { ...previous, ...patch };
-      updateSerialConfigMutation.mutate(patch, {
-        onError: () => {
-          setSerialConfig(previous);
-        },
-      });
-      return optimistic;
+    const previous = serialConfig;
+    if (!previous) {
+      return;
+    }
+    setSerialConfig({ ...previous, ...patch });
+    updateSerialConfigMutation.mutate(patch, {
+      onError: () => {
+        setSerialConfig(previous);
+      },
     });
   };
 
@@ -1203,6 +1210,22 @@ export function ConfigPage() {
       );
       setSiteSettings((prev) => prev.map((site) => (site.id === data.id ? data : site)));
       updateNodeSiteMeta(data.id, { name: data.name, color: data.color });
+    },
+  });
+  const deleteSiteMutation = useMutation({
+    mutationFn: (siteId: string) => apiClient.delete(`/sites/${siteId}`),
+    onSuccess: (_data, siteId) => {
+      queryClient.setQueryData(['sites'], (existing: SiteSummary[] | undefined) =>
+        existing ? existing.filter((site) => site.id !== siteId) : [],
+      );
+      setSiteSettings((prev) => prev.filter((site) => site.id !== siteId));
+      setSiteDeleteError(null);
+    },
+    onError: (error: unknown, siteId) => {
+      setSiteDeleteError({
+        id: siteId,
+        message: error instanceof Error ? error.message : 'Delete failed',
+      });
     },
   });
   const updateMqttConfigMutation = useMutation<
@@ -1360,10 +1383,12 @@ export function ConfigPage() {
     },
     onSuccess: (state) => {
       if (state.connected) {
+        const mode = serialConfig?.sendMode ?? 'protobuf';
+        const modeLabel = mode === 'plain' ? 'plain text' : 'protobuf';
         setSerialTestStatus({
           status: 'success',
           message:
-            `Connected to ${state.path ?? 'device'} ${state.baudRate ? `@ ${state.baudRate} baud` : ''}`.trim(),
+            `Connected to ${state.path ?? 'device'} ${state.baudRate ? `@ ${state.baudRate} baud` : ''} · ${modeLabel}`.trim(),
         });
         void serialConfigQuery.refetch();
         void serialStateQuery.refetch();
@@ -1728,8 +1753,8 @@ export function ConfigPage() {
     if (serialConfig.delimiter ?? '') {
       payload.delimiter = serialConfig.delimiter ?? undefined;
     }
-    payload.protocol = isValidSerialProtocol(appSettings.protocol)
-      ? appSettings.protocol
+    payload.protocol = isValidSerialProtocol(serialConfig.protocol ?? '')
+      ? (serialConfig.protocol as SerialConnectPayload['protocol'])
       : 'meshtastic-rewrite';
     return payload;
   };
@@ -3031,6 +3056,32 @@ export function ConfigPage() {
                           }
                         />
                       </div>
+                      <div className="config-row config-row--actions">
+                        <button
+                          type="button"
+                          className="control-chip control-chip--danger"
+                          disabled={site.id === runtimeSiteId || deleteSiteMutation.isPending}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete site "${site.name || site.id}"? This cannot be undone.`,
+                              )
+                            ) {
+                              deleteSiteMutation.mutate(site.id);
+                            }
+                          }}
+                        >
+                          Delete site
+                        </button>
+                        {site.id === runtimeSiteId ? (
+                          <span className="config-hint">This is the local runtime site.</span>
+                        ) : null}
+                        {siteDeleteError?.id === site.id ? (
+                          <span className="config-hint config-hint--warn">
+                            {siteDeleteError.message}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })
@@ -3160,20 +3211,56 @@ export function ConfigPage() {
                 </span>
               </div>
               <div className="config-row">
-                <span className="config-label">Protocol</span>
+                <span className="config-label">Send Mode</span>
                 <select
-                  value={appSettings.protocol}
-                  onChange={(event) => updateAppSetting({ protocol: event.target.value })}
+                  value={serialConfig.sendMode ?? 'protobuf'}
+                  onChange={(event) => updateSerialSetting({ sendMode: event.target.value })}
                 >
-                  {PROTOCOL_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
+                  <option value="protobuf">Protobuf packet</option>
+                  <option value="plain">Plain text line</option>
                 </select>
                 <span className="config-hint">
-                  Select the parser that matches the incoming frame format on the wire.
+                  Protobuf for a Meshtastic radio on USB. Plain for an AntiHunter node wired
+                  directly.
                 </span>
+              </div>
+              <div className="config-row">
+                <span className="config-label">Hop Limit</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={7}
+                  value={serialConfig.hopLimit ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ hopLimit: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ hopLimit: value });
+                  }}
+                />
+              </div>
+              <div className="config-row">
+                <span className="config-label">Command Channel</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={7}
+                  value={serialConfig.sendChannel ?? ''}
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (raw === '') {
+                      updateSerialSetting({ sendChannel: null });
+                      return;
+                    }
+                    const value = Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    updateSerialSetting({ sendChannel: value });
+                  }}
+                />
               </div>
               <div className="config-row">
                 <span className="config-label">Data Bits</span>
@@ -3325,6 +3412,15 @@ export function ConfigPage() {
               </div>
             </div>
           </section>
+
+          <StatusBroadcastCard
+            className={cardClass('serial')}
+            settings={appSettings}
+            onChange={updateAppSetting}
+            canSend={authUser?.role === 'ADMIN' || authUser?.role === 'OPERATOR'}
+          />
+
+          <RadioCard className={cardClass('serial')} role={authUser?.role} />
 
           <section className={cardClass('tak')}>
             <header>
@@ -4469,6 +4565,8 @@ export function ConfigPage() {
               </div>
             </div>
           </section>
+
+          <DatabaseStatsCard className={cardClass('system-updates')} isAdmin={isAdmin} />
 
           <section className={cardClass('system-updates')}>
             <header>

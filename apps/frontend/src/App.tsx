@@ -27,6 +27,7 @@ import { ChatPage } from './pages/ChatPage';
 import { CommandConsolePage } from './pages/CommandConsolePage';
 import { ConfigPage } from './pages/ConfigPage';
 import { ExportsPage } from './pages/ExportsPage';
+import { FleetSecurityPage } from './pages/FleetSecurityPage';
 import { GeofencePage } from './pages/GeofencePage';
 import { InventoryPage } from './pages/InventoryPage';
 import { MapPage } from './pages/MapPage';
@@ -129,33 +130,36 @@ export default function App() {
         <div className="app-content">
           <SidebarNav />
           <main className="app-main">
-            <Routes>
-              <Route path="/" element={<Navigate to="/map" replace />} />
-              <Route path="/map" element={<MapPage />} />
-              <Route path="/geofences" element={<GeofencePage />} />
-              <Route path="/acars" element={<AcarsPage />} />
-              <Route path="/adsb" element={<AdsbPage />} />
-              <Route path="/nodes" element={<NodesPage />} />
-              <Route path="/targets" element={<TargetsPage />} />
-              <Route path="/strategy" element={<StrategyAdvisorPage />} />
-              <Route path="/inventory" element={<InventoryPage />} />
-              <Route path="/probes" element={<ProbeInventoryPage />} />
-              <Route path="/baseline" element={<BaselinePage />} />
-              <Route path="/alerts" element={<Navigate to="/alerts/custom" replace />} />
-              <Route path="/alerts/custom" element={<AlertsPage />} />
-              <Route path="/alerts/adsb" element={<AdsbAlertsPage />} />
-              <Route path="/alerts/events" element={<AlertsEventLogPage />} />
-              <Route path="/console" element={<CommandConsolePage />} />
-              {chatEnabled ? <Route path="/chat" element={<ChatPage />} /> : null}
-              {sentinelEnabled ? <Route path="/sentinel" element={<SentinelPage />} /> : null}
-              <Route path="/terminal" element={<TerminalEventsPage />} />
-              <Route path="/addon" element={<AddonPage />} />
-              <Route path="/config" element={<ConfigPage />} />
-              <Route path="/exports" element={<ExportsPage />} />
-              <Route path="/scheduler" element={<SchedulerPage />} />
-              <Route path="/account" element={<UserPage />} />
-              <Route path="*" element={<Navigate to="/map" replace />} />
-            </Routes>
+            {isAuthenticated ? (
+              <Routes>
+                <Route path="/" element={<Navigate to="/map" replace />} />
+                <Route path="/map" element={<MapPage />} />
+                <Route path="/geofences" element={<GeofencePage />} />
+                <Route path="/acars" element={<AcarsPage />} />
+                <Route path="/adsb" element={<AdsbPage />} />
+                <Route path="/nodes" element={<NodesPage />} />
+                <Route path="/fleet" element={<FleetSecurityPage />} />
+                <Route path="/targets" element={<TargetsPage />} />
+                <Route path="/strategy" element={<StrategyAdvisorPage />} />
+                <Route path="/inventory" element={<InventoryPage />} />
+                <Route path="/probes" element={<ProbeInventoryPage />} />
+                <Route path="/baseline" element={<BaselinePage />} />
+                <Route path="/alerts" element={<Navigate to="/alerts/custom" replace />} />
+                <Route path="/alerts/custom" element={<AlertsPage />} />
+                <Route path="/alerts/adsb" element={<AdsbAlertsPage />} />
+                <Route path="/alerts/events" element={<AlertsEventLogPage />} />
+                <Route path="/console" element={<CommandConsolePage />} />
+                {chatEnabled ? <Route path="/chat" element={<ChatPage />} /> : null}
+                {sentinelEnabled ? <Route path="/sentinel" element={<SentinelPage />} /> : null}
+                <Route path="/terminal" element={<TerminalEventsPage />} />
+                <Route path="/addon" element={<AddonPage />} />
+                <Route path="/config" element={<ConfigPage />} />
+                <Route path="/exports" element={<ExportsPage />} />
+                <Route path="/scheduler" element={<SchedulerPage />} />
+                <Route path="/account" element={<UserPage />} />
+                <Route path="*" element={<Navigate to="/map" replace />} />
+              </Routes>
+            ) : null}
           </main>
           <TerminalDrawer />
         </div>

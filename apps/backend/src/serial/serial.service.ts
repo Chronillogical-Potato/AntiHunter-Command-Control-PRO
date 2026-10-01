@@ -1,4 +1,4 @@
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { clone, create, fromBinary, MessageShape, toBinary } from '@bufbuild/protobuf';
 import {
   BadRequestException,
   Injectable,
@@ -14,6 +14,13 @@ import { SerialPortStream } from '@serialport/stream';
 import { randomUUID } from 'crypto';
 import { Observable, Subject } from 'rxjs';
 
+import {
+  ChannelRoleName,
+  ChannelView,
+  RadioReKeyRefused,
+  SecurityConfigView,
+  SecurityUpdate,
+} from './fleet-admin.types';
 import { MeshtasticFrameEvent, MeshtasticFrameParser } from './meshtastic-frame-parser';
 import { createParser, ProtocolKey } from './protocol-registry';
 import {
@@ -208,6 +215,46 @@ interface RateCounter {
   resetAt: number;
 }
 
+export interface LocalRadioInfo {
+  num?: number;
+  shortName?: string;
+  longName?: string;
+  lat?: number;
+  lon?: number;
+  positionAt?: number;
+  batteryLevel?: number;
+  deviceTime?: number;
+  deviceTimeAt?: number;
+}
+
+export type RadioAction =
+  | { action: 'reboot'; seconds: number }
+  | { action: 'shutdown'; seconds: number }
+  | { action: 'nodedbReset' }
+  | { action: 'requestTelemetry'; nodeNum?: number }
+  | { action: 'requestNodeInfo'; nodeNum?: number }
+  | { action: 'setDisplay'; screenOnSecs: number }
+  | { action: 'setBluetooth'; enabled: boolean; mode?: number; fixedPin?: number }
+  | { action: 'setGpsMode'; gpsMode: number }
+  | { action: 'setFixedPosition'; lat: number; lon: number; alt?: number }
+  | { action: 'removeFixedPosition' }
+  | { action: 'syncTime' }
+  | { action: 'refresh' }
+  | { action: 'wake' };
+
+export interface RadioInfo {
+  ownsPort: boolean;
+  connected: boolean;
+  radio: LocalRadioInfo;
+  meshNodeCount: number;
+  config: {
+    display?: { screenOnSecs: number };
+    bluetooth?: { enabled: boolean; mode: number };
+    position?: { gpsMode: number; fixedPosition: boolean; positionBroadcastSecs: number };
+    lora?: { region: number; modemPreset: number; hopLimit: number; txEnabled: boolean };
+  };
+}
+
 export interface QueueCommandRequest {
   id: string;
   target: string;
@@ -242,7 +289,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   private readonly reconnectMaxAttempts: number;
   private reconnectAttempts = 0;
   private reconnectTimer?: NodeJS.Timeout;
+  private radioHeartbeatTimer?: NodeJS.Timeout;
   private manualDisconnect = false;
+  private lifecycle: Promise<void> = Promise.resolve();
+  private heldTextLines?: string[];
   private readonly clusterRole: SerialClusterRole;
   private readonly clusterMessagingEnabled: boolean;
   private readonly rpcTimeoutMs: number;
@@ -261,8 +311,23 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     { timestamp: number; content: string; rawLine: string }
   >(); // dedupe key -> {timestamp, content, rawLine}
   private readonly MESSAGE_CACHE_TTL_MS = 3000;
+  private readonly seenPacketIds = new Map<number, number>();
+  private readonly PACKET_ID_TTL_MS = 30000;
   private frameParser?: MeshtasticFrameParser;
   private readonly meshNodeNames = new Map<number, string>();
+  private localRadio: LocalRadioInfo = {};
+  private radioConfig: Record<string, unknown> = {};
+  private readonly fleetTx = new Map<
+    number,
+    {
+      expectedFrom: number;
+      expectsReply: boolean;
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  private readonly sessionPasskeys = new Map<number, Uint8Array>();
   private configNonce = 0;
 
   constructor(
@@ -307,7 +372,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    await this.autoConnect().catch((error) => {
+    await this.serializeLifecycle(() => this.autoConnect()).catch((error) => {
       this.handleAutoConnectFailure(error);
     });
     this.broadcastState();
@@ -330,8 +395,12 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       path: storedConfig.devicePath ?? this.configService.get<string>('serial.device'),
       baudRate: storedConfig.baud ?? this.configService.get<number>('serial.baudRate', 115200),
       delimiter: storedConfig.delimiter ?? this.configService.get<string>('serial.delimiter', '\n'),
-      protocol: (this.configService.get<string>('serial.protocol', 'meshtastic-rewrite') ??
+      protocol: (storedConfig.protocol ??
+        this.configService.get<string>('serial.protocol', 'meshtastic-rewrite') ??
         'meshtastic-rewrite') as ProtocolKey,
+      sendMode: storedConfig.sendMode,
+      hopLimit: storedConfig.hopLimit ?? undefined,
+      sendChannel: storedConfig.sendChannel ?? undefined,
     });
   }
 
@@ -349,6 +418,599 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
 
   getIncomingStream(): Observable<string> {
     return this.incoming$.asObservable();
+  }
+
+  getLocalRadio(): LocalRadioInfo {
+    return { ...this.localRadio };
+  }
+
+  getMeshNodeCount(): number {
+    return this.meshNodeNames.size;
+  }
+
+  getMeshNodeNames(): Map<number, string> {
+    return new Map(this.meshNodeNames);
+  }
+
+  ownsPort(): boolean {
+    return !this.shouldUseRpc();
+  }
+
+  async getRadioInfo(): Promise<RadioInfo> {
+    if (this.shouldUseRpc()) {
+      return { ...(await this.requestRpc<RadioInfo>('radioInfo')), ownsPort: false };
+    }
+    return this.buildRadioInfo();
+  }
+
+  async radioAction(request: RadioAction): Promise<void> {
+    if (this.shouldUseRpc()) {
+      await this.requestRpc('radioAction', request);
+      return;
+    }
+    await this.radioActionInternal(request);
+  }
+
+  private buildRadioInfo(): RadioInfo {
+    const display = this.radioConfig.display as { screenOnSecs?: number } | undefined;
+    const bluetooth = this.radioConfig.bluetooth as
+      | { enabled?: boolean; mode?: number }
+      | undefined;
+    const position = this.radioConfig.position as
+      | { gpsMode?: number; fixedPosition?: boolean; positionBroadcastSecs?: number }
+      | undefined;
+    const lora = this.radioConfig.lora as
+      | { region?: number; modemPreset?: number; hopLimit?: number; txEnabled?: boolean }
+      | undefined;
+    return {
+      ownsPort: true,
+      connected: Boolean(this.port),
+      radio: { ...this.localRadio },
+      meshNodeCount: this.meshNodeNames.size,
+      config: {
+        display: display ? { screenOnSecs: display.screenOnSecs ?? 0 } : undefined,
+        bluetooth: bluetooth
+          ? { enabled: bluetooth.enabled ?? false, mode: bluetooth.mode ?? 0 }
+          : undefined,
+        position: position
+          ? {
+              gpsMode: position.gpsMode ?? 0,
+              fixedPosition: position.fixedPosition ?? false,
+              positionBroadcastSecs: position.positionBroadcastSecs ?? 0,
+            }
+          : undefined,
+        lora: lora
+          ? {
+              region: lora.region ?? 0,
+              modemPreset: lora.modemPreset ?? 0,
+              hopLimit: lora.hopLimit ?? 0,
+              txEnabled: lora.txEnabled ?? false,
+            }
+          : undefined,
+      },
+    };
+  }
+
+  private async radioActionInternal(request: RadioAction): Promise<void> {
+    const { Admin, Config, Mesh, Portnums } = await loadMeshModule();
+    switch (request.action) {
+      case 'refresh':
+        this.ensureConnected();
+        await this.initMeshtasticApi();
+        return;
+      case 'wake':
+        await this.pulseReset();
+        return;
+      case 'requestTelemetry':
+        await this.sendMeshData(
+          request.nodeNum || this.requireLocalNum(),
+          Portnums.PortNum.TELEMETRY_APP,
+          new Uint8Array(),
+          true,
+        );
+        return;
+      case 'requestNodeInfo':
+        await this.sendMeshData(
+          request.nodeNum || this.broadcastNum,
+          Portnums.PortNum.NODEINFO_APP,
+          new Uint8Array(),
+          true,
+        );
+        return;
+      default:
+        break;
+    }
+
+    const localNum = this.requireLocalNum();
+    let configUpdate: { section: string; value: unknown } | undefined;
+    let payloadVariant: Parameters<typeof create<typeof Admin.AdminMessageSchema>>[1] extends
+      | infer Init
+      | undefined
+      ? Init extends { payloadVariant?: infer Variant }
+        ? Variant
+        : never
+      : never;
+
+    switch (request.action) {
+      case 'reboot':
+        payloadVariant = { case: 'rebootSeconds', value: Math.max(0, Math.floor(request.seconds)) };
+        break;
+      case 'shutdown':
+        payloadVariant = {
+          case: 'shutdownSeconds',
+          value: Math.max(0, Math.floor(request.seconds)),
+        };
+        break;
+      case 'nodedbReset':
+        payloadVariant = { case: 'nodedbReset', value: 1 };
+        break;
+      case 'syncTime':
+        payloadVariant = { case: 'setTimeOnly', value: Math.floor(Date.now() / 1000) };
+        break;
+      case 'removeFixedPosition':
+        payloadVariant = { case: 'removeFixedPosition', value: true };
+        break;
+      case 'setFixedPosition':
+        payloadVariant = {
+          case: 'setFixedPosition',
+          value: create(Mesh.PositionSchema, {
+            latitudeI: Math.round(request.lat * 1e7),
+            longitudeI: Math.round(request.lon * 1e7),
+            altitude: Math.round(request.alt ?? 0),
+            time: Math.floor(Date.now() / 1000),
+          }),
+        };
+        break;
+      case 'setDisplay': {
+        const value = this.mergeRadioConfig(Config.Config_DisplayConfigSchema, 'display', {
+          screenOnSecs: Math.max(0, Math.floor(request.screenOnSecs)),
+        });
+        configUpdate = { section: 'display', value };
+        payloadVariant = {
+          case: 'setConfig',
+          value: create(Config.ConfigSchema, { payloadVariant: { case: 'display', value } }),
+        };
+        break;
+      }
+      case 'setBluetooth': {
+        const value = this.mergeRadioConfig(Config.Config_BluetoothConfigSchema, 'bluetooth', {
+          enabled: request.enabled,
+          ...(request.mode !== undefined ? { mode: request.mode } : {}),
+          ...(request.fixedPin !== undefined ? { fixedPin: request.fixedPin } : {}),
+        });
+        configUpdate = { section: 'bluetooth', value };
+        payloadVariant = {
+          case: 'setConfig',
+          value: create(Config.ConfigSchema, { payloadVariant: { case: 'bluetooth', value } }),
+        };
+        break;
+      }
+      case 'setGpsMode': {
+        const value = this.mergeRadioConfig(Config.Config_PositionConfigSchema, 'position', {
+          gpsMode: request.gpsMode,
+        });
+        configUpdate = { section: 'position', value };
+        payloadVariant = {
+          case: 'setConfig',
+          value: create(Config.ConfigSchema, { payloadVariant: { case: 'position', value } }),
+        };
+        break;
+      }
+      default:
+        throw new BadRequestException('Unknown radio action');
+    }
+
+    const admin = create(Admin.AdminMessageSchema, { payloadVariant });
+    await this.sendMeshData(
+      localNum,
+      Portnums.PortNum.ADMIN_APP,
+      toBinary(Admin.AdminMessageSchema, admin),
+      false,
+    );
+
+    if (configUpdate) {
+      this.radioConfig[configUpdate.section] = configUpdate.value;
+    }
+    if (request.action === 'nodedbReset') {
+      const ownName = this.meshNodeNames.get(localNum);
+      this.meshNodeNames.clear();
+      if (ownName) {
+        this.meshNodeNames.set(localNum, ownName);
+      }
+    }
+  }
+
+  private mergeRadioConfig<Desc extends Parameters<typeof clone>[0]>(
+    schema: Desc,
+    section: string,
+    patch: Record<string, unknown>,
+  ): MessageShape<Desc> {
+    const current = this.radioConfig[section];
+    if (!current) {
+      throw new BadRequestException('Radio settings not loaded yet. Press Refresh and try again.');
+    }
+    const next = clone(schema, current as MessageShape<Desc>);
+    Object.assign(next, patch);
+    return next;
+  }
+
+  private requireLocalNum(): number {
+    if (!this.localRadio.num) {
+      throw new BadRequestException('Radio not identified yet. Press Refresh and try again.');
+    }
+    return this.localRadio.num;
+  }
+
+  private async sendMeshData(
+    to: number,
+    portnum: number,
+    payload: Uint8Array,
+    wantResponse: boolean,
+  ): Promise<void> {
+    const { Mesh } = await loadMeshModule();
+    const packet = create(Mesh.MeshPacketSchema, {
+      id: this.nextPacketId(),
+      to,
+      channel: 0,
+      wantAck: to !== this.broadcastNum,
+      hopLimit: 3,
+      payloadVariant: {
+        case: 'decoded',
+        value: create(Mesh.DataSchema, { portnum, payload, wantResponse }),
+      },
+    });
+    const binary = toBinary(
+      Mesh.ToRadioSchema,
+      create(Mesh.ToRadioSchema, { payloadVariant: { case: 'packet', value: packet } }),
+    );
+    const frame = Buffer.alloc(4 + binary.length);
+    frame[0] = 0x94;
+    frame[1] = 0xc3;
+    frame[2] = (binary.length >> 8) & 0xff;
+    frame[3] = binary.length & 0xff;
+    Buffer.from(binary).copy(frame, 4);
+    await this.commandQueue.add(async () => {
+      this.ensureConnected();
+      await this.writeBuffer(frame);
+    });
+  }
+
+  private async pulseReset(): Promise<void> {
+    const port = this.port;
+    if (!port) {
+      throw new BadRequestException('Serial port is not connected');
+    }
+    const setLines = (lines: { dtr: boolean; rts: boolean }) =>
+      new Promise<void>((resolve, reject) =>
+        port.set(lines, (error) => (error ? reject(error) : resolve())),
+      );
+    await setLines({ dtr: false, rts: true });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await setLines({ dtr: false, rts: false });
+  }
+
+  // --- Fleet security admin transport (Meshtastic AdminMessage over serial) ---
+
+  private readonly SECURITY_CONFIG_TYPE = 7;
+  private readonly ROLE_TO_NUM: Record<ChannelRoleName, number> = {
+    DISABLED: 0,
+    PRIMARY: 1,
+    SECONDARY: 2,
+  };
+  private readonly NUM_TO_ROLE: ChannelRoleName[] = ['DISABLED', 'PRIMARY', 'SECONDARY'];
+
+  private fleetLocalNum(): number {
+    if (!this.localRadio.num) {
+      throw new BadRequestException('Radio not identified yet. Press Refresh and try again.');
+    }
+    return this.localRadio.num;
+  }
+
+  private isLocalTarget(nodeNum: number): boolean {
+    return this.localRadio.num !== undefined && nodeNum === this.localRadio.num;
+  }
+
+  private async buildAdminInit(
+    descriptor:
+      | { t: 'getConfig'; configType: number }
+      | { t: 'setSecurity'; security: SecurityUpdate }
+      | { t: 'getChannel'; index: number }
+      | {
+          t: 'setChannel';
+          channel: { index: number; name: string; role: ChannelRoleName; psk: Buffer };
+        }
+      | { t: 'beginEdit' }
+      | { t: 'commitEdit' },
+    remote: boolean,
+    to: number,
+  ): Promise<Record<string, unknown>> {
+    const { Config, Channel } = await loadMeshModule();
+    const init: Record<string, unknown> = {};
+    if (remote) {
+      const passkey = this.sessionPasskeys.get(to);
+      if (passkey && passkey.length) {
+        init.sessionPasskey = passkey;
+      }
+    }
+    switch (descriptor.t) {
+      case 'getConfig':
+        init.payloadVariant = { case: 'getConfigRequest', value: descriptor.configType };
+        break;
+      case 'getChannel':
+        init.payloadVariant = { case: 'getChannelRequest', value: descriptor.index + 1 };
+        break;
+      case 'beginEdit':
+        init.payloadVariant = { case: 'beginEditSettings', value: true };
+        break;
+      case 'commitEdit':
+        init.payloadVariant = { case: 'commitEditSettings', value: true };
+        break;
+      case 'setSecurity': {
+        const sec: Record<string, unknown> = {};
+        const u = descriptor.security;
+        if (u.publicKey) sec.publicKey = u.publicKey;
+        if (u.privateKey) sec.privateKey = u.privateKey;
+        if (u.adminKeys) sec.adminKey = u.adminKeys;
+        if (u.isManaged !== undefined) sec.isManaged = u.isManaged;
+        if (u.adminChannelEnabled !== undefined) sec.adminChannelEnabled = u.adminChannelEnabled;
+        init.payloadVariant = {
+          case: 'setConfig',
+          value: create(Config.ConfigSchema, {
+            payloadVariant: { case: 'security', value: sec },
+          }),
+        };
+        break;
+      }
+      case 'setChannel':
+        init.payloadVariant = {
+          case: 'setChannel',
+          value: create(Channel.ChannelSchema, {
+            index: descriptor.channel.index,
+            role: this.ROLE_TO_NUM[descriptor.channel.role],
+            settings: { name: descriptor.channel.name, psk: descriptor.channel.psk },
+          }),
+        };
+        break;
+    }
+    return init;
+  }
+
+  private expectsAdminReply(descriptor: { t: string }): boolean {
+    return descriptor.t === 'getConfig' || descriptor.t === 'getChannel';
+  }
+
+  private async sendAdmin(
+    nodeNum: number,
+    descriptor: Parameters<SerialService['buildAdminInit']>[0],
+    options: { remote: boolean; timeoutMs: number; fireForget?: boolean },
+  ): Promise<{ payloadVariant?: { case?: string; value?: unknown } } | null> {
+    if (!this.ownsPort()) {
+      throw new BadRequestException('Fleet security requires the node with the serial port');
+    }
+    const { Admin, Mesh, Portnums } = await loadMeshModule();
+    const init = await this.buildAdminInit(descriptor, options.remote, nodeNum);
+    const admin = create(Admin.AdminMessageSchema, init as never);
+    const payload = toBinary(Admin.AdminMessageSchema, admin);
+    const packetId = this.nextPacketId();
+    const packet = create(Mesh.MeshPacketSchema, {
+      id: packetId,
+      to: nodeNum,
+      channel: 0,
+      wantAck: true,
+      pkiEncrypted: options.remote,
+      hopLimit: 3,
+      payloadVariant: {
+        case: 'decoded',
+        value: create(Mesh.DataSchema, {
+          portnum: Portnums.PortNum.ADMIN_APP,
+          payload,
+          wantResponse: this.expectsAdminReply(descriptor),
+        }),
+      },
+    });
+    const binary = toBinary(
+      Mesh.ToRadioSchema,
+      create(Mesh.ToRadioSchema, { payloadVariant: { case: 'packet', value: packet } }),
+    );
+    const frame = Buffer.alloc(4 + binary.length);
+    frame[0] = 0x94;
+    frame[1] = 0xc3;
+    frame[2] = (binary.length >> 8) & 0xff;
+    frame[3] = binary.length & 0xff;
+    Buffer.from(binary).copy(frame, 4);
+
+    if (options.fireForget) {
+      await this.commandQueue.add(async () => {
+        this.ensureConnected();
+        await this.writeBuffer(frame);
+      });
+      return null;
+    }
+
+    const expectsReply = this.expectsAdminReply(descriptor);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.fleetTx.delete(packetId);
+        reject(new Error(`radio admin timed out (${descriptor.t})`));
+      }, options.timeoutMs);
+      this.fleetTx.set(packetId, {
+        expectedFrom: nodeNum,
+        expectsReply,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timer,
+      });
+      this.commandQueue
+        .add(async () => {
+          this.ensureConnected();
+          await this.writeBuffer(frame);
+        })
+        .catch((error) => {
+          const pending = this.fleetTx.get(packetId);
+          if (pending) {
+            this.fleetTx.delete(packetId);
+            clearTimeout(pending.timer);
+          }
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
+    });
+  }
+
+  private decodeSecurityView(admin: {
+    payloadVariant?: { case?: string; value?: unknown };
+  }): SecurityConfigView {
+    const cfg = admin.payloadVariant;
+    if (cfg?.case !== 'getConfigResponse') {
+      throw new Error('admin reply missing get_config_response');
+    }
+    const config = cfg.value as { payloadVariant?: { case?: string; value?: unknown } };
+    if (config.payloadVariant?.case !== 'security') {
+      throw new Error('config reply missing security section');
+    }
+    const sec = config.payloadVariant.value as {
+      publicKey?: Uint8Array;
+      privateKey?: Uint8Array;
+      adminKey?: Uint8Array[];
+      isManaged?: boolean;
+      adminChannelEnabled?: boolean;
+    };
+    return {
+      publicKey: Buffer.from(sec.publicKey ?? new Uint8Array()),
+      adminKeys: (sec.adminKey ?? []).map((k) => Buffer.from(k)),
+      isManaged: sec.isManaged ?? false,
+      adminChannelEnabled: sec.adminChannelEnabled ?? false,
+      hasPrivateKey: (sec.privateKey?.length ?? 0) === 32,
+    };
+  }
+
+  private decodeChannelView(admin: {
+    payloadVariant?: { case?: string; value?: unknown };
+  }): ChannelView {
+    const cfg = admin.payloadVariant;
+    if (cfg?.case !== 'getChannelResponse') {
+      throw new Error('admin reply missing get_channel_response');
+    }
+    const ch = cfg.value as {
+      index?: number;
+      role?: number;
+      settings?: { name?: string; psk?: Uint8Array };
+    };
+    return {
+      index: ch.index ?? 0,
+      role: this.NUM_TO_ROLE[ch.role ?? 0] ?? 'DISABLED',
+      name: ch.settings?.name ?? '',
+      psk: Buffer.from(ch.settings?.psk ?? new Uint8Array()),
+    };
+  }
+
+  private securityFromRadioConfig(): SecurityConfigView | null {
+    const sec = this.radioConfig['security'] as
+      | {
+          publicKey?: Uint8Array;
+          privateKey?: Uint8Array;
+          adminKey?: Uint8Array[];
+          isManaged?: boolean;
+          adminChannelEnabled?: boolean;
+        }
+      | undefined;
+    if (!sec || !(sec.publicKey?.length ?? 0)) {
+      return null;
+    }
+    return {
+      publicKey: Buffer.from(sec.publicKey ?? new Uint8Array()),
+      adminKeys: (sec.adminKey ?? []).map((k) => Buffer.from(k)),
+      isManaged: sec.isManaged ?? false,
+      adminChannelEnabled: sec.adminChannelEnabled ?? false,
+      hasPrivateKey: (sec.privateKey?.length ?? 0) === 32,
+    };
+  }
+
+  async fleetGetSecurity(nodeNum: number): Promise<SecurityConfigView> {
+    if (this.isLocalTarget(nodeNum)) {
+      const local = this.securityFromRadioConfig();
+      if (local) {
+        return local;
+      }
+    }
+    const remote = !this.isLocalTarget(nodeNum);
+    const reply = await this.sendAdmin(
+      nodeNum,
+      { t: 'getConfig', configType: this.SECURITY_CONFIG_TYPE },
+      { remote, timeoutMs: remote ? 30_000 : 10_000 },
+    );
+    if (!reply) throw new Error('empty security reply');
+    return this.decodeSecurityView(reply);
+  }
+
+  async fleetSetSecurity(nodeNum: number, update: SecurityUpdate): Promise<void> {
+    const remote = !this.isLocalTarget(nodeNum);
+    // Re-key guard (finding #17): OTA set-security without a 32-byte private key regenerates the node keypair.
+    if (update.privateKey === undefined) {
+      throw new RadioReKeyRefused(
+        'Refusing over-the-air security change: Meshtastic would regenerate the node keypair and cut off admin. Provision admin keys locally over USB instead.',
+      );
+    }
+    await this.sendAdmin(
+      nodeNum,
+      { t: 'setSecurity', security: update },
+      {
+        remote,
+        timeoutMs: remote ? 30_000 : 10_000,
+      },
+    );
+  }
+
+  async fleetGetChannel(nodeNum: number, index: number): Promise<ChannelView> {
+    const remote = !this.isLocalTarget(nodeNum);
+    const reply = await this.sendAdmin(
+      nodeNum,
+      { t: 'getChannel', index },
+      { remote, timeoutMs: remote ? 30_000 : 10_000 },
+    );
+    if (!reply) throw new Error('empty channel reply');
+    return this.decodeChannelView(reply);
+  }
+
+  async fleetSetChannelLocal(channel: {
+    index: number;
+    name: string;
+    role: ChannelRoleName;
+    psk: Buffer;
+  }): Promise<void> {
+    await this.sendAdmin(
+      this.fleetLocalNum(),
+      { t: 'setChannel', channel },
+      {
+        remote: false,
+        timeoutMs: 10_000,
+      },
+    );
+  }
+
+  async fleetEstablishSession(nodeNum: number): Promise<void> {
+    await this.fleetGetChannel(nodeNum, 0);
+  }
+
+  async fleetFireForget(
+    nodeNum: number,
+    descriptor: Parameters<SerialService['buildAdminInit']>[0],
+  ): Promise<void> {
+    await this.sendAdmin(nodeNum, descriptor, { remote: true, timeoutMs: 0, fireForget: true });
+  }
+
+  async fleetLocalAdmin(
+    descriptor: Parameters<SerialService['buildAdminInit']>[0],
+    timeoutMs = 10_000,
+  ): Promise<{ payloadVariant?: { case?: string; value?: unknown } } | null> {
+    return this.sendAdmin(this.fleetLocalNum(), descriptor, { remote: false, timeoutMs });
+  }
+
+  async fleetRemoteAdmin(
+    nodeNum: number,
+    descriptor: Parameters<SerialService['buildAdminInit']>[0],
+    timeoutMs = 30_000,
+  ): Promise<{ payloadVariant?: { case?: string; value?: unknown } } | null> {
+    return this.sendAdmin(nodeNum, descriptor, { remote: true, timeoutMs });
   }
 
   getParsedStream(): Observable<SerialParseResult> {
@@ -390,8 +1052,33 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.updateReplicaState(state);
       return;
     }
-    await this.connectInternal(options);
+    await this.serializeLifecycle(() => this.connectInternal(options));
     this.broadcastState();
+  }
+
+  async reconnectFromStoredConfig(): Promise<void> {
+    if (this.clusterRole === 'replica') {
+      return;
+    }
+    await this.serializeLifecycle(async () => {
+      await this.performDisconnect();
+      this.manualDisconnect = false;
+      try {
+        await this.autoConnect();
+      } catch (error) {
+        this.handleAutoConnectFailure(error);
+      }
+    });
+    this.broadcastState();
+  }
+
+  private serializeLifecycle<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.lifecycle.then(task);
+    this.lifecycle = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 
   async disconnect(): Promise<void> {
@@ -400,7 +1087,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       this.updateReplicaState(state);
       return;
     }
-    await this.performDisconnect();
+    await this.serializeLifecycle(() => this.performDisconnect());
     this.broadcastState();
   }
 
@@ -459,6 +1146,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           writeDelimiters,
           autoDetectDelimiter: autoDetect,
           rawDelimiter: delimiterToken,
+          sendMode: options?.sendMode,
         });
         this.connectionOptions = {
           path: candidatePath,
@@ -468,6 +1156,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           writeDelimiters,
           autoDetectDelimiter: autoDetect,
           rawDelimiter: delimiterToken,
+          sendMode: options?.sendMode,
+          hopLimit: options?.hopLimit,
+          sendChannel: options?.sendChannel,
         };
         await this.serialConfigService.updateConfig({
           devicePath: candidatePath,
@@ -565,20 +1256,18 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         this.consumeRate(this.globalRate, this.globalRateLimit);
         this.consumeRate(this.getTargetCounter(built.target), this.perTargetRateLimit);
       }
-      const protocol = this.connectionOptions?.protocol ?? 'meshtastic-rewrite';
-      const sendMode =
-        this.configService.get<string>('serial.sendMode')?.toLowerCase() ?? 'protobuf';
-      const hopLimit = this.configService.get<number>('serial.hopLimit');
+      const sendMode = (
+        this.connectionOptions?.sendMode ??
+        this.configService.get<string>('serial.sendMode') ??
+        'protobuf'
+      ).toLowerCase();
+      const hopLimit =
+        this.connectionOptions?.hopLimit ?? this.configService.get<number>('serial.hopLimit');
 
-      if (protocol === 'meshtastic-rewrite') {
-        if (sendMode === 'plain') {
-          await this.writeLine(line);
-          return;
-        }
-
-        const wantAck = sendMode === 'protobuf-ack';
+      const isMeshtasticRadio = this.localRadio.num !== undefined;
+      if (isMeshtasticRadio && sendMode !== 'plain') {
         await this.sendMeshtasticCommand(line, {
-          wantAck,
+          wantAck: false,
           hopLimit: Number.isFinite(hopLimit) ? (hopLimit as number) : undefined,
         });
       } else {
@@ -588,6 +1277,11 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
   }
 
   private cleanup(): void {
+    this.heldTextLines = undefined;
+    if (this.radioHeartbeatTimer) {
+      clearInterval(this.radioHeartbeatTimer);
+      this.radioHeartbeatTimer = undefined;
+    }
     if (this.lineParser) {
       this.lineParser.removeAllListeners();
       this.lineParser = undefined;
@@ -608,6 +1302,8 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.targetRates.clear();
     this.recentMessageCache.clear();
     this.meshNodeNames.clear();
+    this.localRadio = {};
+    this.radioConfig = {};
     this.packetIdCounter = Math.floor(Math.random() * 0xffff);
     this.broadcastState();
   }
@@ -650,7 +1346,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.reconnectAttempts = nextAttempt;
-      this.autoConnect().catch((error) => this.handleAutoConnectFailure(error));
+      this.serializeLifecycle(() => this.autoConnect()).catch((error) =>
+        this.handleAutoConnectFailure(error),
+      );
     }, delay);
   }
 
@@ -732,6 +1430,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     const { Mesh, Portnums } = await loadMeshModule();
 
     const channelConfig =
+      this.connectionOptions?.sendChannel ??
       this.configService.get<number>('serial.commandChannel') ??
       this.configService.get<number>('serial.sendChannel') ??
       0;
@@ -786,6 +1485,27 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     );
 
     await this.writeBuffer(frame);
+  }
+
+  private updateLocalPosition(latitudeI?: number, longitudeI?: number, time?: number): void {
+    if (time && time > 0) {
+      this.localRadio = { ...this.localRadio, deviceTime: time, deviceTimeAt: Date.now() };
+    }
+    if (!latitudeI && !longitudeI) {
+      return;
+    }
+    this.localRadio = {
+      ...this.localRadio,
+      lat: (latitudeI ?? 0) / 1e7,
+      lon: (longitudeI ?? 0) / 1e7,
+      positionAt: Date.now(),
+    };
+  }
+
+  private updateLocalBattery(level?: number): void {
+    if (level && level > 0) {
+      this.localRadio = { ...this.localRadio, batteryLevel: Math.min(100, level) };
+    }
   }
 
   private nextPacketId(): number {
@@ -865,14 +1585,16 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       writeDelimiters: string[];
       autoDetectDelimiter: boolean;
       rawDelimiter?: string;
+      sendMode?: string;
     },
   ): Promise<void> {
     this.logger.log(
       `Opening serial port ${path} @ ${options.baudRate} using protocol ${options.protocol}`,
     );
 
+    let port: SerialPortStream;
     try {
-      this.port = new SerialPortStream({
+      port = new SerialPortStream({
         binding: Binding,
         path,
         baudRate: options.baudRate,
@@ -885,12 +1607,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     }
 
     await new Promise<void>((resolve, reject) => {
-      if (!this.port) {
-        reject(new Error('Serial port not initialised'));
-        return;
-      }
-
-      if (this.port.isOpen) {
+      if (port.isOpen) {
         resolve();
         return;
       }
@@ -905,63 +1622,58 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         reject(err);
       };
       const cleanup = () => {
-        this.port?.off('open', handleOpen);
-        this.port?.off('error', handleError);
+        port.off('open', handleOpen);
+        port.off('error', handleError);
       };
 
-      this.port.once('open', handleOpen);
-      this.port.once('error', handleError);
+      port.once('open', handleOpen);
+      port.once('error', handleError);
     });
 
+    this.port = port;
     this.protocolParser = createParser(options.protocol);
     this.protocolParser.reset();
 
-    if (options.protocol === 'meshtastic-rewrite') {
-      this.frameParser = new MeshtasticFrameParser();
-      this.port.pipe(this.frameParser);
+    // Always frame + handshake so a Meshtastic radio is detected regardless of protocol; text falls through to the protocol parser.
+    this.frameParser = new MeshtasticFrameParser();
+    this.port.pipe(this.frameParser);
 
-      this.frameParser.on('data', (event: MeshtasticFrameEvent) => {
-        if (event.type === 'frame') {
-          this.logger.log(`[FRAME] protobuf ${(event.data as Buffer).length}B`);
-          void this.handleMeshtasticFrame(event.data);
-        } else if (event.type === 'text') {
-          const line = (event.data as string).trim();
-          if (!line) return;
-          this.logger.log(`[TEXT] ${line.slice(0, 200)}`);
-          this.processIncomingLine(line, 'serial');
-        }
-      });
-
-      this.frameParser.on('error', (err: Error) => {
-        this.logger.error(`Frame parser error: ${err.message}`, err.stack);
-      });
-
-      void this.initMeshtasticApi().catch((err) => {
-        this.logger.warn(`Meshtastic API init: ${err instanceof Error ? err.message : err}`);
-      });
-    } else {
-      const readDelimiter = options.autoDetectDelimiter ? '\n' : options.delimiter;
-      this.lineParser = this.port.pipe(
-        new ReadlineParser({
-          delimiter: readDelimiter,
-        }),
-      );
-
-      this.lineParser.on('data', (data: string | Buffer) => {
-        const line = data
-          .toString()
-          .replace(/[\r\n]+$/, '')
-          .trim();
-        if (!line) {
+    this.frameParser.on('data', (event: MeshtasticFrameEvent) => {
+      if (event.type === 'frame') {
+        this.logger.log(`[FRAME] protobuf ${(event.data as Buffer).length}B`);
+        void this.handleMeshtasticFrame(event.data);
+      } else if (event.type === 'text') {
+        if (this.localRadio.num !== undefined) return;
+        const line = (event.data as string).trim();
+        if (!line) return;
+        if (this.heldTextLines) {
+          this.heldTextLines.push(line);
           return;
         }
+        this.logger.log(`[TEXT] ${line.slice(0, 200)}`);
         this.processIncomingLine(line, 'serial');
-      });
+      }
+    });
 
-      this.lineParser.on('error', (err) => {
-        this.logger.error(`Serial parser error: ${err.message}`, err.stack);
-      });
+    this.frameParser.on('error', (err: Error) => {
+      this.logger.error(`Frame parser error: ${err.message}`, err.stack);
+    });
+
+    const plainMode =
+      (
+        options.sendMode ??
+        this.configService.get<string>('serial.sendMode') ??
+        'protobuf'
+      ).toLowerCase() === 'plain';
+    if (!plainMode) {
+      void this.identifyRadioWithRetry();
     }
+
+    this.radioHeartbeatTimer = setInterval(() => {
+      void this.sendRadioHeartbeat().catch((err) =>
+        this.logger.warn(`Meshtastic keepalive: ${err instanceof Error ? err.message : err}`),
+      );
+    }, 15 * 1000);
 
     this.port.on('error', (err) => {
       this.lastError = err.message;
@@ -969,6 +1681,9 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.port.on('close', () => {
+      if (this.port !== port) {
+        return;
+      }
       this.logger.warn('Serial port connection closed');
       this.cleanup();
       if (!this.manualDisconnect) {
@@ -1003,6 +1718,56 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Meshtastic API handshake sent (nonce=${nonce})`);
   }
 
+  private async sendRadioHeartbeat(): Promise<void> {
+    if (!this.port?.isOpen || this.localRadio.num === undefined) {
+      return;
+    }
+    const { Mesh } = await loadMeshModule();
+    const toRadio = create(Mesh.ToRadioSchema, {
+      payloadVariant: {
+        case: 'heartbeat',
+        value: create(Mesh.HeartbeatSchema, {}),
+      },
+    });
+    const payloadBuf = Buffer.from(toBinary(Mesh.ToRadioSchema, toRadio));
+    const frame = Buffer.alloc(4 + payloadBuf.length);
+    frame[0] = 0x94;
+    frame[1] = 0xc3;
+    frame[2] = (payloadBuf.length >> 8) & 0xff;
+    frame[3] = payloadBuf.length & 0xff;
+    payloadBuf.copy(frame, 4);
+    await this.writeBuffer(frame);
+  }
+
+  private async identifyRadioWithRetry(): Promise<void> {
+    const port = this.port;
+    this.heldTextLines = [];
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (!this.port || this.port !== port) {
+        return;
+      }
+      try {
+        await this.initMeshtasticApi();
+      } catch (err) {
+        this.logger.warn(`Meshtastic API init: ${err instanceof Error ? err.message : err}`);
+      }
+      await delay(3000);
+      if (this.port !== port) {
+        return;
+      }
+      if (this.localRadio.num) {
+        this.heldTextLines = undefined;
+        return;
+      }
+    }
+    const held = this.heldTextLines ?? [];
+    this.heldTextLines = undefined;
+    for (const line of held) {
+      this.logger.log(`[TEXT] ${line.slice(0, 200)}`);
+      this.processIncomingLine(line, 'serial');
+    }
+  }
+
   private async handleMeshtasticFrame(frame: Buffer): Promise<void> {
     try {
       const meshModule = await loadMeshModule();
@@ -1028,16 +1793,47 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           );
           break;
 
+        case 'config': {
+          const section = (variant.value as { payloadVariant?: { case?: string; value?: unknown } })
+            .payloadVariant;
+          if (section?.case && section.value) {
+            this.radioConfig[section.case] = section.value;
+          }
+          break;
+        }
+
+        case 'myInfo': {
+          const myInfo = variant.value as { myNodeNum?: number };
+          if (myInfo.myNodeNum) {
+            this.localRadio = { ...this.localRadio, num: myInfo.myNodeNum };
+          }
+          break;
+        }
+
         case 'nodeInfo': {
           const info = variant.value as {
             num?: number;
             user?: { longName?: string; shortName?: string };
-            position?: { latitudeI?: number; longitudeI?: number };
+            position?: { latitudeI?: number; longitudeI?: number; time?: number };
+            deviceMetrics?: { batteryLevel?: number };
           };
           if (info.num && info.user?.longName) {
             this.meshNodeNames.set(info.num, info.user.longName);
             const hex = info.num.toString(16);
             this.logger.debug(`Node mapping: 0x${hex} → ${info.user.longName}`);
+          }
+          if (info.num && info.num === this.localRadio.num) {
+            this.localRadio = {
+              ...this.localRadio,
+              shortName: info.user?.shortName || this.localRadio.shortName,
+              longName: info.user?.longName || this.localRadio.longName,
+            };
+            this.updateLocalPosition(
+              info.position?.latitudeI,
+              info.position?.longitudeI,
+              info.position?.time,
+            );
+            this.updateLocalBattery(info.deviceMetrics?.batteryLevel);
           }
           break;
         }
@@ -1091,6 +1887,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           portnum?: number;
           payload?: Uint8Array;
           wantResponse?: boolean;
+          requestId?: number;
         };
       };
     },
@@ -1101,8 +1898,29 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
     const decoded = packet.payloadVariant;
     if (!decoded || decoded.case !== 'decoded' || !decoded.value) return;
 
+    if (packet.id) {
+      const now = Date.now();
+      const last = this.seenPacketIds.get(packet.id);
+      if (last !== undefined && now - last < this.PACKET_ID_TTL_MS) {
+        return;
+      }
+      this.seenPacketIds.set(packet.id, now);
+      if (this.seenPacketIds.size > 512) {
+        for (const [id, ts] of this.seenPacketIds) {
+          if (now - ts > this.PACKET_ID_TTL_MS) this.seenPacketIds.delete(id);
+        }
+      }
+    }
+
     const data = decoded.value;
     const fromNode = packet.from ?? 0;
+    if (
+      this.localRadio.num === undefined &&
+      (data.portnum === Portnums.PortNum.POSITION_APP ||
+        data.portnum === Portnums.PortNum.TELEMETRY_APP)
+    ) {
+      return;
+    }
     const nodeName = this.meshNodeNames.get(fromNode) ?? `!${fromNode.toString(16)}`;
     const rssi = packet.rxRssi;
 
@@ -1141,6 +1959,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           const lat = (position.latitudeI ?? 0) / 1e7;
           const lon = (position.longitudeI ?? 0) / 1e7;
           if (lat === 0 && lon === 0) return;
+          if (fromNode && fromNode === this.localRadio.num) {
+            this.updateLocalPosition(position.latitudeI, position.longitudeI, position.time);
+            return;
+          }
 
           const raw = `${nodeName} GPS:${lat.toFixed(6)},${lon.toFixed(6)}`;
           this.incoming$.next(raw);
@@ -1205,6 +2027,10 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
 
           if (variant.case === 'deviceMetrics' && variant.value) {
             const dm = variant.value;
+            if (fromNode && fromNode === this.localRadio.num) {
+              this.updateLocalBattery(dm.batteryLevel);
+              return;
+            }
             const raw = `${nodeName} battery:${dm.batteryLevel ?? '?'}% voltage:${dm.voltage?.toFixed(2) ?? '?'}V uptime:${dm.uptimeSeconds ?? 0}s`;
             this.incoming$.next(raw);
             const event: SerialParseResult = {
@@ -1218,6 +2044,7 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           }
 
           if (variant.case === 'environmentMetrics' && variant.value) {
+            if (fromNode && fromNode === this.localRadio.num) return;
             const em = variant.value;
             const tempC = em.temperature;
             const raw = `${nodeName} temp:${tempC?.toFixed(1) ?? '?'}°C humidity:${em.relativeHumidity?.toFixed(0) ?? '?'}%`;
@@ -1238,8 +2065,86 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
         break;
       }
 
+      case Portnums.PortNum.ADMIN_APP: {
+        if (!data.payload?.length) return;
+        await this.handleAdminReply(fromNode, data.requestId ?? 0, data.payload);
+        break;
+      }
+
+      case Portnums.PortNum.ROUTING_APP: {
+        await this.handleRoutingReply(
+          fromNode,
+          data.requestId ?? 0,
+          data.payload ?? new Uint8Array(),
+        );
+        break;
+      }
+
       default:
         break;
+    }
+  }
+
+  private async handleAdminReply(
+    fromNode: number,
+    requestId: number,
+    payload: Uint8Array,
+  ): Promise<void> {
+    const { Admin } = await loadMeshModule();
+    let admin: { sessionPasskey?: Uint8Array; payloadVariant?: { case?: string; value?: unknown } };
+    try {
+      admin = fromBinary(Admin.AdminMessageSchema, payload) as never;
+    } catch {
+      return;
+    }
+    if (admin.sessionPasskey && admin.sessionPasskey.length > 0 && fromNode) {
+      this.sessionPasskeys.set(fromNode, admin.sessionPasskey);
+    }
+    if (!requestId) return;
+    const pending = this.fleetTx.get(requestId);
+    if (!pending || (pending.expectedFrom !== 0 && pending.expectedFrom !== fromNode)) {
+      return;
+    }
+    this.fleetTx.delete(requestId);
+    clearTimeout(pending.timer);
+    pending.resolve(admin);
+  }
+
+  private async handleRoutingReply(
+    fromNode: number,
+    requestId: number,
+    payload: Uint8Array,
+  ): Promise<void> {
+    if (!requestId) return;
+    const { Mesh } = await loadMeshModule();
+    let errorReason = 0;
+    try {
+      const routing = fromBinary(Mesh.RoutingSchema, payload) as {
+        variant?: { case?: string; value?: number };
+      };
+      if (routing.variant?.case === 'errorReason') {
+        errorReason = Number(routing.variant.value ?? 0);
+      }
+    } catch {
+      errorReason = -1;
+    }
+    const pending = this.fleetTx.get(requestId);
+    if (!pending || (pending.expectedFrom !== 0 && pending.expectedFrom !== fromNode)) {
+      return;
+    }
+    const failed = errorReason !== 0;
+    if (pending.expectsReply && !failed) {
+      return;
+    }
+    this.fleetTx.delete(requestId);
+    clearTimeout(pending.timer);
+    if (failed) {
+      if (errorReason === 32 && fromNode) {
+        this.sessionPasskeys.delete(fromNode);
+      }
+      pending.reject(new Error(`radio admin failed: routing error ${errorReason}`));
+    } else {
+      pending.resolve(null);
     }
   }
 
@@ -1416,12 +2321,14 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
       let result: unknown;
       switch (action) {
         case 'connect':
-          await this.connectInternal(payload as Partial<SerialConnectionOptions>);
+          await this.serializeLifecycle(() =>
+            this.connectInternal(payload as Partial<SerialConnectionOptions>),
+          );
           this.broadcastState();
           result = this.buildState();
           break;
         case 'disconnect':
-          await this.performDisconnect();
+          await this.serializeLifecycle(() => this.performDisconnect());
           this.broadcastState();
           result = this.buildState();
           break;
@@ -1437,6 +2344,13 @@ export class SerialService implements OnModuleInit, OnModuleDestroy {
           break;
         case 'queueCommand':
           await this.queueCommandInternal(payload as QueueCommandRequest);
+          result = true;
+          break;
+        case 'radioInfo':
+          result = this.buildRadioInfo();
+          break;
+        case 'radioAction':
+          await this.radioActionInternal(payload as RadioAction);
           result = true;
           break;
         default:
@@ -1779,7 +2693,7 @@ function sanitizeLine(value: string): string {
   // and the hop adds "relayName: " in front. We detect by checking if the second
   // token is a plain node ID (not a keyword) and the third token IS a keyword.
   const HOP_KEYWORD_RE =
-    /^(?:STATUS|Target|DEVICE|DRONE|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PROBE_HIT|PROBE_ACK|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|Time:)/i;
+    /^(?:STATUS|Target|DEVICE|DRONE|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PROBE_HIT|PROBE_ACK|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|CSI_|Time:)/i;
   const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
   if (hopMatch) {
     const secondToken = hopMatch[2].replace(/[:\s]+$/, '');

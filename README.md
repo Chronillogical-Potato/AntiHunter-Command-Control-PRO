@@ -58,7 +58,7 @@ AntiHunter Command & Control PRO turns raw radio/mesh telemetry into actionable 
 - **Scanning workflows**: Command presets fire scan/baseline/deauth/randomization pipelines against nodes, with FOREVER protections and audit trails. Operators can schedule sweeps, chain commands, and monitor acknowledgements/results inside the console.
 - **Tracking**: Every detection updates the live map with trails, heading vectors, RSSI pulses, and site-specific coloration. Inventory rows store the location history so you can pivot from console <-> map <-> export seamlessly.
 - **Triangulation**: Multi-node detection events feed the triangulation engine, capturing angle-of-arrival data set by the nodes. Results surface in the Targets module with exports for external tooling (e.g., CSV/GeoJSON) and can be reviewed in the map view as overlays.
-- **Packet capture**: `PCAP_START:<radio>:<secs>[:<band>][:FOREVER]` and `PCAP_STOP` start and stop a pcap recording on the node's SD card. Radio 0 WiFi, 1 BLE; band 0 2.4 GHz, 1 5 GHz, 2 both, 5 GHz on C5 nodes only. The Console tracks the `PCAP_ACK` and `PCAP_DONE` frames; the file itself stays on the node and is retrieved from its web UI, not over mesh.
+- **Packet capture**: `PCAP_START:<radio>:<secs>[:<band>][:FOREVER]` / `PCAP_STOP` record a pcap to the node's SD card (radio 0 WiFi, 1 BLE; band 0 2.4 GHz, 1 5 GHz, 2 both, C5 only). Download it from the node's web UI.
 - **Exports & auditing**: Scan logs, triangulation snapshots, and detection histories are exportable from their respective modules, ensuring mission reporting and post-op analysis are one click away.
 
 ### Drone Awareness & FAA Enhancements
@@ -110,14 +110,31 @@ AntiHunter Command & Control PRO turns raw radio/mesh telemetry into actionable 
 - **Secure runtime**: webhook dispatchers let you disable TLS validation for lab setups or enforce full-chain verification in production. Client certificates and private keys are stored encrypted in the database, and Prisma migrations now cover inventory update events plus serial/raw tap targets.
 - **Operator UX**: the Alerts, Config, and Addons pages now share the same shell (sidebar buttons outside the card, stacked sections within) so the experience is consistent no matter which subsystem you configure.
 
-### Sentinel Command Console & Attack Telemetry
+### Sentinel (WiFi attack detection)
 
-- **Sentinel lifecycle commands**: the Console can arm/disarm the passive WiFi attack detector per node with `SENTINEL_ON` / `SENTINEL_OFF`, pull its live state with `SENTINEL_STATUS`, switch between `SENTINEL_MODE:scan` (channel-hopping) and `SENTINEL_MODE:defend` (AP-channel pinned), and persist auto-start across reboots with `SENTINEL_BOOT:on` / `SENTINEL_BOOT:off`.
-- **Detector groups & tuning**: `GROUP:<name>:<on|off>` enables or disables a whole detector family per node (`dos`, `rogue`, `recon`, `physical`, `mesh`, or `all`); `DETECT_CFG:<json>` pushes tunable detector thresholds (JSON, ≤180 chars) and `DETECT_CFG_GET` reads the node's active configuration back over mesh.
-- **Incident log**: `INCIDENTS[:<count>]` (count 1-200) requests the node's Sentinel incident ring buffer over mesh; `INCIDENTS_CLEAR` wipes it.
-- **Mesh de-dup controls**: `CONFIG_DEDUP_TTL:<0-3600>` sets the cross-scan MAC de-dup TTL (seconds), `CONFIG_SESSION_DEDUP:<0|1>` toggles per-session de-dup, and `MESH_DEDUP_CLEAR` flushes the de-dup cache.
-- **Erase authorization**: `CONFIG_ERASE_PSK:<key>` (1-64 chars) sets the pre-shared key that gates erase/factory-reset commands, and `FACTORY_RESET:<FULL|CONFIG|DATA>:<credential>` factory-resets a single targeted node against that credential.
-- **Attack telemetry ingest**: the backend now parses Sentinel WiFi attack detections (`<nodeId>: <TYPE>:<fields>`) covering rogue-AP attacks (evil-twin, OWE-downgrade abuse, karma/MANA candidate + confirmed), credential-harvesting activity (PMKID forge/harvest, EAPOL bait, handshake capture, KRACK), flood/DoS activity (deauth flood/forge/AP-targeted, beacon flood/forge, auth flood, assoc-sleep, SAE DoS, probe floods and their behavioral/AP-targeted variants), recon and physical-layer abuse (SSID confusion, FragAttacks, generic recon, attacker-hunt, PHY jamming), and Pwnagotchi beacon fingerprints -- plus mesh-guard intrusion alerts (self-spoof, mesh flood, command injection), baseline `DEVICE_DISAPPEARED` events, and RemoteID relay frames (`RID_RX`, `RID_CLAIM`). These feed the same Console/Alerts/map pipeline as existing detection types.
+Sentinel watches WiFi on each node for attacks: deauth and beacon floods, evil twins, karma, handshake and PMKID capture, jamming, and Pwnagotchis. Hits show in the Console, Alerts and on the map.
+
+| Command | Does |
+| ------- | ---- |
+| `SENTINEL_ON` / `SENTINEL_OFF` / `SENTINEL_STATUS` | Arm, disarm, check |
+| `SENTINEL_MODE:scan` / `SENTINEL_MODE:defend` | Hop channels / stay on your AP's channel |
+| `SENTINEL_BOOT:on` / `SENTINEL_BOOT:off` | Start on boot |
+| `GROUP:<dos\|rogue\|recon\|physical\|mesh\|all>:<on\|off>` | Turn a detector family on or off |
+| `DETECT_CFG:<json>` / `DETECT_CFG_GET` | Set / read thresholds (JSON, max 180 chars) |
+| `INCIDENTS[:<1-200>]` / `INCIDENTS_CLEAR` | Read / clear the incident log |
+| `CONFIG_DEDUP_TTL:<0-3600>`, `CONFIG_SESSION_DEDUP:<0\|1>`, `MESH_DEDUP_CLEAR` | Mesh duplicate filtering |
+| `CONFIG_ERASE_PSK:<key>` | Set the erase and factory reset key (1-64 chars) |
+| `FACTORY_RESET:<FULL\|CONFIG\|DATA>:<key>` | Factory reset one node |
+
+### Radio, Fleet & Ops
+
+- **Radio**: Config → Serial Connection → Radio shows the attached Meshtastic radio. Set its clock, GPS, screen, Bluetooth; reboot or clear its node list.
+- **Send settings**: Send Mode, hop limit and command channel, under Config → Serial Connection. See [Serial Hardware](#serial-hardware--meshtastic-sniffer).
+- **Status broadcast**: the command post can send its own `STATUS` to `@ALL` on a timer so other posts list it as a node. Off by default.
+- **Fleet Security**: control-post radio identity, per-node trust, and staged channel PSK rotation. Admin keys can't be changed over the air; set them over USB.
+- **Database panel**: Config → System Updates shows row counts. Admin only.
+- **Offline maps**: tiles you view are cached (`AHCC_TILE_CACHE`, default `data/tiles`, max `AHCC_TILE_CACHE_MAX_MB`, default 2048). **Offline maps** on the map saves an area for USGS Topo, USGS Imagery or OpenTopoMap.
+- **Forgot password / invites**: reset links and invite links from the login screen.
 
 ### UI Modules at a Glance
 
@@ -143,7 +160,7 @@ Review discovered devices, signal strength history, vendor resolutions, and expo
 
 #### Baseline
 
-Run the on-node firmware baseline detector (start per node, per site, or all nodes; timed or FOREVER) and watch its live status plus NEW/RETURN/RSSI anomalies and disappeared devices. Below it, the command center classifies every device by presence pattern — Stationary, Frequent Flier, Visitor, New, or Transient — over a configurable window, with smart per-device names.
+Run the node baseline detector and watch NEW, RETURN, RSSI and disappeared-device anomalies. Devices are also sorted by presence: Stationary, Frequent Flier, Visitor, New, Transient.
 
 #### Targets
 
@@ -168,7 +185,7 @@ Audit node health, connectivity, and telemetry history with quick map focus acti
 <img width="1019" height="989" alt="4D4ABE5C-6F17-4131-A4E1-82453C8F02B8_1_201_a" src="https://github.com/user-attachments/assets/03356022-3a33-4bf8-b389-17e7fd8fc0bc" />
 
 
-Arm the WiFi attack detection tool. Detector families (DoS, Rogue AP, Recon, Physical, Mesh Guard)
+Arm WiFi attack detection and review hits by detector family (DoS, Rogue AP, Recon, Physical, Mesh Guard).
 
 #### Scheduler
 
@@ -184,7 +201,7 @@ Adjust system defaults (alarms, detection presets, serial ports, site federation
 
 #### Addons
 
-Enable or disable optional modules (Sentinel, Scheduler, Alerts, Strategy Advisor, future analytics packs) to tailor the UI for your deployment. The updated capture shows the Addons catalog card, feature summaries, and the new badge callouts for beta-grade modules.
+Enable or disable optional modules (Sentinel, Scheduler, Alerts, Strategy Advisor, future analytics packs) to tailor the UI for your deployment.
 
 <img width="1151" height="948" alt="addons" src="https://github.com/user-attachments/assets/f699d5c3-c7a2-4a11-af9f-02c0e2403897" />
 
@@ -286,7 +303,7 @@ AntiHunter ships with layered defenses: RBAC, MFA, rate limiting, and a programm
 
 | Setting / Env var             | Default                     | Purpose                                                             |
 | ----------------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `JWT_SECRET`                  | _required_                  | Symmetric signing key for API + Socket.IO sessions. Rotate often.   |
+| `JWT_SECRET`                  | _generated_                 | Symmetric signing key for API + Socket.IO sessions. Rotate often. Unset: a random key is saved to `apps/backend/.secrets/jwt.key`. |
 | `JWT_EXPIRY`                  | `12h`                       | Lifetime of issued access tokens.                                   |
 | `INVITE_EXPIRY_HOURS`         | `48`                        | TTL for admin-generated invitation links.                           |
 | `PASSWORD_RESET_EXPIRY_HOURS` | `4`                         | TTL for password reset emails.                                      |
@@ -412,11 +429,11 @@ Keep certificates, mail credentials, and site identifiers in environment variabl
 
 ## Installation
 
-Three ways to install, easiest first:
+Pick one:
 
-- **Scripted** — one command installs prerequisites (Node, pnpm, PostgreSQL), clones, configures the database, runs migrations, and seeds an admin login. Linux, macOS, and Windows.
-- **Docker** — `docker compose` brings up backend, frontend, and Postgres; no local Node or PostgreSQL needed.
-- **Manual** — install each piece yourself for full control.
+- **Scripted** — installs Node, pnpm and PostgreSQL, sets up the database and an admin login.
+- **Docker** — backend, frontend and Postgres in containers.
+- **Manual** — install each piece yourself.
 
 ### Scripted — Linux / macOS
 
@@ -426,25 +443,19 @@ chmod +x setup-local.sh
 ./setup-local.sh
 ```
 
-Run it as a regular user (not `sudo`) — it prompts for sudo when needed. Then open `http://localhost:5173` and log in with the credentials printed after setup.
+Run as a regular user, not `sudo`; it asks for sudo when needed. Then open `http://localhost:5173` and log in with the printed credentials.
 
 ### Scripted — Windows 10/11
 
-`scripts\setup-windows.ps1` installs Node, pnpm, and PostgreSQL, sets up the database, and creates your admin login. It doesn't start the app for you — it leaves a `Start-AntiHunter.cmd` launcher you run when you're ready.
-
-Follow these steps in order:
-
-1. **Install Git.** Open any PowerShell window and run:
+1. **Install Git** in PowerShell, then close the window:
 
    ```powershell
    winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements
    ```
 
-   Close that window afterward so Git is on your PATH.
+2. **Open PowerShell as Administrator** (Start → `powershell` → right-click → Run as administrator).
 
-2. **Open PowerShell as Administrator.** Click Start, type `powershell`, right-click **Windows PowerShell**, and choose **Run as administrator**. (The installer needs admin rights to install system software.)
-
-3. **Download and run the installer:**
+3. **Run the installer:**
 
    ```powershell
    cd $HOME
@@ -453,26 +464,36 @@ Follow these steps in order:
    powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
    ```
 
-4. **Answer the prompts.** Press **Enter** to accept the defaults. The first run takes a few minutes. When it finishes, **write down the admin email and password it shows you.**
+4. **Press Enter for the defaults.** Write down the admin email and password it prints.
 
-5. **Start the app.** Double-click **`Start-AntiHunter.cmd`** in the project folder (or run `pnpm AHCC` in a normal PowerShell window).
+5. **Start:** double-click `Start-AntiHunter.cmd`, or run `pnpm AHCC`.
 
-6. **Open the app.** Go to **http://localhost:5173** and log in with the admin email and password from step 4.
+6. **Open** http://localhost:5173 and log in.
 
-To update later, open the app's update page or run `git pull` in the project folder.
+Update with the in-app updater or `git pull`.
 
 <details>
-<summary>Windows notes (firewall, serial, ARM64, WSL)</summary>
+<summary>Windows notes</summary>
 
-- **Windows Firewall** may ask to allow Node.js the first time you start the app. Only using it on this PC? Click **Cancel** — `localhost` works regardless. Want to reach it from other devices on your network? Click **Allow**, and tick **Private** only (leave **Public** off).
-- **Serial hardware:** put `SERIAL_DEVICE=COM3` in `apps\backend\.env` (your port from **Device Manager -> Ports (COM & LPT)**), then restart the app.
-- **ARM64 Windows** (VM on Apple Silicon): the x64 builds install automatically — nothing extra to do.
-- **Don't use WSL** — COM ports don't pass through cleanly.
+- **Firewall prompt for Node.js:** Cancel for local use only; Allow with **Private** ticked to reach it from your network.
+- **Serial:** pick the COM port in Config → Serial Connection (Device Manager → Ports shows it).
+- **ARM64** (VM on Apple Silicon): works as is.
+- **WSL:** don't; COM ports don't pass through.
 </details>
 
 ### Docker
 
-> Needs Docker Desktop (Windows/macOS) or Docker Engine (Linux), version 25 or newer, with virtualization enabled. On Windows/macOS, share the repository folder in Docker's file-sharing settings.
+Needs Docker 25+ with Compose v2.
+
+| System | Install |
+| ------ | ------- |
+| Ubuntu 22.04 / 24.04 | `sudo apt install docker.io docker-compose-v2` |
+| Debian 13 | `sudo apt install docker.io docker-compose` |
+| Debian 12 | [Docker's apt repo](https://docs.docker.com/engine/install/debian/) (its `docker.io` is too old) |
+| macOS | `brew install colima docker docker-compose`, then `colima start` |
+| Windows / other | [Docker Desktop](https://docs.docker.com/desktop/) |
+
+The `docker` group is root-equivalent; add only trusted users.
 
 #### 1. Check Docker
 
@@ -481,11 +502,11 @@ docker compose version
 docker info
 ```
 
-The `docker compose` command (with a space) ships with current Docker; the old `docker-compose` is not used.
+On macOS with Homebrew, use `docker-compose` (hyphen) if `docker compose` says unknown command.
 
 #### 2. Serial adapter — comment out if you don't have one
 
-`docker-compose.yml` pins a Meshtastic adapter at `/dev/ttyUSB0`. Without that device (any macOS/Windows host, or Linux with no adapter plugged in) the backend container fails to start. Comment these lines out under the `backend` service first:
+The backend pins `/dev/ttyUSB0` and won't start without it (macOS, Windows, or no adapter). Comment out under `backend`:
 
 ```yaml
 # devices:
@@ -502,20 +523,18 @@ cd AntiHunter-Command-Control-PRO
 docker compose up -d --build
 ```
 
-This brings up three containers:
+- `cc_postgres` — database (`postgres-data` volume).
+- `cc_backend` — migrates, seeds, serves `http://localhost:3000`.
+- `cc_frontend` — app at `http://localhost:8080`.
 
-- `cc_postgres` — stores data in the `postgres-data` volume.
-- `cc_backend` — applies Prisma migrations and runs the seed on startup, serves HTTP/WebSocket on `http://localhost:3000`.
-- `cc_frontend` — serves the SPA on `http://localhost:8080` and proxies API calls.
-
-Log in at `http://localhost:8080` with the seeded admin, then change the password immediately:
+Log in at `http://localhost:8080` and change the password:
 
 | Variable         | Default             |
 | ---------------- | ------------------- |
 | `ADMIN_EMAIL`    | `admin@example.com` |
 | `ADMIN_PASSWORD` | `admin`             |
 
-To change the admin login, database URL, mail server, or serial port, edit the `environment` block of the `backend` service in `docker-compose.yml` before the first run — `docker/.env.example` lists every variable. Compose uses those literal values; it does not read a separate `.env` file.
+Change admin login, database URL, mail or serial port in the `backend` `environment` block of `docker-compose.yml` before first run. `docker/.env.example` lists every variable.
 
 #### 4. Logs and shutdown
 
@@ -526,9 +545,9 @@ docker compose down                 # add --volumes to also delete the database
 
 #### Upgrades and other settings
 
-- **Upgrade:** `git pull && docker compose up -d --build`. The backend re-applies migrations on boot. Stuck migration (Prisma `P3009`/`P3018`)? See [Troubleshooting](#troubleshooting).
-- **Skip auto-migrations:** set `RUN_MIGRATIONS=false` in the `backend` environment if you deploy schema changes another way.
-- **Development:** the containers run a compiled build, not a dev server. For hot reload, use the [pnpm setup](#running-the-stack).
+- **Upgrade:** `git pull && docker compose up -d --build`. Migrations run on boot. If the database doesn't match, the backend stops and logs why; set `AHCC_DB_MISMATCH` (see [Database Update Helper](#database-update-helper)). Stuck migration? See [Troubleshooting](#troubleshooting).
+- **Skip auto-migrations:** `RUN_MIGRATIONS=false`.
+- **Hot reload:** use the [pnpm setup](#running-the-stack); containers run a compiled build.
 
 ### Manual
 
@@ -538,7 +557,7 @@ Install system dependencies, clone, set up PostgreSQL, then [configure](#configu
 
 - **Node.js** 20 or newer (ships with Corepack for pnpm)
 
-- **pnpm** 9 or newer (`corepack enable` sets it up automatically)
+- **pnpm** 12.4.2 (`corepack enable` installs it)
 
 - **PostgreSQL** 14+ (local or managed)
 
@@ -549,7 +568,7 @@ Install system dependencies, clone, set up PostgreSQL, then [configure](#configu
 
   - Windows: automatic install via Node.js (or Visual Studio Build Tools)
 
-- Optional: Docker Desktop (for Postgres), Git, serial drivers (FTDI/CH340)
+- Optional: Docker (for Postgres), Git, serial drivers (FTDI/CH340)
 
 ### System Dependencies
 
@@ -589,179 +608,36 @@ pnpm install
 <details>
 <summary>PostgreSQL Database Setup Guide</summary>
 
-If you don't have PostgreSQL set up yet, follow these instructions for your operating system:
+Install and start:
 
-### Linux (Debian/Ubuntu)
+- **Debian/Ubuntu:** `sudo apt install -y postgresql postgresql-contrib && sudo systemctl enable --now postgresql`, then `sudo -u postgres psql`
+- **macOS:** `brew install postgresql@15 && brew services start postgresql@15`, then `psql postgres`
+- **Windows:** [EDB installer](https://www.postgresql.org/download/windows/), then **SQL Shell (psql)** from the Start menu
+- **Docker:**
+  ```bash
+  docker run -d --name ahcc-postgres -e POSTGRES_DB=command_center -e POSTGRES_USER=command_center \
+    -e POSTGRES_PASSWORD=command_center -p 5432:5432 -v pgdata:/var/lib/postgresql/data postgres:15-alpine
+  ```
 
-1. **Install PostgreSQL**
-   ```bash
-   sudo apt update
-   sudo apt install -y postgresql postgresql-contrib
-   ```
+Create the database (not needed for Docker):
 
-2. **Start PostgreSQL service**
-   ```bash
-   sudo systemctl start postgresql
-   sudo systemctl enable postgresql
-   ```
-
-3. **Create database and user**
-   ```bash
-   # Switch to postgres user
-   sudo -u postgres psql
-   ```
-
-   Then in the PostgreSQL prompt:
-   ```sql
-   -- Create the database
-   CREATE DATABASE command_center;
-
-   -- Create user with password
-   CREATE USER command_center WITH PASSWORD 'command_center';
-
-   -- Grant privileges
-   GRANT ALL PRIVILEGES ON DATABASE command_center TO command_center;
-
-   -- Exit
-   \q
-   ```
-
-4. **Test the connection**
-   ```bash
-   psql -U command_center -d command_center -h localhost
-   # Enter password when prompted: command_center
-   ```
-
-### macOS
-
-1. **Install PostgreSQL via Homebrew**
-   ```bash
-   brew install postgresql@15
-   brew services start postgresql@15
-   ```
-
-2. **Create database and user**
-   ```bash
-   # Access PostgreSQL
-   psql postgres
-   ```
-
-   Then in the PostgreSQL prompt:
-   ```sql
-   -- Create the database
-   CREATE DATABASE command_center;
-
-   -- Create user with password
-   CREATE USER command_center WITH PASSWORD 'command_center';
-
-   -- Grant privileges
-   GRANT ALL PRIVILEGES ON DATABASE command_center TO command_center;
-
-   -- Exit
-   \q
-   ```
-
-3. **Test the connection**
-   ```bash
-   psql -U command_center -d command_center -h localhost
-   # Enter password when prompted: command_center
-   ```
-
-### Windows
-
-1. **Download and Install PostgreSQL**
-   - Download from [postgresql.org/download/windows](https://www.postgresql.org/download/windows/)
-   - Run the installer (EDB installer recommended)
-   - During installation, remember the superuser (postgres) password you set
-   - Default port is 5432 (keep this unless you have conflicts)
-
-2. **Create database and user via pgAdmin**
-   - Open pgAdmin (installed with PostgreSQL)
-   - Connect to local server using the postgres password
-   - Right-click **Databases** → **Create** → **Database**
-   - Name: `command_center`
-   - Right-click **Login/Group Roles** → **Create** → **Login/Group Role**
-   - General tab: Name: `command_center`
-   - Definition tab: Password: `command_center`
-   - Privileges tab: Check "Can login?"
-   - Click **Save**
-   - Right-click the `command_center` database → **Properties** → **Security**
-   - Add privilege for `command_center` user with all permissions
-
-3. **Alternative: Create via SQL Shell (psql)**
-   - Open SQL Shell (psql) from Start menu
-   - Press Enter for all defaults, then enter your postgres password
-   ```sql
-   CREATE DATABASE command_center;
-   CREATE USER command_center WITH PASSWORD 'command_center';
-   GRANT ALL PRIVILEGES ON DATABASE command_center TO command_center;
-   \q
-   ```
-
-4. **Test the connection**
-   - Open SQL Shell (psql)
-   - Server: localhost
-   - Database: command_center
-   - Port: 5432
-   - Username: command_center
-   - Password: command_center
-
-### Docker (Cross-platform)
-
-If you prefer using Docker for PostgreSQL:
-
-```bash
-# Create a postgres container
-docker run -d \
-  --name ahcc-postgres \
-  -e POSTGRES_DB=command_center \
-  -e POSTGRES_USER=command_center \
-  -e POSTGRES_PASSWORD=command_center \
-  -p 5432:5432 \
-  -v pgdata:/var/lib/postgresql/data \
-  postgres:15-alpine
-
-# Check it's running
-docker ps | grep ahcc-postgres
-
-# Test connection
-docker exec -it ahcc-postgres psql -U command_center -d command_center
+```sql
+CREATE DATABASE command_center;
+CREATE USER command_center WITH PASSWORD 'command_center';
+GRANT ALL PRIVILEGES ON DATABASE command_center TO command_center;
+\c command_center
+GRANT ALL ON SCHEMA public TO command_center;
 ```
 
-### Updating the DATABASE_URL
-
-After setting up PostgreSQL, update your `DATABASE_URL` in `apps/backend/.env`:
+Set it in `apps/backend/.env`:
 
 ```env
-# Standard local connection
 DATABASE_URL="postgresql://command_center:command_center@localhost:5432/command_center"
-
-# If using custom credentials, update accordingly:
-# DATABASE_URL="postgresql://YOUR_USER:YOUR_PASSWORD@localhost:5432/YOUR_DATABASE"
 ```
 
-### Troubleshooting Database Connection
+Test: `psql -U command_center -d command_center -h localhost`.
 
-**Connection refused errors:**
-- Ensure PostgreSQL is running: `sudo systemctl status postgresql` (Linux) or `brew services list` (macOS)
-- Check port 5432 is listening: `sudo lsof -i :5432` (Linux/macOS) or `netstat -an | findstr 5432` (Windows)
-
-**Authentication failed:**
-- Verify your username and password in the connection string
-- Check `pg_hba.conf` allows password authentication for localhost connections
-- On Linux: `/etc/postgresql/*/main/pg_hba.conf`
-- Look for line: `host all all 127.0.0.1/32 md5` or `scram-sha-256`
-
-**Database does not exist:**
-- Recreate the database using the SQL commands above
-- Ensure you're connecting to the correct database name
-
-**Permission denied:**
-- Re-grant privileges using the `GRANT ALL PRIVILEGES` command above
-- For newer PostgreSQL versions, you may also need:
-  ```sql
-  GRANT ALL ON SCHEMA public TO command_center;
-  ```
+Won't connect? Check the service is running and port 5432 is listening. Auth fails? `pg_hba.conf` needs `md5` or `scram-sha-256` for `127.0.0.1/32`.
 
 </details>
 
@@ -808,7 +684,9 @@ Optional environment flags:
 | `JWT_SECRET`                         | If auth is enabled later                                                                                                     |
 | `SITE_ID`                            | Default site for ingest                                                                                                      |
 | `WS_MAX_CLIENTS`                     | Socket.IO connection limit                                                                                                   |
-| `SERIAL_PROTOCOL`                    | Parser profile: `meshtastic-rewrite` (Meshtastic radio), `raw-lines` (direct AntiHunter node), `nmea-like`. |
+| `SERIAL_PROTOCOL`                    | Leave at `meshtastic-rewrite`. |
+| `SERIAL_SEND_MODE`                   | `protobuf` (Meshtastic radio on USB) or `plain` (node wired directly). First-start default; set in Config → Serial Connection. |
+| `SERIAL_HOP_LIMIT` / `SERIAL_COMMAND_CHANNEL` | First-start mesh hop limit (0-7) and channel (0-7). |
 | `HTTPS_ENABLED`                      | `true` to serve the backend over HTTPS                                                                                       |
 | `HTTPS_KEY_PATH`                     | PEM private key path when HTTPS is enabled                                                                                   |
 | `HTTPS_CERT_PATH`                    | PEM certificate (or chain) path for HTTPS                                                                                    |
@@ -844,12 +722,10 @@ Frontend currently consumes backend settings via API, so no extra `.env` is need
 
 ### Environment file layout
 
-The backend loads two env files via `ConfigModule` `envFilePath`, resolved relative to the compiled module (same paths in dev and prod), in precedence order:
+1. **`apps/backend/.env`** — wins on conflicts.
+2. **Root `.env`** — shared defaults (`SITE_ID`, `DATABASE_URL`).
 
-1. **`apps/backend/.env`** – wins on conflicts; put backend and `SERIAL_*` overrides here.
-2. **Repository root `.env`** – base defaults shared across the workspace (e.g. `SITE_ID`, `DATABASE_URL`).
-
-A key set in `apps/backend/.env` overrides the same key in the root `.env`; keys only in the root `.env` still load. `apps/backend/prisma/.env` is read only by the Prisma CLI (`DATABASE_URL` for migrations/seed). Container deployments pass variables directly (see `docker/.env.example`).
+`apps/backend/prisma/.env` is only read by the Prisma CLI. Docker passes variables directly (`docker/.env.example`).
 
 ### Serial defaults & persistence
 
@@ -859,7 +735,7 @@ Each Command Center installation owns a single local LoRa gateway, so the serial
 - Subsequent edits through the UI/API write directly to the database and override the env defaults. Environment variables are only used as bootstrap values—they will not overwrite saved settings on restart.
 - Changing the env defaults later? Use the UI/API (or delete the lone `SerialConfig` row) to reapply them. `SITE_ID` still labels events for federation, but it no longer influences serial persistence.
 - The Serial card also shows a **Detected Ports** dropdown (populated from `GET /serial/ports`) and a **Reset to defaults** button (`POST /serial/config/reset`). Use them to quickly switch USB devices or re-seed from the current env without touching the database manually.
-- **Protocol**: use **Meshtastic Ingest** for a Meshtastic gateway radio, or **Raw Lines** when the serial device is an AntiHunter node connected directly.
+- **Send Mode**: `protobuf` for a Meshtastic radio on USB, `plain` for an AntiHunter node wired directly.
 
 ### Two-Factor Authentication (optional)
 
@@ -910,7 +786,7 @@ Each Command Center installation owns a single local LoRa gateway, so the serial
 
 The backend ships with a TAK bridge that translates node/alert telemetry into Cursor-on-Target events for ATAK/WinTAK ecosystems.
 
-1. Apply the latest Prisma migrations (`pnpm --filter @command-center/backend prisma migrate deploy`) so the `TakConfig` table exists.
+1. Apply the latest Prisma migrations (`pnpm --filter @command-center/backend prisma:migrate`) so the `TakConfig` table exists.
 
 2. Set baseline values through environment variables (see table above) **or** configure them from the **Config -> TAK Bridge** card in the UI.
 
@@ -965,23 +841,22 @@ Seed inserts singleton config rows (AppConfig, AlarmConfig, VisualConfig, Covera
 
 ### Database Update Helper
 
-Upgrading older deployments that already contain manually created tables can generate Prisma errors (missing relations, duplicate tables, etc.). To simplify recovery, the repository ships with an interactive helper:
-
 ```bash
-# from the repo root
 pnpm update-db
 ```
 
-The script provides options to:
+Runs on every `pnpm AHCC`, `pnpm dev`, setup/deploy script and Docker start. It regenerates the Prisma client, applies migrations, baselines a database with no migration history, then checks the live schema against this version.
 
-1. Baseline (mark as applied) the initial migration `20251027205237_init` without changing data.
-2. Baseline any other migration once you've confirmed the schema change already exists.
-3. List all migrations in chronological order.
-4. Run `prisma migrate deploy` against the configured database.
-5. Run `prisma migrate reset --force --skip-seed` (drops the schema; only use when you intend to rebuild).
-6. Drop and recreate the entire `public` schema (hard reset). Follow with option 4 to reapply migrations.
+On a mismatch (e.g. the database was used with another branch) it shows the differences and SQL, then asks:
 
-Each action logs the exact `pnpm prisma ...` command executed so you can reproduce it manually later. Use this helper any time a production upgrade leaves the `_prisma_migrations` table out of sync with the actual schema.
+| Choice | Effect |
+| ------ | ------ |
+| Repair | Make the database match. Extra tables and columns are dropped with their data. |
+| Back up, then repair (default) | `pg_dump` to `apps/backend/backups/`, then repair. |
+| Leave as is | Continue; features needing the missing parts fail. |
+| Stop | Exit, no changes. |
+
+No terminal (Docker, CI, systemd): set `AHCC_DB_MISMATCH` to `repair`, `backup-repair`, `ignore` or `abort` (default).
 
 ## Running the Stack
 
@@ -1007,7 +882,7 @@ pnpm dev     # http://localhost:5173
 
 Prefer a single command? From the repo root run `pnpm AHCC` to start both workspaces in parallel (single backend process).
 
-**Silent mode (suppress non-critical output):** Add `:silent` to any dev command to minimize console output, showing only critical errors:
+**Silent mode** shows only errors:
 
 ```bash
 # Single command with silent mode
@@ -1049,6 +924,8 @@ CLUSTER_WORKERS=4 pnpm --filter @command-center/backend start:cluster
 Set `CLUSTER_WORKERS=1` (or omit) to keep a single process.
 
 ### Updating an Existing Deployment
+
+Servers set up with `deploy-production.sh`: use [the update script](#updating-a-server-set-up-by-deploy-productionsh) instead.
 
 When you already have AntiHunter Command & Control PRO running in a live environment, follow this checklist after pulling new commits:
 
@@ -1225,23 +1102,28 @@ Serve `apps/frontend/dist` with your preferred static host (Nginx, S3, etc.) and
 
 For a guided production rollout on Debian/Ubuntu servers we ship `scripts/deploy-production.sh`. It is interactive and will:
 
-1. Validate prerequisites (non-root sudo user, supported distro).
+1. Validate prerequisites (your own sudo account, supported distro).
 2. Install Node.js LTS, pnpm, PostgreSQL, nginx, certbot, fail2ban, and UFW.
 3. Clone/update this repository under `/opt/ahcc`, install dependencies, run Prisma migrations/seeds, and build backend/frontend artifacts.
 4. Generate a backend `.env` from your answers (DB password, JWT secret, SITE_ID, serial defaults, etc.) and configure systemd + nginx (self-signed or LetsEncrypt TLS).
 5. Optionally enable nightly backups and fail2ban rules.
 
-> **Important:** Audit the script before running it. Run it as the dedicated service user (not root) with passwordless sudo:
+> **Important:** Audit the script before running it. Run it from your own admin account, not root:
 >
 > ```bash
-> sudo adduser --system --group --home /opt/ahcc --shell /bin/bash ahcc
-> sudo usermod -aG sudo,dialout ahcc
-> sudo -iu ahcc
-> chmod +x scripts/deploy-production.sh
-> ./scripts/deploy-production.sh
+> sudo -v
+> bash scripts/deploy-production.sh
 > ```
 
-The script prints a deployment summary (URLs, generated credentials). Store it securely and delete the file afterward.
+It creates `ahcc` as a service account with no shell and no sudo (`dialout` only), and runs the backend as `ahcc` under a locked-down systemd unit. Generated credentials go to `/root/ahcc-deployment-credentials.txt` (mode 600); read with `sudo`, store, delete.
+
+#### Updating a server set up by deploy-production.sh
+
+```bash
+sudo /opt/ahcc/AntiHunter-Command-Control-PRO/scripts/deploy-nginx-backend.sh
+```
+
+Backs up the database, `git pull --ff-only`, builds, runs the [database update helper](#database-update-helper), publishes the frontend, restarts `ahcc-backend` and checks `/healthz`. Roll back or pin a version with `GIT_REF=<commit>`.
 
 ## Serial Hardware & Meshtastic Sniffer
 
@@ -1250,6 +1132,8 @@ The script prints a deployment summary (URLs, generated credentials). Store it s
 2. Update `SERIAL_DEVICE`/`SERIAL_BAUD` in the backend `.env`.
 
 3. Start the backend; the serial worker auto-connects and begins ingest.
+
+   **Send Mode** (Config → Serial Connection): `protobuf` for a Meshtastic radio on USB (the radio ignores plain text on USB); `plain` for an AntiHunter node wired directly. `.env` values are first-start defaults; the UI wins after.
 
 4. Use the built-in tool for raw capture:
 
@@ -1268,7 +1152,7 @@ The sniffer is a zero-dependency TypeScript script that mirrors frames to stdout
 | Command                                                                | Description                                                                                                                                             |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm AHCC`                                                            | Boots the backend + frontend dev servers in parallel (`pnpm -r --parallel dev`).                                                                        |
-| `pnpm AHCC:silent`                                                     | Boots dev servers with minimal console output (suppresses non-critical logs, shows only errors).                                                        |
+| `pnpm AHCC:silent`                                                     | Same, errors only.                                                                                                                                      |
 | `pnpm lint`                                                            | ESLint across backend + frontend                                                                                                                        |
 | `pnpm format`                                                          | Prettier writes                                                                                                                                         |
 | `pnpm --filter @command-center/backend prisma:studio`                  | Inspect DB via Prisma Studio                                                                                                                            |
@@ -1333,7 +1217,7 @@ The sniffer is a zero-dependency TypeScript script that mirrors frames to stdout
 | **Cannot log in with default credentials**          | Confirm the seed ran: the backend container logs should show "Running database migrations...". If you customized `ADMIN_EMAIL`/`ADMIN_PASSWORD`, restart the backend with the new values or rerun `prisma:seed`.                                                                                                                               |
 | **Backend returns `ECONNREFUSED` for Postgres**     | Check `docker compose logs postgres`; the DB must be healthy before the backend starts. If running locally, verify `DATABASE_URL` matches your Postgres host/port and that migrations were applied.                                                                                                                                            |
 | **Serial device not detected**                      | On Windows note the `COM` port. On Linux grant access (`sudo usermod -aG dialout $USER` then re-login). Update Config -> Serial or `.env` `SERIAL_DEVICE` with the correct path and restart the backend.                                                                                                                                       |
-| **Node connected but nothing shows in the app**     | Set Config -> Serial -> Protocol to **Raw Lines** (a directly-attached node speaks plain text, not Meshtastic protobuf) and confirm no other program holds the port.                                                                                                                                                                          |
+| **Node connected but nothing shows in the app**     | Close other programs using the port. Meshtastic radio on USB: Send Mode `protobuf`. Node wired directly: `plain`. |
 | **No alerts despite telemetry**                     | Confirm devices flashed with the companion firmware send events, sockets are connected (check `/healthz`), and that the terminal/alert filters are not hiding the severity you expect.                                                                                                                                                         |
 | **Custom alarm audio silent or too loud**           | After uploading a WAV file, adjust per-level volume sliders and click "Test". If volume does not change, refresh the page to reload cached audio. Supported format: 16-bit PCM WAV.                                                                                                                                                            |
 | **Docker push fails due to upstream changes**       | Run `git pull --rebase origin main`, resolve conflicts, then `git push`. This keeps your fork in sync before you build and publish images.                                                                                                                                                                                                     |
@@ -1341,6 +1225,7 @@ The sniffer is a zero-dependency TypeScript script that mirrors frames to stdout
 | **MQTT connect timeout**                            | Ensure the backend is running (check `/healthz`) and that you are using a reachable endpoint. Some brokers require WebSockets (`ws://...`) instead of raw TCP (`mqtt://...`). Leave username/password blank for anonymous brokers and enable site replication before expecting events.                                                         |
 | **HTTPS reverse proxy (502 / TLS errors)**          | Verify Nginx proxies `/api` and `/socket.io` to the backend on the correct host/port. Include websocket headers (`Upgrade`/`Connection`), tail `/var/log/nginx/error.log`, and test with `curl -Ivk https://your-domain/api/healthz`. See the [Nginx quick reference](#production-deployment) for a working example.                           |
 | **Prisma P1000 (invalid DB credentials)**           | The backend cannot authenticate to Postgres. Verify `DATABASE_URL` matches the real database user/password. With the default compose file use `postgresql://command_center:command_center@postgres:5432/command_center`. After fixing it, restart the backend.                                                                                 |
+| **"The database does not match this version"** | Used with another branch or release. Run `pnpm update-db` and pick Back up, then repair (Docker: `AHCC_DB_MISMATCH=backup-repair`). |
 | **Prisma P3009/P3018 (failed migration loop)**      | Inspect `_prisma_migrations` for rows with `finished_at` NULL. Mark them rolled back (`prisma migrate resolve --rolled-back <migration_name>`), recreate any missing objects (e.g., enums or tables), run `docker compose run --rm --no-deps backend pnpm --filter @command-center/backend exec prisma migrate deploy`, then restart services. |
 
 ---

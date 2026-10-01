@@ -11,6 +11,7 @@ import {
 
 import { apiClient } from '../api/client';
 import type { AlarmConfig, AlarmLevel, AlarmSettingsResponse, AlarmSoundKey } from '../api/types';
+import { useAuthStore } from '../stores/auth-store';
 
 type AlarmContextValue = {
   settings?: AlarmSettingsResponse;
@@ -52,6 +53,10 @@ function resolveMediaUrl(path: string | null): string | null {
 }
 
 function createFallbackTone(level: AlarmLevel, volumePercent: number) {
+  const normalized = Math.max(0, Math.min(1, volumePercent / 100));
+  if (normalized <= 0) {
+    return;
+  }
   const ctx = new AudioContext();
   const oscillator = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -63,7 +68,6 @@ function createFallbackTone(level: AlarmLevel, volumePercent: number) {
     CRITICAL: 1040,
   };
   oscillator.frequency.value = frequencies[level];
-  const normalized = Math.max(0, Math.min(1, volumePercent / 100));
   gain.gain.value = Math.max(0.02, normalized * 0.4);
   oscillator.connect(gain);
   gain.connect(ctx.destination);
@@ -74,6 +78,7 @@ function createFallbackTone(level: AlarmLevel, volumePercent: number) {
 
 export function AlarmProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
+  const isAuthenticated = useAuthStore((state) => state.status === 'authenticated');
   const audioRefs = useRef<Record<AlarmSoundKey, HTMLAudioElement | null>>({
     INFO: null,
     NOTICE: null,
@@ -112,6 +117,7 @@ export function AlarmProvider({ children }: PropsWithChildren) {
   const settingsQuery = useQuery({
     queryKey: ['alarms'],
     queryFn: () => apiClient.get<AlarmSettingsResponse>('/alarms'),
+    enabled: isAuthenticated,
   });
 
   useEffect(() => {

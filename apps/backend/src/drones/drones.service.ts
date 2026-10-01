@@ -8,13 +8,14 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Drone, Site } from '@prisma/client';
+import type { AlarmLevel, Drone, Site } from '@prisma/client';
 import { DroneStatus } from '@prisma/client';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
 
 import { DroneDiff, DroneSnapshot } from './drones.types';
 import { FaaRegistryService } from '../faa/faa.service';
 import type { FaaAircraftSummary } from '../faa/faa.types';
+import { GeofenceCrossing, GeofenceCrossingService } from '../geofences/geofence-crossing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CommandCenterGateway } from '../ws/command-center.gateway';
 
@@ -46,6 +47,7 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
     private readonly faaRegistry: FaaRegistryService,
     @Inject(forwardRef(() => CommandCenterGateway))
     private readonly gateway: CommandCenterGateway,
+    private readonly geofenceCrossing: GeofenceCrossingService,
   ) {
     this.localSiteId = configService.get<string>('site.id', 'default');
     const cooldownMinutes = configService.get<number>('faa.onlineLookupCooldownMinutes', 10) ?? 10;
@@ -109,6 +111,9 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
     this.drones.set(merged.id, merged);
     this.emitSnapshot();
     this.diff$.next({ type: 'upsert', drone: merged });
+    this.geofenceCrossing
+      .evaluate('drone', merged.id, merged.droneId ?? merged.id, merged.lat, merged.lon)
+      .forEach((crossing) => this.emitGeofenceCrossing(merged, crossing));
     this.scheduleFaaEnrichment(merged);
     this.enqueuePersist(merged);
     return merged;
@@ -144,6 +149,7 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
       );
     });
     this.drones.delete(id);
+    this.geofenceCrossing.forget(existing.id);
     this.emitSnapshot();
     this.diff$.next({ type: 'delete', drone: existing });
     this.emitRemovalEvent(existing);
@@ -541,6 +547,38 @@ export class DronesService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       this.logger.debug(
         `Failed to ensure site record for ${siteId}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  private emitGeofenceCrossing(drone: DroneSnapshot, crossing: GeofenceCrossing): void {
+    const label = drone.droneId ?? drone.id;
+    try {
+      this.gateway.emitEvent({
+        type: 'event.alert',
+        category: 'geofence',
+        level: (crossing.geofence.alarm.level as AlarmLevel) ?? 'NOTICE',
+        geofenceId: crossing.geofence.id,
+        geofenceName: crossing.geofence.name,
+        nodeId: label,
+        siteId: drone.siteId ?? crossing.geofence.siteId ?? this.localSiteId,
+        message: crossing.message,
+        lat: drone.lat,
+        lon: drone.lon,
+        timestamp: new Date().toISOString(),
+        data: {
+          geofenceId: crossing.geofence.id,
+          geofenceName: crossing.geofence.name,
+          entity: label,
+          kind: 'drone',
+          event: crossing.transition,
+        },
+      });
+    } catch (error) {
+      this.logger.debug(
+        `Failed to emit drone geofence crossing for ${drone.id}: ${
+          error instanceof Error ? error.message : error
+        }`,
       );
     }
   }

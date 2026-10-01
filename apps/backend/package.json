@@ -11,7 +11,7 @@
     "start:cluster": "node dist/main.cluster.js",
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
-    "test": "ts-node --transpile-only --project tsconfig.json src/serial/serial-pipeline.test.ts",
+    "test": "ts-node --transpile-only --project tsconfig.json src/serial/serial-pipeline.test.ts && ts-node --transpile-only --project tsconfig.json src/tiles/tiles.test.ts && ts-node --transpile-only --project tsconfig.json src/status-broadcast/status-broadcast.test.ts && ts-node --transpile-only --project tsconfig.json src/serial/node-id.test.ts && ts-node --transpile-only --project tsconfig.json src/serial/radio.test.ts && ts-node --transpile-only --project tsconfig.json src/serial/fleet-admin.test.ts && ts-node --transpile-only --project tsconfig.json src/fleet-sec/fleet-crypto.test.ts && ts-node --transpile-only --project tsconfig.json src/fleet-sec/fleet-rotation.test.ts",
     "format": "prettier --write \"src/**/*.{ts,tsx,json}\"",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
@@ -50,7 +50,7 @@
     "mqtt": "^5.14.1",
     "multer": "^2.3.0",
     "nestjs-pino": "^4.5.0",
-    "nodemailer": "^9.1.0",
+    "nodemailer": "^10.0.6",
     "otplib": "^12.0.1",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
@@ -58,7 +58,7 @@
     "rxjs": "^7.8.1",
     "sanitize-html": "^2.12.1",
     "socket.io": "^4.8.3",
-    "undici": "^6.24.0",
+    "undici": "^6.28.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -318,6 +318,29 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
             );
         }
         break;
+      case 'device-seen':
+        {
+          const nodeSnapshot = event.nodeId
+            ? this.nodesService.getSnapshotById(event.nodeId)
+            : undefined;
+          const asTarget: SerialTargetDetected = {
+            kind: 'target-detected',
+            nodeId: event.nodeId ?? 'unknown',
+            mac: event.mac,
+            rssi: event.rssi,
+            type: event.type,
+            name: event.name,
+            channel: event.channel,
+            raw: event.raw ?? '',
+          };
+          await this.inventoryService.recordDetection(
+            asTarget,
+            siteId,
+            nodeSnapshot?.lat,
+            nodeSnapshot?.lon,
+          );
+        }
+        break;
       case 'alert':
         {
           const timestamp = new Date();
@@ -362,6 +385,16 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
                 temperatureF,
                 temperatureUpdatedAt,
               }),
+            });
+          }
+          if (event.nodeId && !this.nodesService.getSnapshotById(event.nodeId)) {
+            await this.nodesService.upsert({
+              id: event.nodeId,
+              name: event.nodeId,
+              lastMessage: sanitizedMessage ?? event.message,
+              ts: timestamp,
+              lastSeen: timestamp,
+              siteId,
             });
           }
           if (event.nodeId && (event.message || sanitizedMessage)) {
@@ -927,6 +960,8 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           event.channel ?? 'na',
           event.type ?? '',
         ].join(':');
+      case 'device-seen':
+        return ['device', siteId ?? 'local', event.nodeId ?? 'unknown', event.mac].join(':');
       case 'probe-hit':
         return [
           'probe',

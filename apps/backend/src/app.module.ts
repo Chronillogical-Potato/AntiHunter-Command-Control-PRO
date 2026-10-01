@@ -20,6 +20,7 @@ import { ExportsModule } from './exports/exports.module';
 import { FaaModule } from './faa/faa.module';
 import { FirewallMiddleware } from './firewall/firewall.middleware';
 import { FirewallModule } from './firewall/firewall.module';
+import { FleetSecModule } from './fleet-sec/fleet-sec.module';
 import { GeofencesModule } from './geofences/geofences.module';
 import { HealthModule } from './health/health.module';
 import { IngestModule } from './ingest/ingest.module';
@@ -32,8 +33,10 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProbeInventoryModule } from './probe-inventory/probe-inventory.module';
 import { SerialModule } from './serial/serial.module';
 import { SitesModule } from './sites/sites.module';
+import { StatusBroadcastModule } from './status-broadcast/status-broadcast.module';
 import { TakModule } from './tak/tak.module';
 import { TargetsModule } from './targets/targets.module';
+import { TilesModule } from './tiles/tiles.module';
 import { UpdateModule } from './update/update.module';
 import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
@@ -44,7 +47,7 @@ import { WsModule } from './ws/ws.module';
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      envFilePath: [join(__dirname, '..', '.env'), join(__dirname, '..', '..', '..', '.env')],
+      envFilePath: join(__dirname, '..', '.env'),
       load: [configuration],
       validate: validateEnvironment,
       expandVariables: true,
@@ -71,6 +74,7 @@ import { WsModule } from './ws/ws.module';
                 }
               : undefined,
             base: undefined,
+            redact: ['req.headers.authorization', 'req.headers.cookie'],
           },
         };
       },
@@ -102,6 +106,9 @@ import { WsModule } from './ws/ws.module';
     MqttModule,
     MailModule,
     UsersModule,
+    TilesModule,
+    StatusBroadcastModule,
+    FleetSecModule,
     ExportsModule,
     WebhooksModule,
     UpdateModule,

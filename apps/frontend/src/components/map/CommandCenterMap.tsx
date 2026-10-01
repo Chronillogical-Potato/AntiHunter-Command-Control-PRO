@@ -17,9 +17,12 @@ import {
 } from 'react-leaflet';
 import 'leaflet.heat';
 
+import { OfflineMapsControl } from './OfflineMapsControl';
+import { cachedTileUrl, useTileKey } from '../../api/tiles';
 import type {
   AcarsMessage,
   AdsbTrack,
+  AlertRuleMapStyle,
   Geofence,
   GeofenceVertex,
   DroneStatus,
@@ -75,11 +78,25 @@ const BASE_LAYERS: BaseLayerDefinition[] = [
     tileOptions: { maxZoom: 17 },
   },
   {
+    key: 'usgs-topo',
+    name: 'US Topo (USGS)',
+    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles courtesy of the U.S. Geological Survey',
+    tileOptions: { maxZoom: 19, maxNativeZoom: 16 },
+  },
+  {
+    key: 'usgs-imagery',
+    name: 'US Imagery (USGS)',
+    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles courtesy of the U.S. Geological Survey',
+    tileOptions: { maxZoom: 19, maxNativeZoom: 16 },
+  },
+  {
     key: 'dark',
-    name: 'Dark (Carto)',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    tileOptions: { maxZoom: 19 },
+    name: 'Dark (Esri)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+    tileOptions: { maxZoom: 19, maxNativeZoom: 16 },
   },
 ];
 
@@ -375,12 +392,19 @@ function createNodeIcon(
   node: NodeSummary,
   severity: IndicatorSeverity,
   colors: AlertColorConfig,
+  ruleStyle?: AlertRuleMapStyle,
 ): DivIcon {
   const wrapperClasses = ['node-marker-wrapper', `node-marker-wrapper--${severity}`];
   const markerClasses = ['node-marker', `node-marker--${severity}`];
-  const label = formatNodeLabel(node);
-  const severityColor =
-    severity === 'idle'
+  if (ruleStyle?.blink) {
+    markerClasses.push('node-marker--blink');
+  }
+  const label = ruleStyle?.label ? escapeHtml(ruleStyle.label) : formatNodeLabel(node);
+  const ruleColor =
+    ruleStyle?.color && /^#[0-9a-f]{3,8}$/i.test(ruleStyle.color) ? ruleStyle.color : null;
+  const severityColor = ruleColor
+    ? ruleColor
+    : severity === 'idle'
       ? (node.siteColor ?? colors.idle)
       : severity === 'info'
         ? colors.info
@@ -849,6 +873,7 @@ interface CommandCenterMapProps {
   drones: DroneMarker[];
   droneTrails: Record<string, DroneTrailPoint[]>;
   alertIndicators: Map<string, IndicatorSeverity>;
+  alertStyles?: Map<string, AlertRuleMapStyle>;
   alertColors: AlertColorConfig;
   defaultRadius: number;
   showRadius: boolean;
@@ -887,6 +912,7 @@ export function CommandCenterMap({
   drones,
   droneTrails,
   alertIndicators,
+  alertStyles,
   alertColors,
   defaultRadius,
   showRadius,
@@ -912,6 +938,7 @@ export function CommandCenterMap({
   hideAdsbPhotos = false,
 }: CommandCenterMapProps) {
   const mapRef = useRef<LeafletMap | null>(null);
+  const tileKey = useTileKey();
   const baseLayerKeys = useMemo(() => BASE_LAYERS.map((layer) => layer.key), []);
   const activeBaseLayerKey = useMemo(() => {
     if (baseLayerKeys.includes(mapStyle)) {
@@ -1051,12 +1078,13 @@ export function CommandCenterMap({
           >
             <TileLayer
               attribution={layer.attribution}
-              url={layer.url}
+              url={tileKey ? cachedTileUrl(layer.key, tileKey) : layer.url}
               {...(layer.tileOptions ?? {})}
             />
           </LayersControl.BaseLayer>
         ))}
       </LayersControl>
+      <OfflineMapsControl layers={BASE_LAYERS} />
       <BaseLayerChangeListener onChange={onMapStyleChange} />
 
       <CoverageHeatLayer
@@ -1149,7 +1177,15 @@ export function CommandCenterMap({
           <Marker
             key={siteScopedKey}
             position={position}
-            icon={createNodeIcon(node, indicator, alertColors)}
+            icon={createNodeIcon(
+              node,
+              indicator,
+              alertColors,
+              indicator === 'idle'
+                ? undefined
+                : (alertStyles?.get(siteScopedKey) ??
+                    alertStyles?.get(nodeKey(node.id, undefined))),
+            )}
           >
             <Tooltip direction="top" offset={[0, -12]} opacity={0.9}>
               <div className="node-tooltip">
