@@ -75,8 +75,11 @@ export function upstreamUrl(provider: TileProvider, z: number, x: number, y: num
   if (TILE_PROVIDERS[provider.id] !== provider || !isTileInRange(provider, z, x, y)) {
     throw new Error('Unknown map source or tile out of range');
   }
-  const path = `${z}/${x}/${y}`;
-  const arcgis = `${z}/${y}/${x}`;
+  const zs = encodeURIComponent(z);
+  const xs = encodeURIComponent(x);
+  const ys = encodeURIComponent(y);
+  const path = `${zs}/${xs}/${ys}`;
+  const arcgis = `${zs}/${ys}/${xs}`;
   switch (provider.id) {
     case 'osm':
       return `https://tile.openstreetmap.org/${path}.png`;
