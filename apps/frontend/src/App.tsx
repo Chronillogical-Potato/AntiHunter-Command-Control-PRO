@@ -130,6 +130,7 @@ export default function App() {
         <div className="app-content">
           <SidebarNav />
           <main className="app-main">
+            {isAuthenticated ? (
             <Routes>
               <Route path="/" element={<Navigate to="/map" replace />} />
               <Route path="/map" element={<MapPage />} />
@@ -158,6 +159,7 @@ export default function App() {
               <Route path="/account" element={<UserPage />} />
               <Route path="*" element={<Navigate to="/map" replace />} />
             </Routes>
+            ) : null}
           </main>
           <TerminalDrawer />
         </div>
