@@ -6,6 +6,7 @@ import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 
 import { AuthTokenPayload } from './auth.types';
+import { loadJwtSecret } from './jwt-secret';
 import { LoginDto } from './dto/login.dto';
 import { LEGAL_DISCLAIMER } from './legal-disclaimer';
 import { CommandCenterEvent, EventBusService } from '../events/event-bus.service';
@@ -88,7 +89,7 @@ type UserWithRelations = Prisma.UserGetPayload<{ include: typeof USER_RELATIONS 
 
 @Injectable()
 export class AuthService {
-  private readonly jwtSecret: jwt.Secret = process.env.JWT_SECRET ?? 'command-center-dev-secret';
+  private readonly jwtSecret: jwt.Secret = loadJwtSecret();
   private readonly tokenTtl = process.env.JWT_EXPIRY ?? '12h';
   private readonly twoFactorTokenTtl = process.env.TWO_FACTOR_TOKEN_EXPIRY ?? '10m';
   private readonly rememberTtl = process.env.REMEMBER_ME_EXPIRY ?? '10d';
