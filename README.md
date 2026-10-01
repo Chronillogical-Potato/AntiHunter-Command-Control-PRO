@@ -482,7 +482,19 @@ To update later, open the app's update page or run `git pull` in the project fol
 
 ### Docker
 
-> Needs Docker Desktop (Windows/macOS) or Docker Engine (Linux), version 25 or newer, with virtualization enabled. On Windows/macOS, share the repository folder in Docker's file-sharing settings.
+> Needs Docker 25 or newer with Compose v2. Use the lightest option for your system:
+
+| System | Install |
+| ------ | ------- |
+| Ubuntu 22.04 / 24.04 | `sudo apt install docker.io docker-compose-v2` (Docker 29.1, Compose 2.40) |
+| Debian 13 (trixie) | `sudo apt install docker.io docker-compose` (Docker 26.1, Compose 2.26) |
+| Debian 12 (bookworm) | Its `docker.io` is 20.10 with Compose v1, too old. Use [Docker's apt repository](https://docs.docker.com/engine/install/debian/). |
+| macOS | `brew install colima docker docker-compose`, then `colima start` |
+| Windows, or anything else | [Docker Desktop](https://docs.docker.com/desktop/) |
+
+On Linux, run Docker commands with `sudo`, or add your user to the `docker` group (`sudo usermod -aG docker $USER`, then log in again). Membership in that group is equivalent to root on the host; only add accounts you trust with root.
+
+Docker's own docs call the distro `docker.io` packages unofficial and list them as conflicting with its `docker-ce` packages. Install one or the other, not both.
 
 #### 1. Check Docker
 
@@ -491,7 +503,7 @@ docker compose version
 docker info
 ```
 
-The `docker compose` command (with a space) ships with current Docker; the old `docker-compose` is not used.
+On macOS with Homebrew, `docker compose` fails with "unknown command" until you add `"cliPluginsExtraDirs": ["<brew prefix>/lib/docker/cli-plugins"]` to `~/.docker/config.json`, where `<brew prefix>` is the output of `brew --prefix`. Or run `docker-compose` (with a hyphen) in every command below; Homebrew installs it as a standalone command.
 
 #### 2. Serial adapter — comment out if you don't have one
 
@@ -559,7 +571,7 @@ Install system dependencies, clone, set up PostgreSQL, then [configure](#configu
 
   - Windows: automatic install via Node.js (or Visual Studio Build Tools)
 
-- Optional: Docker Desktop (for Postgres), Git, serial drivers (FTDI/CH340)
+- Optional: Docker (for Postgres; see [Docker](#docker) for the install per system), Git, serial drivers (FTDI/CH340)
 
 ### System Dependencies
 

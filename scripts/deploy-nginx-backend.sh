@@ -23,9 +23,17 @@ DB_PORT="${DB_PORT:-5432}"
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST_LOCAL}:${DB_PORT}/${DB_NAME}"
 NODE_ENV="production"
 PORT="3000"
-JWT_SECRET="${JWT_SECRET:-changeme_super_secret}"
+JWT_SECRET="${JWT_SECRET:-}"
 
-COMPOSE_BIN="${COMPOSE_BIN:-docker compose}"
+if [[ -z "${COMPOSE_BIN:-}" ]]; then
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_BIN="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_BIN="docker-compose"
+  else
+    COMPOSE_BIN="docker compose"
+  fi
+fi
 COMPOSE_POSTGRES_SERVICE="${COMPOSE_POSTGRES_SERVICE:-postgres}"
 
 # -----------------------------
@@ -153,10 +161,12 @@ write_backend_env() {
 NODE_ENV=$NODE_ENV
 PORT=$PORT
 DATABASE_URL=$DATABASE_URL
-JWT_SECRET=$JWT_SECRET
 ALLOW_FOREVER=false
 ALLOW_ERASE_FORCE=false
 EOF
+  if [[ -n "$JWT_SECRET" ]]; then
+    echo "JWT_SECRET=$JWT_SECRET" >> "$BACKEND_ENV_FILE"
+  fi
 }
 
 deploy_backend_service() {
