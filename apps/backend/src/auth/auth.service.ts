@@ -6,8 +6,8 @@ import { Request } from 'express';
 import * as jwt from 'jsonwebtoken';
 
 import { AuthTokenPayload } from './auth.types';
-import { loadJwtSecret } from './jwt-secret';
 import { LoginDto } from './dto/login.dto';
+import { loadJwtSecret } from './jwt-secret';
 import { LEGAL_DISCLAIMER } from './legal-disclaimer';
 import { CommandCenterEvent, EventBusService } from '../events/event-bus.service';
 import { FirewallService } from '../firewall/firewall.service';
