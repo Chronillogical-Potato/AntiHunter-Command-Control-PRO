@@ -618,6 +618,7 @@ export interface SerialConfig {
   parity?: string | null;
   stopBits?: number | null;
   delimiter?: string | null;
+  protocol?: string | null;
   reconnectBaseMs?: number | null;
   reconnectMaxMs?: number | null;
   reconnectJitter?: number | null;

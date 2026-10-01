@@ -128,8 +128,6 @@ try {
     ADMIN_PASSWORD: adminPassword,
     APP_URL: 'http://localhost:5173',
     RATE_LIMIT_RECOVERY_LIMIT: '30',
-    TS_AUTHKEY: '',
-    AHCC_MATTER_ENABLED: 'false',
   };
   execFileSync('npx', ['prisma', 'migrate', 'deploy'], { cwd: backendDir, env, stdio: 'ignore' });
   execFileSync('npx', ['prisma', 'db', 'seed'], { cwd: backendDir, env, stdio: 'ignore' });
