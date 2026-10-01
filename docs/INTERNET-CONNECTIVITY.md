@@ -53,7 +53,7 @@ iTAK can't connect to AHCC directly, so the TAK server sits in the middle. AHCC 
 Free servers: OpenTAKServer (easiest), FreeTAKServer, TAK Server. The plaintext CoT port is around 8087 or 8088. The TLS streaming port is 8089. Check your server's docs.
 
 1. Install OpenTAKServer on the AHCC host, or on a VPN-only machine.
-2. Migrate if you haven't: `pnpm --filter @command-center/backend prisma migrate deploy`
+2. Update the database if you haven't: `pnpm update-db` (from the repo root)
 3. Set the bridge in apps/backend/.env:
 
        TAK_ENABLED=true
@@ -167,10 +167,11 @@ Webhooks
 
 AHCC POSTs events to an HTTPS endpoint. It only dials out. Good for ntfy, Discord, Slack, or your own API.
 
-1. Open Config -> Webhooks. Add the https URL of your receiver.
-2. Set a secret. AHCC signs each POST with it (x-webhook-signature). Your receiver checks the signature.
-3. Pick the events to send. Add a CA bundle and client cert for mutual TLS.
-4. Hit the test button. Check the delivery log.
+1. Turn on 2FA for your account first (Account -> Two-Factor Authentication). Creating, editing, and testing webhooks requires it.
+2. Open Config -> Webhooks. Add the https URL of your receiver.
+3. Set a secret. AHCC signs each POST with it (x-webhook-signature). Your receiver checks the signature.
+4. Pick the events to send. Add a CA bundle and client cert for mutual TLS.
+5. Hit the test button. Check the delivery log.
 
 Lock it down
 

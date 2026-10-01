@@ -749,10 +749,10 @@ generate_prisma_client() {
 run_database_migrations() {
     step "Running database migrations..."
     
-    cd "$BACKEND_DIR"
-    
-    sudo -u "$INSTALL_USER" pnpm prisma migrate deploy || \
-        error_exit "Database migrations failed. Check DATABASE_URL and PostgreSQL logs."
+    cd "$REPO_DIR"
+
+    sudo -u "$INSTALL_USER" node scripts/db-update-helper.mjs || \
+        error_exit "Database update did not finish. See the messages above, then run: cd $REPO_DIR && pnpm update-db"
     
     success "Database migrations completed"
 }
