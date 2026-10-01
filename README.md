@@ -1081,7 +1081,7 @@ Set `CLUSTER_WORKERS=1` (or omit) to keep a single process.
 
 ### Updating an Existing Deployment
 
-When you already have AntiHunter Command & Control PRO running in a live environment, follow this checklist after pulling new commits:
+Servers set up with `scripts/deploy-production.sh`: run `scripts/deploy-nginx-backend.sh` instead of these steps (see [Updating a server set up by deploy-production.sh](#updating-a-server-set-up-by-deploy-productionsh)). For other installs, follow this checklist after pulling new commits:
 
 1. **Fetch latest code and dependencies**
    ```bash
@@ -1272,6 +1272,22 @@ For a guided production rollout on Debian/Ubuntu servers we ship `scripts/deploy
 > ```
 
 The script prints a deployment summary (URLs, generated credentials). Store it securely and delete the file afterward.
+
+#### Updating a server set up by deploy-production.sh
+
+```bash
+sudo /opt/ahcc/AntiHunter-Command-Control-PRO/scripts/deploy-nginx-backend.sh
+```
+
+It refuses to run unless `deploy-production.sh` already set up the server. Then it:
+
+1. Backs up the database with `/opt/ahcc/scripts/backup-db.sh` (if present).
+2. Pulls with `git pull --ff-only` (stops if tracked files have local changes).
+3. Installs dependencies from the lockfile and builds the backend and frontend.
+4. Runs the [database update helper](#database-update-helper). The service is not restarted if this stops.
+5. Publishes the frontend to `/var/www/ahcc-frontend`, restarts `ahcc-backend`, waits for `/healthz`, then reloads nginx.
+
+It does not change the nginx site, systemd unit, firewall, or certificates; those stay as `deploy-production.sh` wrote them. To deploy a specific tag or commit, or roll back, set `GIT_REF` (the script prints the previous commit): `sudo GIT_REF=<commit> scripts/deploy-nginx-backend.sh`. `INSTALL_DIR`, `INSTALL_USER`, `NGINX_ROOT`, `BACKEND_SERVICE`, and `AHCC_DB_MISMATCH` override the defaults.
 
 ## Serial Hardware & Meshtastic Sniffer
 
