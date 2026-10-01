@@ -71,15 +71,32 @@ export function isTileInRange(provider: TileProvider, z: number, x: number, y: n
   return x >= 0 && y >= 0 && x <= max && y <= max;
 }
 
+const ALLOWED_TILE_HOSTS = new Set(
+  Object.values(TILE_PROVIDERS).flatMap((provider) =>
+    (provider.subdomains?.length ? provider.subdomains : ['']).map(
+      (subdomain) => new URL(provider.upstream.replace('{s}', subdomain)).hostname,
+    ),
+  ),
+);
+
 export function upstreamUrl(provider: TileProvider, z: number, x: number, y: number): string {
+  if (TILE_PROVIDERS[provider.id] !== provider || !isTileInRange(provider, z, x, y)) {
+    throw new Error('Unknown map source or tile out of range');
+  }
   const subdomain = provider.subdomains?.length
     ? provider.subdomains[(x + y) % provider.subdomains.length]
     : '';
-  return provider.upstream
-    .replace('{s}', subdomain)
-    .replace('{z}', String(z))
-    .replace('{x}', String(x))
-    .replace('{y}', String(y));
+  const url = new URL(
+    provider.upstream
+      .replace('{s}', subdomain)
+      .replace('{z}', String(z))
+      .replace('{x}', String(x))
+      .replace('{y}', String(y)),
+  );
+  if (url.protocol !== 'https:' || !ALLOWED_TILE_HOSTS.has(url.hostname)) {
+    throw new Error('Tile host not allowed');
+  }
+  return url.toString();
 }
 
 export function isImage(data: Buffer, type: TileProvider['imageType']): boolean {
