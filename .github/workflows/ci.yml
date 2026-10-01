@@ -67,4 +67,4 @@ jobs:
         run: pnpm --filter @command-center/frontend build
 
       - name: Run database migrations
-        run: pnpm --filter @command-center/backend prisma migrate deploy
+        run: pnpm --filter @command-center/backend prisma:migrate

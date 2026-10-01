@@ -786,7 +786,7 @@ Each Command Center installation owns a single local LoRa gateway, so the serial
 
 The backend ships with a TAK bridge that translates node/alert telemetry into Cursor-on-Target events for ATAK/WinTAK ecosystems.
 
-1. Apply the latest Prisma migrations (`pnpm --filter @command-center/backend prisma migrate deploy`) so the `TakConfig` table exists.
+1. Apply the latest Prisma migrations (`pnpm --filter @command-center/backend prisma:migrate`) so the `TakConfig` table exists.
 
 2. Set baseline values through environment variables (see table above) **or** configure them from the **Config -> TAK Bridge** card in the UI.
 
