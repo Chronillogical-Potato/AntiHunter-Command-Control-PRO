@@ -294,7 +294,7 @@ AntiHunter ships with layered defenses: RBAC, MFA, rate limiting, and a programm
 
 | Setting / Env var             | Default                     | Purpose                                                             |
 | ----------------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `JWT_SECRET`                  | _required_                  | Symmetric signing key for API + Socket.IO sessions. Rotate often.   |
+| `JWT_SECRET`                  | _generated_                 | Signing key for API + Socket.IO sessions. If unset, a random key is created once in `apps/backend/.secrets/jwt.key` (0600) and reused; `JWT_SECRET_FILE` moves that path. |
 | `JWT_EXPIRY`                  | `12h`                       | Lifetime of issued access tokens.                                   |
 | `INVITE_EXPIRY_HOURS`         | `48`                        | TTL for admin-generated invitation links.                           |
 | `PASSWORD_RESET_EXPIRY_HOURS` | `4`                         | TTL for password reset emails.                                      |
@@ -536,7 +536,7 @@ docker compose down                 # add --volumes to also delete the database
 
 #### Upgrades and other settings
 
-- **Upgrade:** `git pull && docker compose up -d --build`. The backend re-applies migrations on boot. Stuck migration (Prisma `P3009`/`P3018`)? See [Troubleshooting](#troubleshooting).
+- **Upgrade:** `git pull && docker compose up -d --build`. The backend runs the [database update helper](#database-update-helper) on boot. If the database does not match this version, the backend stops and the log lists the differences; set `AHCC_DB_MISMATCH` (`repair`, `backup-repair`, `ignore`, `abort`) in the `backend` environment and start it again. Stuck migration (Prisma `P3009`/`P3018`)? See [Troubleshooting](#troubleshooting).
 - **Skip auto-migrations:** set `RUN_MIGRATIONS=false` in the `backend` environment if you deploy schema changes another way.
 - **Development:** the containers run a compiled build, not a dev server. For hot reload, use the [pnpm setup](#running-the-stack).
 
@@ -978,23 +978,29 @@ Seed inserts singleton config rows (AppConfig, AlarmConfig, VisualConfig, Covera
 
 ### Database Update Helper
 
-Upgrading older deployments that already contain manually created tables can generate Prisma errors (missing relations, duplicate tables, etc.). To simplify recovery, the repository ships with an interactive helper:
+Use the helper for every database update. `pnpm dev`, `pnpm AHCC`, `scripts/setup-local.sh`, `scripts/deploy-production.sh`, and the Docker backend all run it.
 
 ```bash
 # from the repo root
 pnpm update-db
 ```
 
-The script provides options to:
+What it does:
 
-1. Baseline (mark as applied) the initial migration `20251027205237_init` without changing data.
-2. Baseline any other migration once you've confirmed the schema change already exists.
-3. List all migrations in chronological order.
-4. Run `prisma migrate deploy` against the configured database.
-5. Run `prisma migrate reset --force --skip-seed` (drops the schema; only use when you intend to rebuild).
-6. Drop and recreate the entire `public` schema (hard reset). Follow with option 4 to reapply migrations.
+1. Applies pending migrations (`prisma migrate deploy`).
+2. Baselines a database that has tables but no migration history.
+3. Compares the live database with this version's schema. It flags migrations recorded in the database that this version does not have (for example, the database was used with another branch), and any table or column that is missing or extra.
 
-Each action logs the exact `pnpm prisma ...` command executed so you can reproduce it manually later. Use this helper any time a production upgrade leaves the `_prisma_migrations` table out of sync with the actual schema.
+When the database does not match, it lists what is missing, what would be deleted, and the full SQL, then asks:
+
+| Choice | Effect |
+| ------ | ------ |
+| 1 Repair | Runs the SQL so the database matches this version. Extra tables and columns are dropped with their data. Migration records this version does not know are removed, so switching back to the other version re-applies them. |
+| 2 Back up, then repair (default) | Writes `apps/backend/backups/db-before-repair-<time>.sql` with `pg_dump` (0600), then repairs. Stops if the backup fails. |
+| 3 Leave as is | Continues without changes. Features that need the missing parts fail. |
+| 4 Stop | Exits with an error and changes nothing. |
+
+Without a terminal (Docker, CI, systemd) it does not ask. Set `AHCC_DB_MISMATCH` to `repair`, `backup-repair`, `ignore`, or `abort`. Unset means `abort`.
 
 ## Running the Stack
 
@@ -1018,7 +1024,7 @@ pnpm dev     # http://localhost:5173
 
 ```
 
-Prefer a single command? From the repo root run `pnpm AHCC` to start both workspaces in parallel (single backend process). A single Ctrl-C stops both cleanly — the backend, serial helper, and Matter helper shut down before the shell returns.
+Prefer a single command? From the repo root run `pnpm AHCC` to start both workspaces in parallel (single backend process). A single Ctrl-C stops both cleanly; the backend and serial helper shut down before the shell returns.
 
 **Silent mode (suppress non-critical output):** Add `:silent` to any dev command to minimize console output, showing only critical errors:
 
@@ -1070,15 +1076,14 @@ When you already have AntiHunter Command & Control PRO running in a live environ
    git pull origin main
    pnpm install
    ```
-2. **Apply database migrations** (required whenever new migrations exist).
+2. **Update the database** (required whenever new migrations exist).
 
    ```bash
-   pnpm --filter @command-center/backend exec prisma migrate deploy
+   pnpm update-db
    ```
 
-   - In containerized or managed environments, execute the same command inside the deployment target prior to restarting services.
-   - If the migration fails, resolve the database issue before proceeding; never run the backend against a partially migrated schema.
-   - Prefer an automatic helper that inspects the current installation? Run `pnpm update-db` (alias of `node scripts/db-update-helper.mjs`) and it will detect pending migrations, baseline existing schemas, skip duplicate CREATE TABLE migrations, and apply updates. If drift is detected it prints the Prisma guidance you need to follow.
+   - It applies migrations, then checks the database against this version and asks before changing anything that does not match. See [Database Update Helper](#database-update-helper).
+   - If it stops with an error, fix the database before proceeding; never run the backend against a partially migrated schema.
 
 3. **Rebuild backend and frontend bundles**
    ```bash
@@ -1354,6 +1359,7 @@ The sniffer is a zero-dependency TypeScript script that mirrors frames to stdout
 | **MQTT connect timeout**                            | Ensure the backend is running (check `/healthz`) and that you are using a reachable endpoint. Some brokers require WebSockets (`ws://...`) instead of raw TCP (`mqtt://...`). Leave username/password blank for anonymous brokers and enable site replication before expecting events.                                                         |
 | **HTTPS reverse proxy (502 / TLS errors)**          | Verify Nginx proxies `/api` and `/socket.io` to the backend on the correct host/port. Include websocket headers (`Upgrade`/`Connection`), tail `/var/log/nginx/error.log`, and test with `curl -Ivk https://your-domain/api/healthz`. See the [Nginx quick reference](#production-deployment) for a working example.                           |
 | **Prisma P1000 (invalid DB credentials)**           | The backend cannot authenticate to Postgres. Verify `DATABASE_URL` matches the real database user/password. With the default compose file use `postgresql://command_center:command_center@postgres:5432/command_center`. After fixing it, restart the backend.                                                                                 |
+| **"The database does not match this version of AHCC"** | The database was migrated by another branch or release. Read the listed differences, then rerun `pnpm update-db` and pick Back up then repair, or set `AHCC_DB_MISMATCH=backup-repair` for Docker. See [Database Update Helper](#database-update-helper). |
 | **Prisma P3009/P3018 (failed migration loop)**      | Inspect `_prisma_migrations` for rows with `finished_at` NULL. Mark them rolled back (`prisma migrate resolve --rolled-back <migration_name>`), recreate any missing objects (e.g., enums or tables), run `docker compose run --rm --no-deps backend pnpm --filter @command-center/backend exec prisma migrate deploy`, then restart services. |
 
 ---

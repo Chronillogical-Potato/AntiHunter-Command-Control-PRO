@@ -44,6 +44,7 @@ services:
       ALLOW_ERASE_FORCE: 'false'
       AHCC_TILE_CACHE: /app/data/tiles
       AHCC_TILE_CACHE_MAX_MB: ${AHCC_TILE_CACHE_MAX_MB:-2048}
+      AHCC_DB_MISMATCH: ${AHCC_DB_MISMATCH:-abort}
     ports:
       - '3000:3000'
     volumes:
