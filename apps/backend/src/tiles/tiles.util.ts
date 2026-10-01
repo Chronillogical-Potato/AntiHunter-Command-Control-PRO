@@ -71,32 +71,35 @@ export function isTileInRange(provider: TileProvider, z: number, x: number, y: n
   return x >= 0 && y >= 0 && x <= max && y <= max;
 }
 
-const ALLOWED_TILE_HOSTS = new Set(
-  Object.values(TILE_PROVIDERS).flatMap((provider) =>
-    (provider.subdomains?.length ? provider.subdomains : ['']).map(
-      (subdomain) => new URL(provider.upstream.replace('{s}', subdomain)).hostname,
-    ),
-  ),
-);
-
 export function upstreamUrl(provider: TileProvider, z: number, x: number, y: number): string {
   if (TILE_PROVIDERS[provider.id] !== provider || !isTileInRange(provider, z, x, y)) {
     throw new Error('Unknown map source or tile out of range');
   }
-  const subdomain = provider.subdomains?.length
-    ? provider.subdomains[(x + y) % provider.subdomains.length]
-    : '';
-  const url = new URL(
-    provider.upstream
-      .replace('{s}', subdomain)
-      .replace('{z}', String(z))
-      .replace('{x}', String(x))
-      .replace('{y}', String(y)),
-  );
-  if (url.protocol !== 'https:' || !ALLOWED_TILE_HOSTS.has(url.hostname)) {
-    throw new Error('Tile host not allowed');
+  const path = `${z}/${x}/${y}`;
+  const arcgis = `${z}/${y}/${x}`;
+  switch (provider.id) {
+    case 'osm':
+      return `https://tile.openstreetmap.org/${path}.png`;
+    case 'satellite':
+      return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${arcgis}`;
+    case 'usgs-topo':
+      return `https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/${arcgis}`;
+    case 'usgs-imagery':
+      return `https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/${arcgis}`;
+    case 'topography':
+      switch ((x + y) % 3) {
+        case 0:
+          return `https://a.tile.opentopomap.org/${path}.png`;
+        case 1:
+          return `https://b.tile.opentopomap.org/${path}.png`;
+        default:
+          return `https://c.tile.opentopomap.org/${path}.png`;
+      }
+    case 'dark':
+      return `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${arcgis}`;
+    default:
+      throw new Error('Unknown map source');
   }
-  return url.toString();
 }
 
 export function isImage(data: Buffer, type: TileProvider['imageType']): boolean {
