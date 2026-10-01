@@ -7,6 +7,7 @@ import * as jwt from 'jsonwebtoken';
 
 import { AuthTokenPayload } from './auth.types';
 import { LoginDto } from './dto/login.dto';
+import { loadJwtSecret } from './jwt-secret';
 import { LEGAL_DISCLAIMER } from './legal-disclaimer';
 import { CommandCenterEvent, EventBusService } from '../events/event-bus.service';
 import { FirewallService } from '../firewall/firewall.service';
@@ -88,9 +89,10 @@ type UserWithRelations = Prisma.UserGetPayload<{ include: typeof USER_RELATIONS 
 
 @Injectable()
 export class AuthService {
-  private readonly jwtSecret: jwt.Secret = process.env.JWT_SECRET ?? 'command-center-dev-secret';
+  private readonly jwtSecret: jwt.Secret = loadJwtSecret();
   private readonly tokenTtl = process.env.JWT_EXPIRY ?? '12h';
   private readonly twoFactorTokenTtl = process.env.TWO_FACTOR_TOKEN_EXPIRY ?? '10m';
+  private readonly rememberTtl = process.env.REMEMBER_ME_EXPIRY ?? '10d';
   private readonly loginMinSubmitMs: number;
   private readonly lockoutEnabled: boolean;
   private readonly lockoutThreshold: number;
@@ -272,7 +274,9 @@ export class AuthService {
     const legalAccepted = !!updatedUser.legalAcceptedAt;
 
     if (!legalAccepted) {
-      const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, false);
+      const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, false, {
+        rememberMe: dto.rememberMe,
+      });
       return {
         token,
         user: userResponse,
@@ -286,6 +290,7 @@ export class AuthService {
       const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, true, {
         twoFactorPending: true,
         expiresIn: this.twoFactorTokenTtl,
+        rememberMe: dto.rememberMe,
       });
       return {
         token,
@@ -296,7 +301,9 @@ export class AuthService {
       };
     }
 
-    const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, true);
+    const token = this.createToken(updatedUser.id, updatedUser.email, updatedUser.role, true, {
+      rememberMe: dto.rememberMe,
+    });
     return {
       token,
       user: userResponse,
@@ -305,7 +312,7 @@ export class AuthService {
     };
   }
 
-  async acknowledgeLegal(userId: string): Promise<LoginResult> {
+  async acknowledgeLegal(userId: string, rememberMe = false): Promise<LoginResult> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { legalAcceptedAt: new Date() },
@@ -316,6 +323,7 @@ export class AuthService {
       const token = this.createToken(user.id, user.email, user.role, true, {
         twoFactorPending: true,
         expiresIn: this.twoFactorTokenTtl,
+        rememberMe,
       });
       return {
         token,
@@ -325,7 +333,7 @@ export class AuthService {
       };
     }
 
-    const token = this.createToken(user.id, user.email, user.role, true);
+    const token = this.createToken(user.id, user.email, user.role, true, { rememberMe });
 
     return {
       token,
@@ -347,6 +355,22 @@ export class AuthService {
 
   async verifyToken(token: string): Promise<AuthTokenPayload> {
     const payload = jwt.verify(token, this.jwtSecret) as AuthTokenPayload;
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { passwordChangedAt: true, isActive: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Account no longer exists');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account disabled');
+    }
+    if (
+      user.passwordChangedAt &&
+      payload.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)
+    ) {
+      throw new UnauthorizedException('Session ended by password change');
+    }
     return payload;
   }
 
@@ -366,7 +390,7 @@ export class AuthService {
     email: string,
     role: Role,
     legalAccepted: boolean,
-    options?: { twoFactorPending?: boolean; expiresIn?: string | number },
+    options?: { twoFactorPending?: boolean; expiresIn?: string | number; rememberMe?: boolean },
   ): string {
     const payload: Partial<AuthTokenPayload> = {
       sub: id,
@@ -374,10 +398,13 @@ export class AuthService {
       role,
       legalAccepted,
       twoFactorPending: options?.twoFactorPending ?? false,
+      rememberMe: options?.rememberMe ?? false,
     };
 
+    const defaultTtl =
+      options?.rememberMe && !options?.twoFactorPending ? this.rememberTtl : this.tokenTtl;
     return jwt.sign(payload, this.jwtSecret, {
-      expiresIn: (options?.expiresIn ?? this.tokenTtl) as jwt.SignOptions['expiresIn'],
+      expiresIn: (options?.expiresIn ?? defaultTtl) as jwt.SignOptions['expiresIn'],
     });
   }
 

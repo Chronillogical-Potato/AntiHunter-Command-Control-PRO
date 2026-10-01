@@ -25,6 +25,7 @@ import { apiClient } from '../api/client';
 import type {
   AcarsMessage,
   AlarmLevel,
+  AlertRuleMapStyle,
   AppSettings,
   AuthUser,
   Drone,
@@ -392,6 +393,17 @@ export function MapPage() {
     return map;
   }, [alerts]);
 
+  const alertStyleMap = useMemo(() => {
+    const map = new Map<string, AlertRuleMapStyle>();
+    Object.values(alerts).forEach((alert) => {
+      if (alert.mapStyle) {
+        map.set(composeNodeKey(alert.nodeId, alert.siteId), alert.mapStyle);
+        map.set(composeNodeKey(alert.nodeId, undefined), alert.mapStyle);
+      }
+    });
+    return map;
+  }, [alerts]);
+
   const [drawingGeofence, setDrawingGeofence] = useState(false);
   const [draftVertices, setDraftVertices] = useState<GeofenceVertex[]>([]);
   const [hoverVertex, setHoverVertex] = useState<GeofenceVertex | null>(null);
@@ -404,7 +416,7 @@ export function MapPage() {
       views?: SavedMapView[];
       lastView?: MapViewSnapshot | null;
     } = {}) => {
-      if (!currentUser) {
+      if (!currentUser || !isAuthenticated) {
         return;
       }
       const nextViews = views ?? useMapViewsStore.getState().views;
@@ -433,7 +445,7 @@ export function MapPage() {
         window.alert('Unable to save map view. Check your connection and try again.');
       }
     },
-    [currentUser, setAuthUser],
+    [currentUser, isAuthenticated, setAuthUser],
   );
 
   const handleSaveView = () => {
@@ -1020,6 +1032,7 @@ export function MapPage() {
             drones={drones}
             droneTrails={droneTrails}
             alertIndicators={alertIndicatorMap}
+            alertStyles={alertStyleMap}
             alertColors={alertColors}
             defaultRadius={mapDefaultRadius}
             showRadius={radiusEnabled}

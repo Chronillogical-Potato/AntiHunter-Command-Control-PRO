@@ -7,15 +7,15 @@ import { SerialParseResult, SerialProtocolParser, SerialProbeHit } from '../seri
 const ANSI_REGEX = /\u001b\[[0-9;]*[A-Za-z]/g;
 
 const STATUS_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*STATUS:\s*Mode:(?<mode>\S+)\s+Scan:(?<scan>\S+)\s+Hits:(?<hits>\d+)\s+(?:Targets:(?<targets>\d+)\s+)?Temp:(?<tempC>-?\d+(?:\.\d+)?)[cC](?:\/(?<tempF>-?\d+(?:\.\d+)?)[Ff])?\s+Up:(?<up>[0-9:]+)(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+HDOP[:=](?<hdop>-?\d+(?:\.\d+)?))?/i;
-const STARTUP_REGEX = /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*STARTUP:\s*(?<msg>.+)$/i;
+  /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*STATUS:\s*Mode:(?<mode>\S+)\s+Scan:(?<scan>\S+)\s+Hits:(?<hits>\d+)\s+(?:Targets:(?<targets>\d+)\s+)?Temp:(?:(?<tempC>-?\d+(?:\.\d+)?)|\?)[cC](?:\/(?<tempF>-?\d+(?:\.\d+)?)[Ff])?\s+Up:(?<up>[0-9:]+)(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+HDOP[:=](?<hdop>-?\d+(?:\.\d+)?))?/i;
+const STARTUP_REGEX = /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*STARTUP:\s*(?<msg>.+)$/i;
 const GPS_LOCK_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*GPS:\s*LOCKED\s+Location[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?)(?:\s+Satellites[=:](?<sats>\d+))?(?:\s+HDOP[=:](?<hdop>-?\d+(?:\.\d+)?))?/i;
-const GPS_LOST_REGEX = /^(?<id>[A-Za-z0-9_.:-]+)?:?\s*GPS:\s*LOST/i;
+  /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*GPS:\s*LOCKED\s+Location[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?)(?:\s+Satellites[=:](?<sats>\d+))?(?:\s+HDOP[=:](?<hdop>-?\d+(?:\.\d+)?))?/i;
+const GPS_LOST_REGEX = /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*GPS:\s*LOST/i;
 const NODE_HB_REGEX =
   /^\[NODE_HB\]\s*(?<id>[A-Za-z0-9_.:-]+)\s+Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:[cCfF])?(?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 const NODE_HB_INLINE_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):?\s*Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:[cCfF])?(?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
+  /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-]):?\s*Time:(?<time>[^ ]+)\s+Temp:(?<tempC>-?\d+(?:\.\d+)?)(?:[cCfF])?(?:\/(?<tempF>-?\d+(?:\.\d+)?)[fF])?(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 
 const TARGET_REGEX_TYPE_FIRST =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*Target:\s*(?<type>\w+)\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+RSSI:(?<rssi>-?\d+)(?:\s+Name:(?<name>[^ ]+))?(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
@@ -44,13 +44,13 @@ const RANDOM_DONE_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*RANDOMIZATION_DONE:\s*Identities=(?<ids>\d+)\s+Sessions=(?<sess>\d+)\s+TX=(?<tx>\d+)\s+PEND=(?<pend>\d+)/i;
 
 const VIBRATION_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*VIBRATION:\s*(?<msg>.+?)(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+TAMPER_ERASE_IN:(?<erase>\d+)s)?/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*VIBRATION:\s*(?<msg>.+?)(?:\s+GPS:(?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+TAMPER_ERASE_IN:(?<erase>\d+)s)?\s*$/i;
 const VIBRATION_STATUS_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*VIBRATION_STATUS:\s*(?<msg>.+)$/i;
 const SETUP_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*SETUP_(?<kind>MODE|COMPLETE):\s*(?<msg>.+)$/i;
 const TAMPER_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*TAMPER_(?<kind>DETECTED|CANCELLED):?(?:\s*(?<msg>.+))?/i;
 const ERASE_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_(?<kind>EXECUTING|ACK|CANCELLED|COMPLETE):(?<msg>.+)?/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*ERASE_(?<kind>EXECUTING|ACK|CANCELLED|COMPLETE)(?::\s*(?<msg>.+))?\s*$/i;
 const AUTOERASE_ACK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*AUTOERASE_ACK:(?<status>ENABLED|DISABLED)(?:\s+Setup:(?<setup>\d+)s)?(?:\s+Erase:(?<erase>\d+)s)?(?:\s+Vibs:(?<vibs>\d+))?(?:\s+Window:(?<window>\d+)s)?(?:\s+Cooldown:(?<cooldown>\d+)s)?/i;
 const AUTOERASE_STATUS_REGEX =
@@ -65,7 +65,7 @@ const ACK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>(?:SCAN|DEVICE_SCAN|DRONE|DEAUTH|RANDOMIZATION|BASELINE|CONFIG|TRIANGULATE(?:_STOP)?|TRI_START|STOP|REBOOT|BATTERY_SAVER(?:_START|_STOP)?|VIBRATION_(?:ON|OFF)|PROBE|PCAP(?:_STOP)?|HB)_ACK):?(?<status>[A-Z_]*)/i;
 
 const PROBE_HIT_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*PROBE_HIT:?\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(?<vendor>\S+)\s+RSSI[=:](?<rssi>-?\d+)(?:\s+CH[=:](?<channel>\d+))?(?:\s+SSID[=:"]*(?<ssid>[^"\s]+)"?)?(?:\s+(?<ghost>GHOST))?(?:\s+(?<dst>DST))?(?:\s+GPS[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*PROBE_HIT:?\s+(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})(?:\s+(?<vendor>.+?))?\s+RSSI[=:](?<rssi>-?\d+)(?:\s+CH[=:](?<channel>\d+))?(?:\s+SSID[=:"]*(?<ssid>[^"\s]+)"?)?(?:\s+(?<ghost>GHOST))?(?:\s+(?<dst>DST))?(?:\s+GPS[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?/i;
 const HB_ACK_INTERVAL_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*HB_ACK:INTERVAL\s+(?<minutes>\d+)min/i;
 const WIPE_TOKEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*WIPE_TOKEN:(?<token>[A-Za-z0-9_:-]+)/i;
 const ERASE_TOKEN_REGEX =
@@ -179,7 +179,13 @@ const INCIDENTS_CLEAR_ACK_REGEX =
 const DEDUP_CLEAR_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*DEDUP_CLEAR_ACK:(?<status>[A-Z_]+)/i;
 const FACTORY_RESET_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*FACTORY_RESET_ACK:(?<status>.+)$/i;
 
-const NODE_ID_FALLBACK = /^([A-Za-z0-9_.:-]+)/;
+const CSI_EVENT_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<type>CSI_MOTION|CSI_CLEAR):\s*CH=(?<ch>\d+)(?:\s+N=(?<links>\d+))?(?:\s+S=(?<score>-?\d+(?:\.\d+)?))?(?:\s+D=(?<dwell>\d+)s)?/i;
+const CSI_ACK_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>CSI_ACK|CSI_CFG_ACK|CSI_RECAL_ACK|CSI_EXCLUDE_ACK):(?<status>.+)$/i;
+const CSI_LEN_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*CSI_(?<kind>STATUS|JSON)_LEN:(?<len>\d+)/i;
+
+const NODE_ID_FALLBACK = /^([A-Za-z0-9_.:-]*[A-Za-z0-9_.-])/;
 
 export class MeshtasticRewriteParser implements SerialProtocolParser {
   parseLine(rawLine: string): SerialParseResult[] {
@@ -244,6 +250,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseCodes(payload, sourceId, sanitized) ||
       this.parseTriangulationMeta(payload, sourceId, sanitized) ||
       this.parseSentinelAck(payload, sourceId, sanitized) ||
+      this.parseCsi(payload, sourceId, sanitized) ||
       this.parseStatus(payload, sourceId, sanitized) ||
       this.parseTimeSync(payload, sourceId, sanitized) ||
       this.parseStartupGpsHeartbeat(payload, sourceId, sanitized) ||
@@ -309,7 +316,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     if (!m?.groups) return null;
     return [
       {
-        kind: 'target-detected',
+        kind: 'device-seen',
         nodeId: nodeId ?? m.groups.id,
         mac: m.groups.mac.toUpperCase(),
         rssi: Number(m.groups.rssi),
@@ -695,6 +702,63 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     return null;
   }
 
+  private parseCsi(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const event = CSI_EVENT_REGEX.exec(payload);
+    if (event?.groups) {
+      const type = event.groups.type.toUpperCase();
+      const data: Record<string, string | number> = {
+        detectionType: type,
+        channel: Number(event.groups.ch),
+      };
+      if (event.groups.links) data.links = Number(event.groups.links);
+      if (event.groups.score) data.score = Number(event.groups.score);
+      if (event.groups.dwell) data.dwellSeconds = Number(event.groups.dwell);
+      return [
+        {
+          kind: 'alert',
+          level: type === 'CSI_MOTION' ? 'ALERT' : 'NOTICE',
+          category: 'sentinel',
+          nodeId: nodeId ?? event.groups.id,
+          message: payload,
+          data,
+          raw,
+        },
+      ];
+    }
+    const ack = CSI_ACK_REGEX.exec(payload);
+    if (ack?.groups) {
+      const kind = ack.groups.kind.toUpperCase();
+      const detail = ack.groups.status.trim();
+      const failed = /^(BUSY|FAILED|INVALID)\b/i.test(detail);
+      return [
+        {
+          kind: 'command-ack',
+          nodeId: nodeId ?? ack.groups.id,
+          ackType: kind,
+          status: failed ? 'ERROR' : 'OK',
+          raw,
+        },
+      ];
+    }
+    const len = CSI_LEN_REGEX.exec(payload);
+    if (len?.groups) {
+      return [
+        {
+          kind: 'command-result',
+          nodeId: nodeId ?? len.groups.id,
+          command: `CSI_${len.groups.kind.toUpperCase()}`,
+          payload,
+          raw,
+        },
+      ];
+    }
+    return null;
+  }
+
   private parseSentinelAck(
     payload: string,
     nodeId: string | undefined,
@@ -926,6 +990,16 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       LIST_SCAN: 'list-scan-done',
       PROBE: 'probe-done',
     };
+    const ack: SerialParseResult = {
+      kind: 'command-ack',
+      nodeId: id,
+      ackType,
+      status: 'DONE',
+      raw,
+    };
+    if (op !== 'BASELINE') {
+      return [ack];
+    }
     return [
       {
         kind: 'alert',
@@ -936,13 +1010,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
         data,
         raw,
       },
-      {
-        kind: 'command-ack',
-        nodeId: id,
-        ackType,
-        status: 'DONE',
-        raw,
-      },
+      ack,
     ];
   }
 

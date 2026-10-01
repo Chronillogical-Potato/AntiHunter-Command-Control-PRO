@@ -39,6 +39,11 @@ export default () => ({
     baudRate: process.env.SERIAL_BAUD ? Number(process.env.SERIAL_BAUD) : 115200,
     delimiter: process.env.SERIAL_DELIMITER ?? '\n',
     protocol: process.env.SERIAL_PROTOCOL ?? 'meshtastic-rewrite',
+    sendMode: process.env.SERIAL_SEND_MODE ?? 'protobuf',
+    hopLimit: process.env.SERIAL_HOP_LIMIT ? Number(process.env.SERIAL_HOP_LIMIT) : 3,
+    commandChannel: process.env.SERIAL_COMMAND_CHANNEL
+      ? Number(process.env.SERIAL_COMMAND_CHANNEL)
+      : 0,
     ingestConcurrency: process.env.SERIAL_INGEST_CONCURRENCY
       ? Number(process.env.SERIAL_INGEST_CONCURRENCY)
       : 1,
@@ -95,6 +100,10 @@ export default () => ({
       'auth-2fa': {
         limit: parseNumberEnv(process.env.RATE_LIMIT_2FA_LIMIT, 10),
         ttlSeconds: parseNumberEnv(process.env.RATE_LIMIT_2FA_TTL, 300),
+      },
+      'auth-recovery': {
+        limit: parseNumberEnv(process.env.RATE_LIMIT_RECOVERY_LIMIT, 5),
+        ttlSeconds: parseNumberEnv(process.env.RATE_LIMIT_RECOVERY_TTL, 900),
       },
     },
   },

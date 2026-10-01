@@ -603,6 +603,10 @@ export interface AppSettings {
   securityAppUrl: string;
   invitationExpiryHours: number;
   passwordResetExpiryHours: number;
+  statusBroadcastEnabled: boolean;
+  statusBroadcastIntervalSec: number;
+  statusBroadcastGps: boolean;
+  statusReplyEnabled: boolean;
   mailPasswordSet: boolean;
   updatedAt: string;
 }
@@ -614,10 +618,14 @@ export interface SerialConfig {
   parity?: string | null;
   stopBits?: number | null;
   delimiter?: string | null;
+  protocol?: string | null;
   reconnectBaseMs?: number | null;
   reconnectMaxMs?: number | null;
   reconnectJitter?: number | null;
   reconnectMaxAttempts?: number | null;
+  sendMode?: string | null;
+  hopLimit?: number | null;
+  sendChannel?: number | null;
   enabled: boolean;
   updatedAt: string;
 }

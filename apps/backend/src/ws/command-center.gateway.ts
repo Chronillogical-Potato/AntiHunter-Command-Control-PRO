@@ -19,6 +19,7 @@ import {
   WebSocketServer,
   WsException,
 } from '@nestjs/websockets';
+import { Role } from '@prisma/client';
 import { Subscription } from 'rxjs';
 import { Server, Socket } from 'socket.io';
 
@@ -51,6 +52,10 @@ export class CommandCenterGateway
   private geofenceSubscription?: Subscription;
   private eventBusSubscription?: Subscription;
   private readonly recentEventHashes = new Map<string, number>();
+  private static readonly REPLAY_MAX = 200;
+  private readonly bootId = Date.now().toString(36);
+  private eventSeq = 0;
+  private readonly replayBuffer: Array<CommandCenterEvent & { seq: number; bootId: string }> = [];
 
   constructor(
     private readonly nodesService: NodesService,
@@ -91,7 +96,11 @@ export class CommandCenterGateway
       if (!payload.legalAccepted) {
         throw new UnauthorizedException('Legal acknowledgement required');
       }
+      if (payload.twoFactorPending) {
+        throw new UnauthorizedException('Two-factor authentication required');
+      }
       client.data.userId = payload.sub;
+      client.data.role = payload.role;
     } catch (error) {
       client.emit('error', 'unauthorized');
       client.disconnect(true);
@@ -114,8 +123,8 @@ export class CommandCenterGateway
       nodes,
       geofences,
       drones,
+      bootId: this.bootId,
     });
-
     const subscription = this.nodesService.getDiffStream().subscribe((diff) => {
       client.emit('nodes', diff);
     });
@@ -147,7 +156,23 @@ export class CommandCenterGateway
     if (!options?.skipBus) {
       this.eventBus.publish(payload);
     }
-    this.server.emit('event', payload);
+    this.eventSeq += 1;
+    const stamped = { ...payload, seq: this.eventSeq, bootId: this.bootId };
+    this.replayBuffer.push(stamped);
+    if (this.replayBuffer.length > CommandCenterGateway.REPLAY_MAX) {
+      this.replayBuffer.shift();
+    }
+    this.server.emit('event', stamped);
+  }
+
+  @SubscribeMessage('replay')
+  handleReplay(@ConnectedSocket() client: Socket, @MessageBody() body: { since?: unknown }) {
+    const since = typeof body?.since === 'number' && Number.isFinite(body.since) ? body.since : 0;
+    for (const event of this.replayBuffer) {
+      if (event.seq > since) {
+        client.emit('event', event);
+      }
+    }
   }
 
   emitCommandUpdate(command: CommandState): void {
@@ -171,6 +196,9 @@ export class CommandCenterGateway
   @SubscribeMessage('sendCommand')
   @UsePipes(new ValidationPipe({ transform: true }))
   async handleSendCommand(@ConnectedSocket() client: Socket, @MessageBody() dto: SendCommandDto) {
+    if (client.data?.role !== Role.ADMIN && client.data?.role !== Role.OPERATOR) {
+      throw new WsException('INSUFFICIENT_ROLE');
+    }
     try {
       const meta = {
         ip: (client.handshake.address as string | undefined) ?? null,

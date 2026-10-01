@@ -32,6 +32,7 @@ import {
 } from 'react-leaflet';
 
 import { apiClient } from '../api/client';
+import { cachedTileUrl, useTileKey } from '../api/tiles';
 import type { AlarmLevel, Geofence, GeofenceVertex, SiteSummary } from '../api/types';
 import { useGeofenceStore } from '../stores/geofence-store';
 import { useMapPreferences } from '../stores/map-store';
@@ -67,9 +68,9 @@ const BASE_LAYERS = [
   },
   {
     key: 'dark',
-    name: 'Dark (Carto)',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    name: 'Dark (Esri)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
   },
 ];
 const SLIDE_RANGE_METERS = 200;
@@ -340,6 +341,7 @@ export function StrategyAdvisorPage() {
   const mapStyle = useMapPreferences((state) => state.mapStyle);
   const setMapStyle = useMapPreferences((state) => state.setMapStyle);
   const activeMapStyle = BASE_LAYERS.some((layer) => layer.key === mapStyle) ? mapStyle : 'osm';
+  const tileKey = useTileKey();
   useEffect(() => {
     if (!BASE_LAYERS.some((layer) => layer.key === mapStyle)) {
       setMapStyle('osm');
@@ -1719,7 +1721,11 @@ ${nodesKml}
                     checked={layer.key === activeMapStyle}
                     name={layer.name}
                   >
-                    <TileLayer attribution={layer.attribution} url={layer.url} />
+                    <TileLayer
+                      attribution={layer.attribution}
+                      url={tileKey ? cachedTileUrl(layer.key, tileKey) : layer.url}
+                      maxNativeZoom={layer.key === 'dark' ? 16 : undefined}
+                    />
                   </LayersControl.BaseLayer>
                 ))}
               </LayersControl>

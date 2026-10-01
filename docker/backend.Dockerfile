@@ -6,7 +6,7 @@ WORKDIR /app
 ENV PNPM_HOME="/root/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
-RUN corepack prepare pnpm@9.9.0 --activate
+RUN corepack prepare pnpm@12.4.2 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/backend/package.json apps/backend/
@@ -29,7 +29,7 @@ ENV NODE_ENV=production
 ENV PNPM_HOME="/root/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
-RUN corepack prepare pnpm@9.9.0 --activate
+RUN corepack prepare pnpm@12.4.2 --activate
 
 # Copy workspace metadata so pnpm can resolve symlinks
 COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
@@ -51,6 +51,7 @@ RUN apt-get update  && apt-get install -y --no-install-recommends udev git  && r
 
 # Copy backend artefacts
 COPY --from=builder /app/apps/backend ./apps/backend
+COPY --from=builder /app/scripts/db-update-helper.mjs ./scripts/db-update-helper.mjs
 
 # Lightweight entrypoint handles migrations before boot
 COPY docker/backend-entrypoint.sh ./backend-entrypoint.sh
