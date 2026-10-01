@@ -27,19 +27,21 @@ Get AHCC data to a phone, another site, or your own tools without putting AHCC o
 VPN (web UI)
 --------------------------------------------------------------------------------
 
-Only the web UI needs a VPN. Use WireGuard, Tailscale, or Netbird. Don't open ports 3000 or 5173 to the internet.
+Only the web UI needs a VPN. Use WireGuard, Tailscale, or Netbird. Don't open ports 3000 or 5173 to the internet. The backend listens on all interfaces on port 3000, so block it with the host firewall.
 
 1. Install the VPN on the AHCC host and the phone.
-2. Open `https://<vpn-ip>:<port>`.
+2. Open the UI over the VPN address:
+   - Server installed with `scripts/deploy-production.sh`: `https://<vpn-ip>` (nginx on 443 serves the UI and proxies the API).
+   - Dev setup (`pnpm AHCC`): Vite serves the UI on 5173 and listens on localhost only. Start it with `--host` to reach it over the VPN, then open `http://<vpn-ip>:5173`. This is plain HTTP; use a production install for anything beyond testing.
 3. Sign in as VIEWER or ANALYST (see [RBAC](#rbac)), not ADMIN.
 4. Turn on 2FA (Account -> Two-Factor Authentication).
 
 Lock it down
 
-- Turn on HTTPS. Set HTTPS_KEY_PATH and HTTPS_CERT_PATH. Otherwise AHCC runs plain HTTP.
-- Use the firewall (Config -> Firewall). Allow only your VPN's IP range.
+- Encrypt the browser hop. With `deploy-production.sh`, nginx terminates TLS. Without nginx, set HTTPS_KEY_PATH and HTTPS_CERT_PATH (optionally HTTPS_CA_PATH, HTTPS_PASSPHRASE) so the backend serves HTTPS. If either file is missing, the backend logs a warning and falls back to plain HTTP.
+- Use the firewall (Config -> Firewall). Set the default policy to DENY and put your VPN's IP range in the allow list. The default policy is ALLOW.
 - Lock each VPN device to the AHCC host. In WireGuard, set AllowedIPs to that one host.
-- Run AHCC as a normal user. Set .env and the database to chmod 0600. Passwords sit there in plain text.
+- Run AHCC as an unprivileged user (`deploy-production.sh` creates `ahcc` with no sudo). Keep .env at 0600. MQTT, TAK, webhook, and SMTP credentials sit in .env and the database in plain text. User passwords are hashed; TOTP secrets are encrypted with TWO_FACTOR_SECRET_KEY.
 
 --------------------------------------------------------------------------------
 <a id="tak"></a>
@@ -54,27 +56,20 @@ Free servers: OpenTAKServer (easiest), FreeTAKServer, TAK Server. The plaintext 
 
 1. Install OpenTAKServer on the AHCC host, or on a VPN-only machine.
 2. Update the database if you haven't: `pnpm update-db` (from the repo root)
-3. Set the bridge in apps/backend/.env:
-
-       TAK_ENABLED=true
-       TAK_PROTOCOL=TCP
-       TAK_HOST=127.0.0.1
-       TAK_PORT=8088
-       TAK_TLS=false   # set true for TLS; add cafile/certfile/keyfile (PEM text or file path)
-
-   Or use Config -> TAK Bridge in the UI. The UI wins after you save. Restart the bridge.
+3. Set the bridge in Config -> TAK Bridge (admin only): enable it, protocol TCP, host 127.0.0.1, port 8088. For TLS, turn on TLS and paste the CA, client cert, and key (PEM text or a file path). Save. The `TAK_*` lines in .env are not read; only the UI setting is used.
+   Use UDP or TCP. The HTTPS protocol option is not implemented and does not connect.
 4. Turn on the streams you want (Config -> TAK Bridge -> Streams).
 5. Make an enrol QR or data package on the server for the phone.
 6. Add the server in iTAK over the VPN. Use the TLS streaming port.
 7. Promote a detection in AHCC. Check that an AHCC-TARGET-* marker shows up.
 
-By default AHCC streams node telemetry, target detections, and the Notice, Alert, and Critical alert levels; Info alerts and command results stay off. It also reads CoT coming back and saves those positions as nodes, but it never accepts commands, so you can't control your nodes from iTAK.
+By default AHCC streams node telemetry, target detections, and the Notice, Alert, and Critical alert levels; Info alerts, command acks, and command results stay off. It also reads CoT coming back and saves those positions as nodes, but it never accepts commands, so you can't control your nodes from iTAK.
 
 Lock it down
 
 - Only the TLS port (8089) faces the internet. Block the plaintext CoT port.
 - Require client certs on the server. Revoke lost devices. Use TLS 1.2 or newer and your own certificate, not the installer's sample.
-- With TLS on, AHCC verifies the server's certificate. `cafile` pins a private CA; `certfile` and `keyfile` add a client cert for mutual TLS. `TAK_TLS_INSECURE=true` turns the check off; don't use it.
+- TLS works over TCP only; UDP is always plaintext. With TLS on, AHCC verifies the server's certificate. `cafile` pins a private CA; `certfile` and `keyfile` add a client cert for mutual TLS. `TAK_TLS_INSECURE=true` turns the check off; don't use it.
 - Only connect AHCC to a TAK server you control. It trusts positions it receives.
 
 --------------------------------------------------------------------------------
@@ -82,7 +77,7 @@ Lock it down
 MQTTS broker and site federation
 --------------------------------------------------------------------------------
 
-Every site connects to one shared broker and publishes its data under `ahcc/<siteId>/`, where siteId is the site's SITE_ID from .env (unique per site). Because each site also subscribes, two sites on the same broker see each other's topics and stay in sync on their own. Messages use QoS 1. To read everything from every site at once, subscribe to `ahcc/#`.
+Every site connects to one shared broker and publishes its data under `ahcc/<siteId>/`, where siteId is the site's SITE_ID from .env (unique per site). Because each site also subscribes, two sites on the same broker see each other's topics and stay in sync on their own. Messages use QoS 1 by default (set per site; node updates always use QoS 1). To read everything from every site at once, subscribe to `ahcc/#`.
 
 | Topic                        | Payload                                    |
 | ---------------------------- | ------------------------------------------ |
@@ -96,7 +91,8 @@ Every site connects to one shared broker and publishes its data under `ahcc/<sit
 | `ahcc/<siteId>/drones/upsert`     | Drone telemetry                            |
 | `ahcc/<siteId>/commands/events`   | Command lifecycle                          |
 | `ahcc/<siteId>/commands/request`  | Remote command request                     |
-| `ahcc/<siteId>/events/<type>`     | Alerts and events. `<type>` is the event name with dots and slashes turned into dashes, e.g. `event-alert` |
+| `ahcc/<siteId>/events/<type>`     | Alerts and events. `<type>` is the event name with dots, slashes, and spaces turned into dashes, e.g. `event-alert` |
+| `ahcc/<siteId>/chat`              | Operator chat                              |
 
 Mosquitto is the default: tiny, free, and configured through plain passwd and acl files. EMQX Open Source is heavier but adds a web dashboard for managing users. Neither needs clustering.
 
@@ -117,7 +113,7 @@ Mosquitto is the default: tiny, free, and configured through plain passwd and ac
 
    In the acl: `ahcc-alpha` gets `readwrite ahcc/#`, `viewer` gets `read ahcc/#`.
 4. Open 8883, not 1883. Restart Mosquitto.
-5. Point AHCC at it (Config -> MQTT). Set brokerUrl to `mqtts://host:8883`, a unique clientId, the username and password, and tlsEnabled. Leave caPem empty for a public cert.
+5. Point AHCC at it (Config -> MQTT Federation, admin only). Set brokerUrl to `mqtts://host:8883`, a unique clientId, the username and password, and turn tlsEnabled on; with it off the connection is plaintext even with an `mqtts://` URL. Leave caPem empty for a public cert. certPem and keyPem add a client certificate for mutual TLS.
 
 Read the feed with MQTTX or any client:
 
@@ -127,7 +123,8 @@ To add a second site, give it its own SITE_ID, clientId, and readwrite user. Bot
 
 Lock it down
 
-- AHCC verifies the broker's cert by default. For a private cert, paste its CA into caPem. MQTT_TLS_INSECURE=true turns the check off. Don't use it.
+- With tlsEnabled on, AHCC verifies the broker's cert. For a private cert, paste its CA into caPem. MQTT_TLS_INSECURE=true turns the check off. Don't use it.
+- Only ADMIN accounts can view or change the MQTT settings, including the broker password.
 - Set allow_anonymous false. One account per site. Give viewers read-only.
 - Use TLS 1.2 or newer. Only AHCC should publish to commands/request. That topic runs commands on your nodes.
 - The broker password and certs sit in AHCC's database as plain text. Protect it.
@@ -165,19 +162,19 @@ Lock it down
 Webhooks
 --------------------------------------------------------------------------------
 
-AHCC POSTs events to an HTTPS endpoint. It only dials out. Good for ntfy, Discord, Slack, or your own API.
+AHCC POSTs each event as JSON to an endpoint you run. It only dials out. The body has `event`, `eventType`, `rule`, `data` (message, node, MAC, SSID, RSSI, location, `timestamp`), and `payload`. Point it at your own API, Node-RED, n8n, or Home Assistant. Discord and Slack expect their own message format, so put a relay in between.
 
 1. Turn on 2FA for your account first (Account -> Two-Factor Authentication). Creating, editing, and testing webhooks requires it.
 2. Open Config -> Webhooks. Add the https URL of your receiver.
-3. Set a secret. AHCC signs each POST with it (x-webhook-signature). Your receiver checks the signature.
+3. Set a secret. AHCC signs each POST body with it: `x-webhook-signature` is the hex HMAC-SHA256 of the raw body. Headers `x-webhook-id` and `x-webhook-event` identify the webhook and event. Your receiver checks the signature.
 4. Pick the events to send. Add a CA bundle and client cert for mutual TLS.
 5. Hit the test button. Check the delivery log.
 
 Lock it down
 
-- Use https only. AHCC verifies the endpoint's cert by default.
-- Check the signature on your receiver. Reject old timestamps to block replays.
-- AHCC doesn't check where the URL points. It can hit your LAN or a cloud metadata address. Keep webhooks admin-only.
+- Use https URLs. AHCC also accepts http, which sends events unencrypted. It verifies the endpoint's cert by default; the per-webhook Verify TLS toggle turns that off. Leave it on.
+- Check the signature on your receiver. The signature has no separate timestamp header; reject deliveries whose `data.timestamp` is old to block replays.
+- AHCC doesn't check where the URL points. It can hit your LAN or a cloud metadata address. Any account with 2FA can create its own webhooks; only ADMIN can share one with everyone. Limit 2FA-enabled accounts to people you trust with this.
 
 --------------------------------------------------------------------------------
 <a id="meshtastic"></a>
@@ -195,12 +192,12 @@ Each account gets one role.
 
 | Role     | Can                                            |
 | -------- | ---------------------------------------------- |
-| ADMIN    | Everything: users, config, firewall            |
-| OPERATOR | Run commands, manage targets and geofences     |
-| ANALYST  | Review data, inventory, exports                |
-| VIEWER   | Read-only map and console                      |
+| ADMIN    | Everything: users, config, firewall, TAK, MQTT |
+| OPERATOR | Run commands, manage targets, geofences, drones|
+| ANALYST  | Everything VIEWER can, plus exports            |
+| VIEWER   | Read-only map, console, inventory              |
 
-Roles are checked on every API call. Changes go to the AuditLog. RBAC covers AHCC accounts only. TAK and broker users have their own logins.
+Roles are checked on every API call. Logins, user and firewall changes, app settings, fleet security actions, and exports go to the AuditLog; TAK, MQTT, and webhook changes do not. RBAC covers AHCC accounts only. TAK and broker users have their own logins.
 
 Lock it down
 
@@ -215,9 +212,9 @@ Quick reference
 
 | Hop                     | Encrypted by AHCC          | Crosses internet? |
 | ----------------------- | -------------------------- | ----------------- |
-| Browser -> AHCC UI      | yes (own cert)             | VPN only          |
-| AHCC -> TAK server      | TLS if enabled, else none  | yes with TLS      |
+| Browser -> AHCC UI      | nginx TLS (deploy-production.sh) or HTTPS_* on the backend | VPN only |
+| AHCC -> TAK server      | TLS if enabled (TCP only), else none | yes with TLS |
 | TAK server -> iTAK      | server's TLS (8089)        | yes               |
-| AHCC -> MQTT broker     | yes (caPem for private CA) | yes               |
-| AHCC -> webhook         | yes (HMAC, mTLS)           | yes               |
+| AHCC -> MQTT broker     | yes with tlsEnabled (caPem for private CA) | yes |
+| AHCC -> webhook         | TLS for https URLs; HMAC body signature; optional mTLS | yes |
 | AHCC -> SMTP server     | STARTTLS/TLS               | yes               |
