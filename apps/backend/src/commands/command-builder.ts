@@ -269,7 +269,9 @@ function handleTimedCommand(params: string[]): string[] {
 
 function handlePcapStart(params: string[]): string[] {
   if (params.length < 2 || params.length > 3) {
-    throw new BadRequestException('PCAP_START expects radio, duration (seconds), and optional band.');
+    throw new BadRequestException(
+      'PCAP_START expects radio, duration (seconds), and optional band.',
+    );
   }
   const radio = params[0].trim();
   if (!['0', '1'].includes(radio)) {
@@ -280,7 +282,9 @@ function handlePcapStart(params: string[]): string[] {
   if (params.length === 3) {
     const band = params[2].trim().toUpperCase();
     if (band === 'FOREVER') {
-      throw new BadRequestException('PCAP_START does not support FOREVER; it requires a bounded duration.');
+      throw new BadRequestException(
+        'PCAP_START does not support FOREVER; it requires a bounded duration.',
+      );
     }
     if (!['0', '1', '2'].includes(band)) {
       throw new BadRequestException(`Invalid PCAP_START band: ${params[2]}. Expected 0, 1, or 2.`);
