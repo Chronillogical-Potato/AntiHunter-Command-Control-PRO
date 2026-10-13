@@ -1,3 +1,5 @@
+import { signatureCatalog } from './signature-catalog';
+
 export const DEVICE_FAMILIES = [
   'Phone',
   'Tag',
@@ -14,11 +16,14 @@ export const DEVICE_FAMILIES = [
   'Computer',
   'Input',
   'Beacon',
+  'Router',
+  'Public Safety',
+  'Hacking Tool',
 ] as const;
 
 export type DeviceFamily = (typeof DEVICE_FAMILIES)[number];
 export type ClassConfidence = 'high' | 'medium' | 'low';
-export type ClassSource = 'advert' | 'name' | 'vendor' | 'address';
+export type ClassSource = 'advert' | 'name' | 'signature' | 'vendor' | 'address';
 
 export interface ClassEvidence {
   source: ClassSource;
@@ -164,7 +169,66 @@ const VENDOR_RULES: Rule[] = [
   },
 ];
 
-const WATCH_FAMILIES: ReadonlySet<DeviceFamily> = new Set(['Tag', 'Camera', 'Radio', 'Drone']);
+const SIGNATURE_FAMILY: Record<string, DeviceFamily> = {
+  ISP: 'Router',
+  MESH: 'Router',
+  VEHICLE: 'Vehicle',
+  SURVEILLANCE: 'Camera',
+  CAMERA: 'Camera',
+  HOME: 'Home',
+  THERMOSTAT: 'Home',
+  SIGNAGE: 'Home',
+  LOCK: 'Lock',
+  DRONE: 'Drone',
+  WEARABLE: 'Wearable',
+  BODYWORN: 'Wearable',
+  LAW_ENFORCEMENT: 'Public Safety',
+  HACKING: 'Hacking Tool',
+  FINDER: 'Tag',
+  AUDIO: 'Audio',
+  GLASSES: 'Glasses',
+  PHONE: 'Phone',
+  BEACON: 'Beacon',
+  HEALTH: 'Health',
+};
+
+const BUCKET_FAMILY: Record<string, DeviceFamily> = {
+  camera: 'Camera',
+  radio: 'Radio',
+  router: 'Router',
+  network: 'Router',
+  isp: 'Router',
+  health: 'Health',
+  tag: 'Tag',
+  vehicle: 'Vehicle',
+  home: 'Home',
+  thermostat: 'Home',
+  signage: 'Home',
+  tv: 'Home',
+  console: 'Home',
+  printer: 'Home',
+  drone: 'Drone',
+  phone: 'Phone',
+  computer: 'Computer',
+  audio: 'Audio',
+  'audio-personal': 'Audio',
+  lock: 'Lock',
+  wearable: 'Wearable',
+  glasses: 'Glasses',
+  beacon: 'Beacon',
+  bodyworn: 'Public Safety',
+  'law-enforcement': 'Public Safety',
+  hacking: 'Hacking Tool',
+};
+
+const WATCH_FAMILIES: ReadonlySet<DeviceFamily> = new Set([
+  'Tag',
+  'Camera',
+  'Radio',
+  'Drone',
+  'Public Safety',
+  'Hacking Tool',
+]);
 const RANK: Record<ClassConfidence, number> = { low: 0, medium: 1, high: 2 };
 
 function match(rules: Rule[], text: string | null | undefined) {
@@ -232,21 +296,49 @@ export function classifyDeviceType(input: DeviceClassInput): DeviceClassificatio
   }
 
   const vendor = input.vendor?.trim();
+  const vendorMatch = vendor ? match(VENDOR_RULES, vendor) : null;
+  const hint =
+    !vendor || vendorMatch || input.locallyAdministered
+      ? null
+      : signatureCatalog().vendorHint(vendor);
+  const hintFamily = hint ? BUCKET_FAMILY[hint.bucket] : undefined;
   if (vendor) {
-    const m = match(VENDOR_RULES, vendor);
     evidence.push({
       source: 'vendor',
       value: shortVendor(vendor) || vendor,
-      family: m?.rule.family,
+      family: vendorMatch?.rule.family ?? hintFamily,
     });
-    if (m) {
-      picks.push({
-        family: m.rule.family,
-        source: 'vendor',
-        confidence: m.rule.confidence ?? 'medium',
-        label: m.rule.label ?? (shortVendor(vendor) || vendor),
-      });
+  }
+  if (vendor && vendorMatch) {
+    picks.push({
+      family: vendorMatch.rule.family,
+      source: 'vendor',
+      confidence: vendorMatch.rule.confidence ?? 'medium',
+      label: vendorMatch.rule.label ?? (shortVendor(vendor) || vendor),
+    });
+  }
+
+  const ssidOrName = (input.name ?? '').trim();
+  for (const hit of signatureCatalog().match({
+    mac: input.mac,
+    radio: isBle ? 'BLE' : 'WIFI',
+    name: ssidOrName,
+    isAp: !isBle && ssidOrName.length > 0,
+  })) {
+    const family = SIGNATURE_FAMILY[hit.kind];
+    evidence.push({ source: 'signature', value: hit.name, family });
+    if (family) {
+      picks.push({ family, source: 'signature', confidence: 'medium', label: hit.name });
     }
+  }
+
+  if (vendor && hint && hintFamily) {
+    picks.push({
+      family: hintFamily,
+      source: 'vendor',
+      confidence: hint.weight >= 3 ? 'medium' : 'low',
+      label: shortVendor(vendor) || vendor,
+    });
   }
 
   if (isBle) {

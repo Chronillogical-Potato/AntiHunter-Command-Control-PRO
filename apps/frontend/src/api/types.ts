@@ -13,10 +13,13 @@ export type DeviceFamily =
   | 'Home'
   | 'Computer'
   | 'Input'
-  | 'Beacon';
+  | 'Beacon'
+  | 'Router'
+  | 'Public Safety'
+  | 'Hacking Tool';
 
 export type ClassConfidence = 'high' | 'medium' | 'low';
-export type ClassSource = 'advert' | 'name' | 'vendor' | 'address';
+export type ClassSource = 'advert' | 'name' | 'signature' | 'vendor' | 'address';
 
 export interface DeviceClassification {
   family: DeviceFamily | null;
