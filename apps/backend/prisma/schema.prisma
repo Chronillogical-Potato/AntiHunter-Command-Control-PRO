@@ -298,6 +298,7 @@ model InventoryDevice {
   avgRSSI             Float?
   locallyAdministered Boolean   @default(false)
   multicast           Boolean   @default(false)
+  bleClass            String?
   lastNodeId          String?
   lastLat             Float?
   lastLon             Float?
@@ -1074,4 +1075,17 @@ model DeviceVisit {
   @@index([mac])
   @@index([start])
   @@index([mac, start])
+  @@index([nodeId, end])
+}
+
+model CampaignRun {
+  id        String    @id @default(cuid())
+  name      String
+  nodeId    String
+  siteId    String?
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([name])
+  @@index([nodeId, endedAt])
 }

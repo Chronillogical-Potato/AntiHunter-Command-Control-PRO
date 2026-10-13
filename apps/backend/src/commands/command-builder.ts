@@ -94,7 +94,28 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['CSI_RECAL', expectNoParams],
   ['CSI_EXCLUDE', handleCsiExclude],
   ['CSI_CFG', handleCsiCfg],
+  ['MESH_TX_CANCEL', expectNoParams],
+  ['BASELINE_WATCH', expectNoParams],
+  ['BLE_CLASSIFY', handleBleClassify],
+  ['CAMPAIGN_START', handleCampaignStart],
+  ['CAMPAIGN_STOP', expectNoParams],
+  ['CAMPAIGN_STATUS', expectNoParams],
+  ['PCAP_AUTO', handlePcapAuto],
+  ['SD_REPAIR', handleSdRepair],
+  ['SCHED_ADD', handleSchedAdd],
+  ['SCHED_LIST', expectNoParams],
+  ['SCHED_DEL', handleSchedDel],
+  ['VIBSCAN_SET', handleVibScanSet],
+  ['VIBSCAN_STATUS', expectNoParams],
+  ['ATTACKER_TRILAT', handleAttackerTrilat],
+  ['ATTACKER_TRILAT_STATUS', expectNoParams],
+  ['DETECT_COUNTS', expectNoParams],
 ]);
+
+const CAMPAIGN_NAME_PATTERN = /^[A-Za-z0-9_-]{1,23}$/;
+const SCHED_AT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+const SCHED_PATHS = new Set(['/scan', '/sniffer', '/drone']);
+const SCHED_OPTIONS_PATTERN = /^[A-Za-z0-9_=&,.-]*$/;
 
 const CSI_START_FLAGS = new Set([
   'FOREVER',
@@ -777,6 +798,119 @@ function handleCsiCfg(params: string[]): string[] {
     }
     return `${key}=${value}`;
   });
+}
+
+function handleBleClassify(params: string[]): string[] {
+  if (params.length !== 1 || (params[0] !== '0' && params[0] !== '1')) {
+    throw new BadRequestException('BLE_CLASSIFY expects 0 or 1.');
+  }
+  return [params[0]];
+}
+
+function handleCampaignStart(params: string[]): string[] {
+  if (params.length !== 1 || !CAMPAIGN_NAME_PATTERN.test(params[0])) {
+    throw new BadRequestException(
+      'CAMPAIGN_START expects a name of 1-23 characters using A-Z, a-z, 0-9, - or _.',
+    );
+  }
+  return [params[0]];
+}
+
+function handlePcapAuto(params: string[]): string[] {
+  if (params.length === 0) {
+    return [];
+  }
+  const match = params.length === 1 ? /^(\d{1,6}),(\d{1,6})$/.exec(params[0]) : null;
+  if (!match) {
+    throw new BadRequestException('PCAP_AUTO expects optional budgetMB,floorMB (e.g., 512,64).');
+  }
+  return [`${Number(match[1])},${Number(match[2])}`];
+}
+
+function handleSdRepair(params: string[]): string[] {
+  const value = params.length === 1 ? params[0].toUpperCase() : '';
+  if (!['ON', 'OFF', 'NOW'].includes(value)) {
+    throw new BadRequestException('SD_REPAIR expects ON, OFF, or NOW (NOW erases the SD card).');
+  }
+  return [value];
+}
+
+function handleSchedAdd(params: string[]): string[] {
+  const fields = params.join(':').split('|');
+  if (fields.length !== 4) {
+    throw new BadRequestException(
+      'SCHED_ADD expects YYYY-MM-DDTHH:MM|repeat|path|options (path /scan, /sniffer or /drone).',
+    );
+  }
+  const [at, repeatRaw, path, options] = fields.map((field) => field.trim());
+  const time = SCHED_AT_PATTERN.exec(at);
+  if (
+    !time ||
+    Number(time[2]) < 1 ||
+    Number(time[2]) > 12 ||
+    Number(time[3]) < 1 ||
+    Number(time[3]) > 31 ||
+    Number(time[4]) > 23 ||
+    Number(time[5]) > 59
+  ) {
+    throw new BadRequestException('SCHED_ADD start time must be YYYY-MM-DDTHH:MM.');
+  }
+  const repeat = /^\d+$/.test(repeatRaw) ? Number(repeatRaw) : -1;
+  if (repeat < 0 || (repeat > 0 && repeat < 600) || repeat > 2_678_400) {
+    throw new BadRequestException('SCHED_ADD repeat must be 0 or 600-2678400 seconds.');
+  }
+  if (!SCHED_PATHS.has(path)) {
+    throw new BadRequestException('SCHED_ADD path must be /scan, /sniffer, or /drone.');
+  }
+  if (options.length > 1024 || !SCHED_OPTIONS_PATTERN.test(options)) {
+    throw new BadRequestException(
+      'SCHED_ADD options must be key=value pairs joined by & (max 1024 characters).',
+    );
+  }
+  return [`${at}|${repeat}|${path}|${options}`];
+}
+
+function handleSchedDel(params: string[]): string[] {
+  const index = params.length === 1 && /^\d{1,2}$/.test(params[0]) ? Number(params[0]) : 0;
+  if (index < 1) {
+    throw new BadRequestException('SCHED_DEL expects the entry number from SCHED_LIST (1-8).');
+  }
+  return [index.toString()];
+}
+
+function handleVibScanSet(params: string[]): string[] {
+  if (params.length < 3 || params.length > 5) {
+    throw new BadRequestException(
+      'VIBSCAN_SET expects enabled:mode:duration[:cooldown[:interrupt]].',
+    );
+  }
+  const int = (raw: string, label: string, min: number, max: number): string => {
+    const value = /^\d+$/.test(raw) ? Number(raw) : -1;
+    if (value < min || value > max) {
+      throw new BadRequestException(`VIBSCAN_SET ${label} must be ${min}-${max}.`);
+    }
+    return value.toString();
+  };
+  const output = [
+    int(params[0], 'enabled', 0, 1),
+    int(params[1], 'mode', 0, 8),
+    int(params[2], 'duration', 0, 65_535),
+  ];
+  if (params.length >= 4) {
+    output.push(int(params[3], 'cooldown', 5, 86_400));
+  }
+  if (params.length === 5) {
+    output.push(int(params[4], 'interrupt', 0, 1));
+  }
+  return output;
+}
+
+function handleAttackerTrilat(params: string[]): string[] {
+  const value = params.length === 1 ? params[0].toLowerCase() : '';
+  if (!['0', '1', 'on', 'off'].includes(value)) {
+    throw new BadRequestException('ATTACKER_TRILAT expects 0, 1, on, or off.');
+  }
+  return [value === '1' || value === 'on' ? '1' : '0'];
 }
 
 function normalizeTargetReference(value: string): string {

@@ -57,7 +57,7 @@ function sanitizeLine(value: string): string {
   }
 
   const HOP_KEYWORD_RE =
-    /^(?:STATUS|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|CSI_|Time:)/i;
+    /^(?:STATUS|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|CSI_|CAMPAIGN_|SCHED_|BASELINE_WATCH|BATTERY_SAVER|BLE_ATTACK|CSA_SPOOF|QUIET_ABUSE|VIBSCAN_|ATTACKER_TRILAT|DETECT_|QUORUM_|HUNT_COOLDOWN|MESH_TX_CANCEL|SD_REPAIR|TRI_ACK|Time:)/i;
   const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
   if (hopMatch) {
     const secondToken = hopMatch[2].replace(/[:\s]+$/, '');
@@ -83,6 +83,7 @@ interface TestCase {
   expectCategory?: string;
   expectNodeId?: string;
   expectData?: Record<string, string | number>;
+  expectFields?: { kind: SerialParseResult['kind']; fields: Record<string, unknown> };
   skipHop?: boolean;
 }
 
@@ -133,6 +134,256 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     name: 'DEVICE BLE',
     input: 'AH5: DEVICE:11:22:33:44:55:66 B -85',
     expectKinds: ['device-seen'],
+  },
+  {
+    name: 'DEVICE batch continuation row inherits batch node',
+    input: 'DEVICE:11:22:33:44:55:77 B -70 N:Pixel 8',
+    expectKinds: ['device-seen'],
+    expectFields: { kind: 'device-seen', fields: { nodeId: 'AH5', name: 'Pixel 8' } },
+    skipHop: true,
+  },
+
+  // ─── FW main: V= / C= / campaign / sched / new replies ───
+  {
+    name: 'TARGET multi-word name keeps GPS, vendor and class',
+    input:
+      'AH5: Target: aa:bb:cc:dd:ee:01 RSSI:-61 Type:BLE Name:Jane Buds Pro GPS=12.345000,-54.321000 V=Samsung C=Samsung-Buds',
+    expectKinds: ['target-detected', 'alert'],
+    expectFields: {
+      kind: 'target-detected',
+      fields: {
+        name: 'Jane Buds Pro',
+        lat: 12.345,
+        lon: -54.321,
+        vendor: 'Samsung',
+        bleClass: 'Samsung-Buds',
+      },
+    },
+  },
+  {
+    name: 'TARGET class without name',
+    input: 'AH5: Target: 4a:bb:cc:dd:ee:03 RSSI:-55 Type:BLE C=Nearby-Locked-WiFi',
+    expectKinds: ['target-detected', 'alert'],
+    expectFields: { kind: 'target-detected', fields: { bleClass: 'Nearby-Locked-WiFi' } },
+  },
+  {
+    name: 'ANOMALY name and class split',
+    input:
+      'AH5: ANOMALY: BLE aa:bb:cc:dd:ee:04 RSSI:-60 New device (not in baseline) N:My Tile C=Tile',
+    expectKinds: ['alert'],
+    expectCategory: 'anomaly',
+    expectData: { name: 'My Tile', bleClass: 'Tile', kind: 'NEW' },
+  },
+  {
+    name: 'STATUS with Rst and Camp keeps GPS',
+    input:
+      'AH5: STATUS: Mode:WiFi+BLE Scan:ACTIVE Hits:12 Temp:41.2C Up:00:10:22 Rst:POWERON Camp:site-a GPS:12.345000,-54.321000 HDOP=1.2',
+    expectKinds: ['node-telemetry', 'command-result'],
+    expectFields: {
+      kind: 'node-telemetry',
+      fields: { lat: 12.345, lon: -54.321, campaign: 'site-a' },
+    },
+  },
+  {
+    name: 'STATUS with Rst and no campaign',
+    input: 'AH5: STATUS: Mode:WiFi Scan:IDLE Hits:0 Temp:40.0C Up:00:00:22 Rst:SW',
+    expectKinds: ['node-telemetry'],
+    expectFields: { kind: 'node-telemetry', fields: { campaign: null } },
+  },
+  {
+    name: 'CAMPAIGN_ACK start',
+    input: 'AH5: CAMPAIGN_ACK:START:site-a',
+    expectKinds: ['command-ack', 'alert'],
+    expectCategory: 'campaign',
+    expectData: { event: 'start', name: 'site-a' },
+    expectFields: { kind: 'command-ack', fields: { ackType: 'CAMPAIGN_START_ACK', status: 'OK' } },
+  },
+  {
+    name: 'CAMPAIGN_ACK invalid',
+    input: 'AH5: CAMPAIGN_ACK:INVALID',
+    expectKinds: ['command-ack'],
+    expectFields: {
+      kind: 'command-ack',
+      fields: { ackType: 'CAMPAIGN_START_ACK', status: 'ERROR' },
+    },
+  },
+  {
+    name: 'CAMPAIGN_ACK stop',
+    input: 'AH5: CAMPAIGN_ACK:STOP:site-a',
+    expectKinds: ['command-ack', 'alert'],
+    expectData: { event: 'stop', name: 'site-a' },
+    expectFields: { kind: 'command-ack', fields: { ackType: 'CAMPAIGN_STOP_ACK' } },
+  },
+  {
+    name: 'CAMPAIGN_STATUS',
+    input: 'AH5: CAMPAIGN_STATUS:site-a',
+    expectKinds: ['command-result', 'alert'],
+    expectData: { event: 'status', name: 'site-a' },
+  },
+  {
+    name: 'SCHED_ACK delete',
+    input: 'AH5: SCHED_ACK:DELETED',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'SCHED_DEL_ACK', status: 'OK' } },
+  },
+  {
+    name: 'SCHED_ACK add error',
+    input: 'AH5: SCHED_ACK:ERR bad time',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'SCHED_ADD_ACK', status: 'ERROR' } },
+  },
+  {
+    name: 'SCHED_LIST',
+    input: 'AH5: SCHED_LIST:3',
+    expectKinds: ['command-result'],
+    expectFields: { kind: 'command-result', fields: { command: 'SCHED_LIST' } },
+  },
+  {
+    name: 'CONFIG_ACK keyed',
+    input: 'AH5: CONFIG_ACK:BLE_CLASSIFY:1',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'BLE_CLASSIFY_ACK', status: 'OK' } },
+  },
+  {
+    name: 'CONFIG_ACK failure',
+    input: 'AH5: CONFIG_ACK:RSSI:INVALID_RANGE',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'RSSI_ACK', status: 'ERROR' } },
+  },
+  {
+    name: 'BASELINE_ACK watching',
+    input: 'AH5: BASELINE_ACK:WATCHING',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'BASELINE_WATCH_ACK' } },
+  },
+  {
+    name: 'BASELINE_WATCH summary',
+    input: 'AH5: BASELINE_WATCH: New=2 Gone=1 Moved=0 Both=5',
+    expectKinds: ['alert'],
+    expectCategory: 'baseline',
+    expectData: { New: 2, Gone: 1 },
+  },
+  {
+    name: 'DRONE without GPS',
+    input: 'AH5: DRONE: 60:60:1f:aa:bb:cc ID:1581F5 R-70',
+    expectKinds: ['alert'],
+    expectCategory: 'drone',
+    expectData: { event: 'drone-no-fix', droneId: '1581F5' },
+  },
+  {
+    name: 'DRONE_LOST',
+    input: 'AH5: DRONE_LOST: 60:60:1f:aa:bb:cc ID:1581F5 AGE:30',
+    expectKinds: ['alert'],
+    expectData: { event: 'drone-lost', ageSeconds: 30 },
+  },
+  {
+    name: 'T_D hits first, no type',
+    input: 'AH5: T_D: AA:BB:CC:DD:EE:FF Hits=5 RSSI:-60 GPS=39.9,-105.0 HDOP=1.0',
+    expectKinds: ['alert'],
+    expectCategory: 'triangulation',
+    expectData: { hits: 5, rssi: -60 },
+  },
+  {
+    name: 'RANDOMIZATION_DONE without PEND',
+    input: 'AH5: RANDOMIZATION_DONE: Identities=3 Sessions=5 TX=2',
+    expectKinds: ['alert'],
+    expectData: { identities: 3 },
+  },
+  {
+    name: 'PCAP_DONE',
+    input: 'AH5: PCAP_DONE: F=100 B=2000 D=0 R=SIZECAP',
+    expectKinds: ['alert'],
+    expectCategory: 'pcap',
+    expectData: { stage: 'done', F: 100, R: 'SIZECAP' },
+  },
+  {
+    name: 'BATTERY_SAVER event',
+    input: 'AH5: BATTERY_SAVER: ENABLED Interval:5min',
+    expectKinds: ['alert'],
+    expectData: { intervalMinutes: 5 },
+  },
+  {
+    name: 'GPS LOCKED without coordinates',
+    input: 'AH5: GPS: LOCKED Satellites:9 HDOP:0.90',
+    expectKinds: ['alert'],
+    expectCategory: 'gps',
+    expectData: { sats: 9 },
+  },
+  {
+    name: 'STATUS_BOOT',
+    input: 'AH5: STATUS_BOOT: reset=SW prevUp=120s restored=yes sdMountFail=0 sdRetry=0',
+    expectKinds: ['alert'],
+    expectData: { reset: 'SW' },
+  },
+  {
+    name: 'BLE_ATTACK rssi variant',
+    input: 'AH5: BLE_ATTACK:Flipper:AA:BB:CC:DD:EE:01:-55',
+    expectKinds: ['alert'],
+    expectCategory: 'sentinel',
+    expectData: { tool: 'Flipper', mac: 'AA:BB:CC:DD:EE:01', rssi: -55 },
+  },
+  {
+    name: 'BLE_ATTACK counter variant',
+    input: 'AH5: BLE_ATTACK:iOS_Pair_Spam:AA:BB:CC:DD:EE:02:types=3:addrs=9',
+    expectKinds: ['alert'],
+    expectData: { tool: 'iOS_Pair_Spam', types: 3, addrs: 9 },
+  },
+  {
+    name: 'CSA_SPOOF',
+    input: 'AH5: CSA_SPOOF:AA:BB:CC:DD:EE:03:60:-50',
+    expectKinds: ['alert'],
+    expectData: { bssid: 'AA:BB:CC:DD:EE:03', value: 60, rssi: -50 },
+  },
+  {
+    name: 'PROBE_HIT quoted SSID with spaces',
+    input: 'AH5: PROBE_HIT AA:BB:CC:DD:EE:04 Apple RSSI=-50 CH=6 SSID="My Home Net" GHOST',
+    expectKinds: ['probe-hit'],
+    expectFields: { kind: 'probe-hit', fields: { ssid: 'My Home Net', isGhost: true } },
+  },
+  {
+    name: 'ATTACK long with reason and GPS',
+    input:
+      'AH5: ATTACK: DEAUTH [TARGETED] SRC:AA:BB:CC:DD:EE:05 DST:AA:BB:CC:DD:EE:06 RSSI:-50dBm CH:6 R:7 GPS:39.9,-105.0',
+    expectKinds: ['alert'],
+    expectData: { reasonCode: 7, lat: 39.9 },
+  },
+  {
+    name: 'BATTERY_SAVER_STATUS enabled keeps temp and GPS',
+    input:
+      'AH5: BATTERY_SAVER_STATUS: Enabled:YES Interval:5min NextHB:30s Temp:40C GPS:39.9,-105.0',
+    expectKinds: ['command-ack', 'alert'],
+    expectData: { temperatureC: 40, lat: 39.9, intervalMinutes: 5 },
+  },
+  {
+    name: 'AUTOERASE_STATUS setup active keeps timings',
+    input:
+      'AH5: AUTOERASE_STATUS: Enabled:YES SetupMode:ACTIVE Activates:30s TamperActive:NO Setup:60s Erase:30s Vibs:3 Window:20s Cooldown:300s',
+    expectKinds: ['command-ack', 'alert'],
+    expectData: { activatesIn: 30, setupDelay: 60, autoEraseCooldown: 300 },
+  },
+  {
+    name: 'ERASE_TOKEN expires',
+    input: 'AH5: ERASE_TOKEN:ABCD1234 Expires:300s',
+    expectKinds: ['alert'],
+    expectData: { token: 'ABCD1234', time: 300 },
+  },
+  {
+    name: 'KARMA_ACK off',
+    input: 'AH5: KARMA_ACK:OFF',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'KARMA_OFF_ACK' } },
+  },
+  {
+    name: 'TRI_ACK busy',
+    input: 'AH5: TRI_ACK:BUSY',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'TRI_ACK', status: 'ERROR' } },
+  },
+  {
+    name: 'VIBSCAN_STATUS',
+    input: 'AH5: VIBSCAN_STATUS: En:1 Mode:2 Dur:30s Cd:60s',
+    expectKinds: ['command-result'],
+    expectFields: { kind: 'command-result', fields: { command: 'VIBSCAN_STATUS' } },
   },
 
   // ─── TARGET_DATA / T_D ───
@@ -948,6 +1199,21 @@ function runTest(label: string, rawInput: string, tc: TestCase): void {
         failed++;
         failures.push(
           `FAIL [${label}]: data.${key} = ${JSON.stringify(data[key])} != ${JSON.stringify(want)}`,
+        );
+        return;
+      }
+    }
+  }
+
+  if (tc.expectFields) {
+    const target = results.find((r) => r.kind === tc.expectFields?.kind) as
+      | Record<string, unknown>
+      | undefined;
+    for (const [key, want] of Object.entries(tc.expectFields.fields)) {
+      if (target?.[key] !== want) {
+        failed++;
+        failures.push(
+          `FAIL [${label}]: ${tc.expectFields.kind}.${key} = ${JSON.stringify(target?.[key])} != ${JSON.stringify(want)}`,
         );
         return;
       }

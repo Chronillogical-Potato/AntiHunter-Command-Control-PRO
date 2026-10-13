@@ -9,6 +9,7 @@ import { AlarmsModule } from './alarms/alarms.module';
 import { AlertRulesModule } from './alert-rules/alert-rules.module';
 import { AppConfigModule } from './app-config/app-config.module';
 import { AuthModule } from './auth/auth.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { ChatModule } from './chat/chat.module';
 import { CommandsModule } from './commands/commands.module';
 import configuration from './config/configuration';
@@ -114,6 +115,7 @@ import { WsModule } from './ws/ws.module';
     UpdateModule,
     ProbeInventoryModule,
     DeviceClassificationModule,
+    CampaignsModule,
   ],
 })
 export class AppModule implements NestModule {

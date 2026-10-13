@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AlertRulesModule } from '../alert-rules/alert-rules.module';
+import { CampaignsModule } from '../campaigns/campaigns.module';
 import { CommandsModule } from '../commands/commands.module';
 import { DronesModule } from '../drones/drones.module';
 import { InventoryModule } from '../inventory/inventory.module';
@@ -29,6 +30,7 @@ import { WsModule } from '../ws/ws.module';
     WebhooksModule,
     TriangulationModule,
     ProbeInventoryModule,
+    CampaignsModule,
   ],
   providers: [SerialIngestService, TargetTrackingService],
 })

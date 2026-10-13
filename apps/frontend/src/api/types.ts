@@ -1,3 +1,32 @@
+export type DeviceFamily =
+  | 'Phone'
+  | 'Tag'
+  | 'Audio'
+  | 'Wearable'
+  | 'Vehicle'
+  | 'Drone'
+  | 'Camera'
+  | 'Radio'
+  | 'Glasses'
+  | 'Health'
+  | 'Lock'
+  | 'Home'
+  | 'Computer'
+  | 'Input'
+  | 'Beacon';
+
+export type ClassConfidence = 'high' | 'medium' | 'low';
+export type ClassSource = 'advert' | 'name' | 'vendor' | 'address';
+
+export interface DeviceClassification {
+  family: DeviceFamily | null;
+  label: string | null;
+  confidence: ClassConfidence | null;
+  source: ClassSource | null;
+  watch: boolean;
+  evidence: Array<{ source: ClassSource; value: string; family?: DeviceFamily }>;
+}
+
 export interface InventoryDevice {
   mac: string;
   vendor?: string | null;
@@ -11,10 +40,12 @@ export interface InventoryDevice {
   avgRSSI?: number | null;
   locallyAdministered: boolean;
   multicast: boolean;
+  bleClass?: string | null;
   lastNodeId?: string | null;
   lastLat?: number | null;
   lastLon?: number | null;
   siteId?: string | null;
+  classification?: DeviceClassification | null;
 }
 
 export interface CommandRequest {

@@ -4,6 +4,7 @@ export type CommandGroup =
   | 'Detection'
   | 'Sentinel'
   | 'Triangulation'
+  | 'Campaign'
   | 'Status'
   | 'Security';
 
@@ -1098,6 +1099,282 @@ export const MESH_COMMANDS: CommandDefinition[] = [
       },
     ],
   },
+  {
+    name: 'MESH_TX_CANCEL',
+    group: 'Configuration',
+    description: 'Cancel queued mesh transmissions; scan keeps running.',
+    defaultTarget: '@ALL',
+    parameters: [],
+  },
+  {
+    name: 'BLE_CLASSIFY',
+    group: 'Configuration',
+    description: 'Toggle BLE device classification.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'enabled',
+        label: 'BLE Classify',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'Enabled', value: '1' },
+          { label: 'Disabled', value: '0' },
+        ],
+      },
+    ],
+    examples: [{ target: '@ALL', params: ['0'] }],
+  },
+  {
+    name: 'BASELINE_WATCH',
+    group: 'Detection',
+    description: 'Mark the running baseline to start watching for anomalies.',
+    defaultTarget: '@ALL',
+    parameters: [],
+  },
+  {
+    name: 'PCAP_AUTO',
+    group: 'Scanning',
+    description: 'Set or read PCAP storage budget and free-space floor (MB).',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'limits',
+        label: 'Budget,Floor (MB)',
+        type: 'text',
+        placeholder: '512,64',
+        helper: 'Optional budgetMB,floorMB. Empty reads current.',
+        required: false,
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['512,64'] }],
+  },
+  {
+    name: 'SD_REPAIR',
+    group: 'Configuration',
+    description: 'Set SD auto-repair, or NOW to repair (erases the card).',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'action',
+        label: 'Action',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'Auto-repair on', value: 'ON' },
+          { label: 'Auto-repair off', value: 'OFF' },
+          { label: 'Repair now (erases card)', value: 'NOW' },
+        ],
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['ON'] }],
+  },
+  {
+    name: 'SCHED_ADD',
+    group: 'Scanning',
+    description: 'Add a scheduled scan block (max 8 per node).',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'schedule',
+        label: 'Schedule',
+        type: 'text',
+        placeholder: '2026-09-30T02:00|86400|/scan|mode=2&secs=600',
+        helper: 'start|repeat secs (0 or 600+)|/scan, /sniffer or /drone|options',
+        required: true,
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['2026-09-30T02:00|86400|/scan|mode=2&secs=600'] }],
+  },
+  {
+    name: 'SCHED_LIST',
+    group: 'Scanning',
+    description: 'Count scheduled blocks; entries print on node serial.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'SCHED_DEL',
+    group: 'Scanning',
+    description: 'Delete a scheduled block by SCHED_LIST number.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'index',
+        label: 'Entry Number',
+        type: 'number',
+        placeholder: '1',
+        required: true,
+        min: 1,
+        max: 8,
+        step: 1,
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['1'] }],
+  },
+  {
+    name: 'CAMPAIGN_START',
+    group: 'Campaign',
+    description: 'Start a named campaign; logs and exports are tagged with it.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'name',
+        label: 'Campaign Name',
+        type: 'text',
+        placeholder: 'site-a',
+        helper: 'A-Z a-z 0-9 - _, max 23.',
+        required: true,
+      },
+    ],
+    examples: [{ target: '@ALL', params: ['site-a'] }],
+  },
+  {
+    name: 'CAMPAIGN_STOP',
+    group: 'Campaign',
+    description: 'Stop the active campaign.',
+    defaultTarget: '@ALL',
+    parameters: [],
+  },
+  {
+    name: 'CAMPAIGN_STATUS',
+    group: 'Campaign',
+    description: 'Report the active campaign name.',
+    defaultTarget: '@ALL',
+    parameters: [],
+  },
+  {
+    name: 'VIBSCAN_SET',
+    group: 'Security',
+    description: 'Configure vibration-triggered auto-scan.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'enabled',
+        label: 'Enabled',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'Enabled', value: '1' },
+          { label: 'Disabled', value: '0' },
+        ],
+      },
+      {
+        key: 'mode',
+        label: 'Scan Mode',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'Off', value: '0' },
+          { label: 'Device scan', value: '1' },
+          { label: 'Probe', value: '2' },
+          { label: 'Randomization', value: '3' },
+          { label: 'List scan', value: '4' },
+          { label: 'Drone', value: '5' },
+          { label: 'Deauth', value: '6' },
+          { label: 'Baseline', value: '7' },
+          { label: 'PCAP', value: '8' },
+        ],
+      },
+      {
+        key: 'duration',
+        label: 'Duration (seconds)',
+        type: 'number',
+        placeholder: '60',
+        helper: '0 runs until stopped.',
+        required: true,
+        min: 0,
+        max: 65535,
+        step: 1,
+        suffix: 'sec',
+      },
+      {
+        key: 'cooldown',
+        label: 'Cooldown (seconds)',
+        type: 'number',
+        placeholder: '300',
+        required: false,
+        min: 5,
+        max: 86400,
+        step: 1,
+        suffix: 'sec',
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['1', '2', '60', '300'] }],
+  },
+  {
+    name: 'VIBSCAN_STATUS',
+    group: 'Security',
+    description: 'Report vibration auto-scan settings.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'ATTACKER_TRILAT',
+    group: 'Sentinel',
+    description: 'Toggle attacker trilateration.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'enabled',
+        label: 'Attacker Trilat',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'On', value: '1' },
+          { label: 'Off', value: '0' },
+        ],
+      },
+    ],
+    examples: [{ target: '@ALL', params: ['1'] }],
+  },
+  {
+    name: 'ATTACKER_TRILAT_STATUS',
+    group: 'Sentinel',
+    description: 'Report attacker trilateration state.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'DETECT_COUNTS',
+    group: 'Sentinel',
+    description: 'Report detector dataset counts.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'BATTERY_SAVER_START',
+    group: 'Status',
+    description: 'Start battery saver with heartbeat interval (minutes).',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'minutes',
+        label: 'Interval (minutes)',
+        type: 'number',
+        placeholder: '10',
+        required: true,
+        min: 1,
+        max: 30,
+        suffix: 'min',
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['10'] }],
+  },
+  {
+    name: 'BATTERY_SAVER_STOP',
+    group: 'Status',
+    description: 'Stop battery saver.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
+  {
+    name: 'BATTERY_SAVER_STATUS',
+    group: 'Status',
+    description: 'Report battery saver state.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+  },
 ];
 
 export const COMMAND_GROUP_ORDER: CommandGroup[] = [
@@ -1106,6 +1383,7 @@ export const COMMAND_GROUP_ORDER: CommandGroup[] = [
   'Detection',
   'Sentinel',
   'Triangulation',
+  'Campaign',
   'Status',
   'Security',
 ];

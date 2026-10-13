@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { InventoryDevice, Prisma } from '@prisma/client';
 import { Observable, Subject } from 'rxjs';
 
+import { classifyDeviceType } from '../device-classification/device-class';
 import { DronesService } from '../drones/drones.service';
 import { OuiService } from '../oui/oui.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,6 +41,17 @@ export interface InventoryUpsertPayload {
   lastLon?: number | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+}
+
+export function classifyInventoryDevice(device: InventoryDevice) {
+  return classifyDeviceType({
+    mac: device.mac,
+    type: device.type,
+    name: device.ssid,
+    vendor: device.vendor,
+    bleClass: device.bleClass,
+    locallyAdministered: device.locallyAdministered,
+  });
 }
 
 @Injectable()
@@ -98,7 +110,8 @@ export class InventoryService {
     const lastNodeId = event.nodeId ?? existing?.lastNodeId ?? undefined;
 
     const ouiInfo = await this.ouiService.resolve(normalizedMac);
-    const vendor = ouiInfo.vendor ?? existing?.vendor ?? undefined;
+    const vendor = ouiInfo.vendor ?? existing?.vendor ?? event.vendor ?? undefined;
+    const bleClass = event.bleClass?.trim() || undefined;
     const locallyAdministered = ouiInfo.locallyAdministered;
     const multicast = ouiInfo.multicast;
 
@@ -130,6 +143,7 @@ export class InventoryService {
         avgRSSI: avgRSSI ?? undefined,
         locallyAdministered,
         multicast,
+        bleClass,
         lastNodeId,
         lastLat: latCandidate ?? undefined,
         lastLon: lonCandidate ?? undefined,
@@ -147,6 +161,7 @@ export class InventoryService {
         avgRSSI: avgRSSI ?? existing?.avgRSSI ?? undefined,
         locallyAdministered,
         multicast,
+        bleClass: bleClass ?? existing?.bleClass ?? undefined,
         lastNodeId,
         lastLat: latCandidate ?? existing?.lastLat ?? undefined,
         lastLon: lonCandidate ?? existing?.lastLon ?? undefined,
@@ -251,15 +266,22 @@ export class InventoryService {
             {
               ssid: { contains: options.search, mode: Prisma.QueryMode.insensitive },
             } as Prisma.InventoryDeviceWhereInput,
+            {
+              bleClass: { contains: options.search, mode: Prisma.QueryMode.insensitive },
+            },
           ],
         }
       : undefined;
 
-    return this.prisma.inventoryDevice.findMany({
+    const devices = await this.prisma.inventoryDevice.findMany({
       where,
       orderBy: [{ hits: 'desc' }, { lastSeen: 'desc' }],
       take: options.limit ?? 200,
     });
+    return devices.map((device) => ({
+      ...device,
+      classification: classifyInventoryDevice(device),
+    }));
   }
 
   async promoteToTarget(mac: string, options: PromoteTargetOptions = {}) {

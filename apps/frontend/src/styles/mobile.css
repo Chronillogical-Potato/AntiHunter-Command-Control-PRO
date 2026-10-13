@@ -746,3 +746,87 @@
 .terminal-drawer__list--page {
   max-height: none;
 }
+
+@media (max-width: 768px) {
+  .inventory-table.inventory-table--cards {
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  .inventory-table--cards table {
+    min-width: 0;
+  }
+
+  .inventory-table--cards thead {
+    display: none;
+  }
+
+  .inventory-table--cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .inventory-table.inventory-table--cards table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem 0.9rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--color-panel-border);
+    border-radius: 0.8rem;
+    background: var(--color-panel);
+  }
+
+  .inventory-table--cards td {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+  }
+
+  .inventory-table--cards td::before {
+    content: attr(data-label);
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .inventory-table--cards td[data-label='']::before,
+  .inventory-table--cards td[data-span='half']::before {
+    content: none;
+  }
+
+  .inventory-table--cards td[data-span='half'] {
+    justify-content: center;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--color-panel-border);
+  }
+
+  .inventory-table--cards td[data-label='Class'] {
+    align-items: flex-end;
+  }
+
+  .inventory-table--cards td.inventory-mac {
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+
+  .inventory-table--cards td[data-span='full'] {
+    grid-column: 1 / -1;
+  }
+
+  .inventory-table--cards .inventory-actions {
+    flex-direction: row;
+  }
+
+  .inventory-table--cards .inventory-actions .control-chip {
+    flex: 1;
+  }
+}
