@@ -51,6 +51,7 @@ export function classifyInventoryDevice(device: InventoryDevice) {
     vendor: device.vendor,
     bleClass: device.bleClass,
     locallyAdministered: device.locallyAdministered,
+    probeClient: device.probeClient,
   });
 }
 
@@ -144,6 +145,7 @@ export class InventoryService {
         locallyAdministered,
         multicast,
         bleClass,
+        probeClient: event.probe === true,
         lastNodeId,
         lastLat: latCandidate ?? undefined,
         lastLon: lonCandidate ?? undefined,
@@ -162,6 +164,7 @@ export class InventoryService {
         locallyAdministered,
         multicast,
         bleClass: bleClass ?? existing?.bleClass ?? undefined,
+        probeClient: event.probe === true ? true : undefined,
         lastNodeId,
         lastLat: latCandidate ?? existing?.lastLat ?? undefined,
         lastLon: lonCandidate ?? existing?.lastLon ?? undefined,

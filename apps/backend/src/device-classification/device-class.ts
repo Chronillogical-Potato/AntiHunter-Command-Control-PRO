@@ -47,6 +47,7 @@ export interface DeviceClassInput {
   vendor?: string | null;
   bleClass?: string | null;
   locallyAdministered?: boolean | null;
+  probeClient?: boolean | null;
 }
 
 interface Rule {
@@ -282,10 +283,11 @@ export function classifyDeviceType(input: DeviceClassInput): DeviceClassificatio
     }
   }
 
-  const nameMatch = match(NAME_RULES, input.name);
+  const ownName = input.probeClient ? null : input.name;
+  const nameMatch = match(NAME_RULES, ownName);
   if (nameMatch) {
     const fragment = /[-_[\]]$|^\[/.test(nameMatch.text);
-    const nameLabel = fragment ? (input.name ?? '').trim().slice(0, 24) : nameMatch.text;
+    const nameLabel = fragment ? (ownName ?? '').trim().slice(0, 24) : nameMatch.text;
     evidence.push({ source: 'name', value: nameLabel, family: nameMatch.rule.family });
     picks.push({
       family: nameMatch.rule.family,
@@ -318,7 +320,7 @@ export function classifyDeviceType(input: DeviceClassInput): DeviceClassificatio
     });
   }
 
-  const ssidOrName = (input.name ?? '').trim();
+  const ssidOrName = (ownName ?? '').trim();
   for (const hit of signatureCatalog().match({
     mac: input.mac,
     radio: isBle ? 'BLE' : 'WIFI',
@@ -344,7 +346,7 @@ export function classifyDeviceType(input: DeviceClassInput): DeviceClassificatio
   if (isBle) {
     const kind = vendor ? null : bleAddressKind(input.mac);
     if (kind) evidence.push({ source: 'address', value: kind });
-  } else if (input.locallyAdministered && (input.name ?? '').trim()) {
+  } else if (input.locallyAdministered && ssidOrName) {
     evidence.push({ source: 'address', value: 'randomized' });
   } else if (input.locallyAdministered) {
     evidence.push({ source: 'address', value: 'randomized', family: 'Phone' });

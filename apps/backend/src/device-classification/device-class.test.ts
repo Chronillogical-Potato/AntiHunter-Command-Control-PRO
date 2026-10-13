@@ -76,6 +76,22 @@ expect(
   { family: null, source: null },
 );
 expect(
+  'randomized client probing for an SSID stays a phone',
+  {
+    mac: '02:0F:B3:11:22:33',
+    type: 'WiFi',
+    name: 'MyNetwork',
+    locallyAdministered: true,
+    probeClient: true,
+  },
+  { family: 'Phone', source: 'address' },
+);
+expect(
+  'probed SSID is not read as the device name',
+  { mac: 'DA:00:00:00:00:0C', type: 'WiFi', name: 'Tesla Model Y', probeClient: true },
+  { family: null, source: null },
+);
+expect(
   'Fieldwatch ISP OUI on an access point',
   { mac: '00:0F:B3:11:22:33', type: 'WiFi', name: 'MyNetwork' },
   { family: 'Router', source: 'signature', label: 'Actiontec', watch: false },

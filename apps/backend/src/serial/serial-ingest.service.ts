@@ -798,6 +798,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           rssi: probeEvent.rssi,
           type: 'WiFi',
           name: probeEvent.ssid,
+          probe: true,
           channel: probeEvent.channel,
           lat: probeEvent.lat,
           lon: probeEvent.lon,

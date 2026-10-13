@@ -299,6 +299,7 @@ model InventoryDevice {
   locallyAdministered Boolean   @default(false)
   multicast           Boolean   @default(false)
   bleClass            String?
+  probeClient         Boolean   @default(false)
   lastNodeId          String?
   lastLat             Float?
   lastLon             Float?
