@@ -192,8 +192,7 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   },
   {
     name: 'PROBE_HIT with GPS',
-    input:
-      'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Intel RSSI=-60 CH=6 SSID="CorpNet" GPS=12.345,-54.321',
+    input: 'AH5: PROBE_HIT AA:BB:CC:DD:EE:FF Intel RSSI=-60 CH=6 SSID="CorpNet" GPS=12.345,-54.321',
     expectKinds: ['probe-hit'],
   },
 
