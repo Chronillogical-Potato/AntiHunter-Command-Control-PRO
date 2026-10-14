@@ -33,7 +33,7 @@ const DRONE_NOFIX_REGEX =
 const DRONE_LOST_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*DRONE_LOST:\s*(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})(?:\s+ID:(?<droneId>\S+))?(?:\s+AGE:(?<age>\d+))?/i;
 const DEVICE_ROW_REGEX =
-  /^DEVICE:(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(?<band>[A-Za-z])\s+(?<rssi>-?\d+)(?:\s+C(?<channel>\d+))?(?:\s+N:(?<name>.+))?/i;
+  /^(?:DEVICE:)?(?<mac>(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{12})\s+(?<band>[A-Za-z])\s+(?<rssi>-?\d+)(?:\s+C(?<channel>\d+))?(?:\s+N:(?<name>.+))?/i;
 const DEVICE_ROW_NODE_TTL_MS = 5000;
 
 const ANOMALY_REGEX =
@@ -374,7 +374,8 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     message: string,
     raw: string,
   ): SerialParseResult[] {
-    const mac = groups.mac.toUpperCase();
+    const macRaw = groups.mac.toUpperCase();
+    const mac = macRaw.includes(':') ? macRaw : (macRaw.match(/../g) ?? []).join(':');
     const rssi = Number(groups.rssi);
     const type = this.normalizeBand(groups.band);
     const channel = groups.channel ? Number(groups.channel) : undefined;

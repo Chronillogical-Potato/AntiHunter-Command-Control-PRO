@@ -1250,6 +1250,66 @@ for (const tc of FIRMWARE_MESSAGES) {
   }
 }
 
+function expectDevices(label: string, lines: string[], want: Record<string, unknown>[]): void {
+  const got: Record<string, unknown>[] = [];
+  for (const line of lines) {
+    for (const r of parser.parseLine(sanitizeLine(line))) {
+      if (r.kind === 'device-seen') {
+        const { mac, rssi, type, channel, name, nodeId } = r;
+        got.push({ nodeId, mac, rssi, type, channel, name });
+      }
+    }
+  }
+  if (JSON.stringify(got) === JSON.stringify(want)) {
+    passed++;
+  } else {
+    failed++;
+    failures.push(`FAIL [${label}]: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
+  }
+}
+
+function dev(
+  mac: string,
+  rssi: number,
+  type: string,
+  channel?: number,
+  name?: string,
+): Record<string, unknown> {
+  return { nodeId: 'AH5', mac, rssi, type, channel, name };
+}
+
+const OLD_PACKET = [
+  'AH5: DEVICE:AA:BB:CC:DD:EE:01 W -80 C6 N:Home Net',
+  'DEVICE:11:22:33:44:55:02 B -70',
+  'DEVICE:11:22:33:44:55:03 W -65 N:Guest WiFi 5G',
+  'DEVICE:11:22:33:44:55:04 W -60 C11',
+];
+const COMPACT_PACKET = [
+  OLD_PACKET[0],
+  '112233445502 B -70',
+  '112233445503 W -65 N:Guest WiFi 5G',
+  '112233445504 W -60 C11',
+];
+const PACKET_WANT = [
+  dev('AA:BB:CC:DD:EE:01', -80, 'WiFi', 6, 'Home Net'),
+  dev('11:22:33:44:55:02', -70, 'BLE'),
+  dev('11:22:33:44:55:03', -65, 'WiFi', undefined, 'Guest WiFi 5G'),
+  dev('11:22:33:44:55:04', -60, 'WiFi', 11),
+];
+
+parser.reset();
+expectDevices('DEVICE old-format continuation rows', OLD_PACKET, PACKET_WANT);
+parser.reset();
+expectDevices('DEVICE compact continuation rows', COMPACT_PACKET, PACKET_WANT);
+parser.reset();
+expectDevices('DEVICE compact row without fresh first row is ignored', ['aabbccddeeff W -80'], []);
+parser.reset();
+expectDevices(
+  'DEVICE compact lowercase hex normalizes to uppercase colon form',
+  [OLD_PACKET[0], 'aabbccddee02 w -71'],
+  [PACKET_WANT[0], dev('AA:BB:CC:DD:EE:02', -71, 'WiFi')],
+);
+
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 
 if (failures.length > 0) {
