@@ -430,7 +430,19 @@ export function CommandConsolePage() {
     return Array.from(dedup.values());
   }, [availableNodes, form.siteId]);
 
-  const singleNodeCommands = useMemo(() => new Set(['CONFIG_NODEID', 'TRIANGULATE_START']), []);
+  const singleNodeCommands = useMemo(
+    () =>
+      new Set([
+        'CONFIG_NODEID',
+        'TRIANGULATE_START',
+        'FACTORY_RESET',
+        'ERASE_FORCE',
+        'ERASE_CANCEL',
+        'AUTOERASE_ENABLE',
+        'AUTOERASE_DISABLE',
+      ]),
+    [],
+  );
   const isSingleNodeCommand = singleNodeCommands.has(selectedCommand.name);
   const isTriangulateCommand = selectedCommand.name === 'TRIANGULATE_START';
 

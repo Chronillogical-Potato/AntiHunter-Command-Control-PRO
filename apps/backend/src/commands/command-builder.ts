@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 
 const NODE_PATTERN = /^NODE_[A-Z0-9]+$/;
 const MAC_PATTERN = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
-const ERASE_TOKEN_PATTERN = /^AH_[0-9]{8}_[0-9]{8}_[0-9]{8}$/;
+const ERASE_ANSWER_PATTERN = /^([0-9a-f]{8}|[0-9a-f]{64})$/;
 const TRIANGULATE_IDENTITY_PATTERN = /^T-[A-Za-z0-9_-]+$/;
 const CUSTOM_NODE_ID_PATTERN = /^[A-Z0-9]{2,6}$/;
 
@@ -65,10 +65,10 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['TRIANGULATE_STOP', expectNoParams],
   ['TRIANGULATE_RESULTS', expectNoParams],
   ['ERASE_REQUEST', expectNoParams],
-  ['ERASE_FORCE', handleEraseForce],
-  ['ERASE_CANCEL', expectNoParams],
+  ['ERASE_FORCE', handleEraseAnswerOnly],
+  ['ERASE_CANCEL', handleEraseAnswerOnly],
   ['AUTOERASE_ENABLE', handleAutoEraseEnable],
-  ['AUTOERASE_DISABLE', expectNoParams],
+  ['AUTOERASE_DISABLE', handleEraseAnswerOnly],
   ['AUTOERASE_STATUS', expectNoParams],
   ['BATTERY_SAVER_START', handleBatterySaverStart],
   ['BATTERY_SAVER_STOP', expectNoParams],
@@ -128,7 +128,14 @@ const CSI_START_FLAGS = new Set([
 ]);
 const CSI_ONOFF = new Set(['ON', 'OFF']);
 
-const SINGLE_NODE_COMMANDS = new Set<string>(['CONFIG_NODEID', 'FACTORY_RESET']);
+const SINGLE_NODE_COMMANDS = new Set<string>([
+  'CONFIG_NODEID',
+  'FACTORY_RESET',
+  'ERASE_FORCE',
+  'ERASE_CANCEL',
+  'AUTOERASE_ENABLE',
+  'AUTOERASE_DISABLE',
+]);
 
 export function buildCommandPayload(input: CommandBuildInput): CommandBuildOutput {
   const target = normalizeTarget(input.target);
@@ -404,26 +411,30 @@ function normalizePowerMultiplier(value: string, band: 'WiFi' | 'BLE'): string {
   return parsed.toFixed(1);
 }
 
-function handleEraseForce(params: string[]): string[] {
-  if (params.length !== 1) {
-    throw new BadRequestException('ERASE_FORCE expects a single confirmation token.');
-  }
-  const token = params[0].trim().toUpperCase();
-  if (!ERASE_TOKEN_PATTERN.test(token)) {
+function normalizeEraseAnswer(value: string | undefined): string {
+  const answer = (value ?? '').trim().toLowerCase();
+  if (!ERASE_ANSWER_PATTERN.test(answer)) {
     throw new BadRequestException(
-      'Invalid ERASE token. Expected format AH_XXXXXXXX_XXXXXXXX_XXXXXXXX.',
+      "Erase answer must be the first 8 (or all 64) hex characters of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
     );
   }
-  return [token];
+  return answer;
+}
+
+function handleEraseAnswerOnly(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('Expected a single erase answer from ERASE_REQUEST.');
+  }
+  return [normalizeEraseAnswer(params[0])];
 }
 
 function handleAutoEraseEnable(params: string[]): string[] {
-  if (params.length === 0) {
-    return [];
+  if (params.length === 1) {
+    return [normalizeEraseAnswer(params[0])];
   }
-  if (params.length !== 5) {
+  if (params.length !== 6) {
     throw new BadRequestException(
-      'AUTOERASE_ENABLE expects either no parameters (uses defaults) or all 5 parameters (setupDelay:eraseDelay:vibs:window:cooldown).',
+      'AUTOERASE_ENABLE expects the erase answer alone (uses defaults) or 5 parameters (setupDelay:eraseDelay:vibs:window:cooldown) plus the erase answer.',
     );
   }
 
@@ -458,6 +469,7 @@ function handleAutoEraseEnable(params: string[]): string[] {
     vibrationsRequired.toString(),
     detectionWindow.toString(),
     autoEraseCooldown.toString(),
+    normalizeEraseAnswer(params[5]),
   ];
 }
 
@@ -687,18 +699,14 @@ function handleConfigSessionDedup(params: string[]): string[] {
 function handleFactoryReset(params: string[]): string[] {
   if (params.length !== 2) {
     throw new BadRequestException(
-      'FACTORY_RESET expects a tier (FULL, CONFIG, or DATA) and a credential.',
+      'FACTORY_RESET expects a tier (FULL, CONFIG, or DATA) and the erase answer.',
     );
   }
   const tier = params[0].trim().toUpperCase();
   if (!FACTORY_RESET_TIERS.has(tier)) {
     throw new BadRequestException('FACTORY_RESET tier must be FULL, CONFIG, or DATA.');
   }
-  const credential = params[1].trim();
-  if (credential.length < 1) {
-    throw new BadRequestException('FACTORY_RESET requires a credential.');
-  }
-  return [tier, credential];
+  return [tier, normalizeEraseAnswer(params[1])];
 }
 
 function handleCsiMotionStart(params: string[]): string[] {

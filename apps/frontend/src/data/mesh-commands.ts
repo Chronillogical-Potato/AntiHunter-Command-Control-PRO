@@ -603,15 +603,16 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'ERASE_FORCE',
     group: 'Security',
-    description: 'Force emergency erase (requires admin token).',
+    description: 'Force emergency erase. Send ERASE_REQUEST to the node first.',
     defaultTarget: '@NODE_22',
     parameters: [
       {
-        key: 'token',
-        label: 'Authorization Token',
+        key: 'answer',
+        label: 'Erase Answer',
         type: 'text',
-        placeholder: 'AH_12345678_87654321_00001234',
-        helper: 'Format AH_########_########_########',
+        placeholder: 'd27f2e8c',
+        helper:
+          "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key: printf %s '<token>' | openssl dgst -sha256 -hmac '<key>'",
         required: true,
       },
     ],
@@ -619,9 +620,18 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'ERASE_CANCEL',
     group: 'Security',
-    description: 'Cancel an ongoing erase operation.',
-    defaultTarget: '@ALL',
-    parameters: [],
+    description: 'Cancel an ongoing erase. Send ERASE_REQUEST to the node first.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'answer',
+        label: 'Erase Answer',
+        type: 'text',
+        placeholder: 'd27f2e8c',
+        helper: "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
+        required: true,
+      },
+    ],
   },
   {
     name: 'AUTOERASE_ENABLE',
@@ -684,25 +694,31 @@ export const MESH_COMMANDS: CommandDefinition[] = [
         max: 3600,
         step: 1,
       },
-    ],
-    examples: [
       {
-        target: '@NODE_22',
-        params: [],
-        label: 'Use defaults (120s setup, 30s erase, 3 vibs, 20s window, 300s cooldown)',
+        key: 'answer',
+        label: 'Erase Answer',
+        type: 'text',
+        placeholder: 'd27f2e8c',
+        helper:
+          "Send ERASE_REQUEST first. First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key. Leave all five values empty for defaults.",
+        required: true,
       },
-      { target: '@NODE_22', params: ['60', '30', '3', '20', '300'], label: 'Custom parameters' },
     ],
   },
   {
     name: 'AUTOERASE_DISABLE',
     group: 'Security',
-    description: 'Disable auto-erase functionality.',
+    description: 'Disable auto-erase. Send ERASE_REQUEST to the node first.',
     defaultTarget: '@NODE_22',
-    parameters: [],
-    examples: [
-      { target: '@NODE_22', params: [], label: 'Disable auto-erase' },
-      { target: '@ALL', params: [], label: 'Disable all nodes' },
+    parameters: [
+      {
+        key: 'answer',
+        label: 'Erase Answer',
+        type: 'text',
+        placeholder: 'd27f2e8c',
+        helper: "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
+        required: true,
+      },
     ],
   },
   {
@@ -1075,7 +1091,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'FACTORY_RESET',
     group: 'Security',
-    description: 'Factory reset a node (requires erase PSK credential).',
+    description: 'Factory reset a node. Send ERASE_REQUEST to the node first.',
     defaultTarget: '@NODE_22',
     parameters: [
       {
@@ -1091,10 +1107,10 @@ export const MESH_COMMANDS: CommandDefinition[] = [
       },
       {
         key: 'credential',
-        label: 'Credential',
+        label: 'Erase Answer',
         type: 'text',
-        placeholder: 'HMAC credential',
-        helper: 'Authorization derived from the erase PSK.',
+        placeholder: 'd27f2e8c',
+        helper: "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
         required: true,
       },
     ],
