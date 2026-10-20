@@ -9,6 +9,8 @@ const ANSI_REGEX = /\u001b\[[0-9;]*[A-Za-z]/g;
 const STATUS_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*STATUS:\s*Mode:(?<mode>\S+)\s+Scan:(?<scan>\S+)\s+Hits:(?<hits>\d+)\s+(?:Targets:(?<targets>\d+)\s+)?Temp:(?:(?<tempC>-?\d+(?:\.\d+)?)|\?)[cC](?:\/(?<tempF>-?\d+(?:\.\d+)?)[Ff])?\s+Up:(?<up>[0-9:]+)(?:\s+Rst:(?<rst>\S+))?(?:\s+Camp:(?<camp>\S+))?(?:\s+GPS[:=](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+HDOP[:=](?<hdop>-?\d+(?:\.\d+)?))?/i;
 const STATUS_BOOT_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*STATUS_BOOT:\s*(?<body>.+)$/i;
+const SUMMARY_REGEX =
+  /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*SUMMARY:\s*Mode:(?<mode>\S+)\s+Scan:(?<scan>\S+)(?:\s+Dev:(?<dev>\d+))?\s+Tgt:(?<tgt>\d+)\s+Hits:(?<hits>-?\d+)(?:\s+Inc:(?<inc>\d+))?(?:\s+Camp:(?<camp>\S+))?\s+Up:(?<up>[0-9:]+)/i;
 const STARTUP_REGEX = /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*STARTUP:\s*(?<msg>.+)$/i;
 const GPS_LOCK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]*[A-Za-z0-9_.-])?:?\s*GPS:\s*LOCKED(?:\s+Location[=:](?<lat>-?\d+(?:\.\d+)?),(?<lon>-?\d+(?:\.\d+)?))?(?:\s+Satellites[=:](?<sats>\d+))?(?:\s+HDOP[=:](?<hdop>-?\d+(?:\.\d+)?))?/i;
@@ -283,6 +285,7 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       this.parseTriangulationMeta(payload, sourceId, sanitized) ||
       this.parseSentinelAck(payload, sourceId, sanitized) ||
       this.parseCsi(payload, sourceId, sanitized) ||
+      this.parseSummary(payload, sourceId, sanitized) ||
       this.parseStatus(payload, sourceId, sanitized) ||
       this.parseTimeSync(payload, sourceId, sanitized) ||
       this.parseStartupGpsHeartbeat(payload, sourceId, sanitized) ||
@@ -1491,6 +1494,33 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
       ];
     }
     return null;
+  }
+
+  private parseSummary(
+    payload: string,
+    nodeId: string | undefined,
+    raw: string,
+  ): SerialParseResult[] | null {
+    const m = SUMMARY_REGEX.exec(payload);
+    if (!m?.groups) return null;
+    const resolvedNodeId = nodeId ?? m.groups.id;
+    const msg = this.stripTrailingHash(payload);
+    return [
+      {
+        kind: 'node-telemetry',
+        nodeId: resolvedNodeId ?? 'unknown',
+        raw,
+        lastMessage: msg,
+        campaign: m.groups.camp ?? null,
+      },
+      {
+        kind: 'command-result',
+        nodeId: resolvedNodeId ?? 'unknown',
+        command: 'SUMMARY',
+        payload: msg,
+        raw,
+      },
+    ];
   }
 
   private parseStatus(

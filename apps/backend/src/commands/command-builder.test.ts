@@ -112,6 +112,35 @@ check('FACTORY_RESET rejects the raw key', () => {
   );
 });
 
+check('SUMMARY sends no parameters', () => {
+  assert.equal(
+    buildCommandPayload({ target: '@ALL', name: 'SUMMARY', params: [] }).line,
+    '@ALL SUMMARY',
+  );
+});
+
+check('DEVICE_DB_CLEAR sends no parameters', () => {
+  assert.equal(
+    buildCommandPayload({ target: '@AHC5', name: 'DEVICE_DB_CLEAR', params: [] }).line,
+    '@AHC5 DEVICE_DB_CLEAR',
+  );
+});
+
+check('CONFIG_BAND sends the band mode', () => {
+  assert.equal(
+    buildCommandPayload({ target: '@AHC5', name: 'CONFIG_BAND', params: ['2'] }).line,
+    '@AHC5 CONFIG_BAND:2',
+  );
+});
+
+check('CONFIG_BAND rejects an out-of-range mode', () => {
+  assert.throws(() => buildCommandPayload({ target: '@AHC5', name: 'CONFIG_BAND', params: ['3'] }));
+});
+
+check('CONFIG_BAND rejects a missing mode', () => {
+  assert.throws(() => buildCommandPayload({ target: '@AHC5', name: 'CONFIG_BAND', params: [] }));
+});
+
 if (failed) {
   console.log(`${failed} failed`);
   process.exit(1);

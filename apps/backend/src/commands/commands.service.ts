@@ -57,6 +57,8 @@ const ACK_TO_COMMAND: Record<string, string> = {
   VIBSCAN_ACK: 'VIBSCAN_SET',
   ATTACKER_TRILAT_ACK: 'ATTACKER_TRILAT',
   MESH_TX_CANCEL_ACK: 'MESH_TX_CANCEL',
+  BAND_ACK: 'CONFIG_BAND',
+  DEVICE_DB_CLEAR_ACK: 'DEVICE_DB_CLEAR',
 };
 
 export interface CommandState {

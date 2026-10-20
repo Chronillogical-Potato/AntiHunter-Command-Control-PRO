@@ -38,6 +38,9 @@ type CommandHandler = (params: string[]) => string[];
 
 const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['STATUS', expectNoParams],
+  ['SUMMARY', expectNoParams],
+  ['CONFIG_BAND', handleConfigBand],
+  ['DEVICE_DB_CLEAR', expectNoParams],
   ['CONFIG_CHANNELS', handleConfigChannels],
   ['CONFIG_TARGETS', handleConfigTargets],
   ['CONFIG_RSSI', handleConfigRssi],
@@ -672,6 +675,19 @@ function handleConfigErasePsk(params: string[]): string[] {
     throw new BadRequestException('Erase PSK must be between 1 and 64 characters.');
   }
   return [key];
+}
+
+function handleConfigBand(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException(
+      'CONFIG_BAND expects a single band mode: 0 (2.4GHz), 1 (5GHz) or 2 (both).',
+    );
+  }
+  const mode = Number.parseInt(params[0].trim(), 10);
+  if (!Number.isFinite(mode) || mode < 0 || mode > 2) {
+    throw new BadRequestException('Band mode must be 0 (2.4GHz), 1 (5GHz) or 2 (both).');
+  }
+  return [mode.toString()];
 }
 
 function handleConfigDedupTtl(params: string[]): string[] {

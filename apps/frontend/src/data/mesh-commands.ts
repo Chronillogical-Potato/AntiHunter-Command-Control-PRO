@@ -101,6 +101,17 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     ],
   },
   {
+    name: 'SUMMARY',
+    group: 'Status',
+    description: 'Report a one-line summary: mode, scan state, device count, targets, hits, incidents and campaign.',
+    defaultTarget: '@ALL',
+    parameters: [],
+    examples: [
+      { target: '@ALL', params: [], label: 'All nodes' },
+      { target: '@NODE_22', params: [], label: 'Specific node' },
+    ],
+  },
+  {
     name: 'CONFIG_CHANNELS',
     group: 'Configuration',
     description: 'Configure WiFi channels using CSV list or range (1..14).',
@@ -1062,6 +1073,34 @@ export const MESH_COMMANDS: CommandDefinition[] = [
       },
     ],
     examples: [{ target: '@ALL', params: ['1'] }],
+  },
+  {
+    name: 'CONFIG_BAND',
+    group: 'Configuration',
+    description: 'Set the radio band on an ESP32-C5 node (Experimental build only).',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'band',
+        label: 'Band',
+        type: 'select',
+        required: true,
+        options: [
+          { label: '0 - 2.4 GHz', value: '0' },
+          { label: '1 - 5 GHz', value: '1' },
+          { label: '2 - Both', value: '2' },
+        ],
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['2'] }],
+  },
+  {
+    name: 'DEVICE_DB_CLEAR',
+    group: 'Configuration',
+    description: 'Clear the discovered-device database (Beta and Experimental headless builds).',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
   },
   {
     name: 'MESH_DEDUP_CLEAR',
