@@ -27,7 +27,7 @@ Get AHCC data to a phone, another site, or your own tools without putting AHCC o
 VPN (web UI)
 --------------------------------------------------------------------------------
 
-Only the web UI needs a VPN. Use WireGuard, Tailscale, or Netbird. Don't open ports 3000 or 5173 to the internet. The backend listens on all interfaces on port 3000, so block it with the host firewall.
+Only the web UI needs a VPN. Use WireGuard or Netbird. Don't open ports 3000 or 5173 to the internet. The backend listens on all interfaces on port 3000, so block it with the host firewall.
 
 1. Install the VPN on the AHCC host and the phone.
 2. Open the UI over the VPN address:
