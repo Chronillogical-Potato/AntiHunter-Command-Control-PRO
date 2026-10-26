@@ -126,6 +126,45 @@ check('DEVICE_DB_CLEAR sends no parameters', () => {
   );
 });
 
+check('CALIBRATE sends the MAC and distance', () => {
+  assert.equal(
+    buildCommandPayload({
+      target: '@AHC5',
+      name: 'CALIBRATE',
+      params: ['aa:bb:cc:dd:ee:ff', '2.5'],
+    }).line,
+    '@AHC5 CALIBRATE:AA:BB:CC:DD:EE:FF:2.5',
+  );
+});
+
+check('CALIBRATE rejects a tracer id and an out-of-range distance', () => {
+  assert.throws(() =>
+    buildCommandPayload({ target: '@AHC5', name: 'CALIBRATE', params: ['T-00A3', '5'] }),
+  );
+  assert.throws(() =>
+    buildCommandPayload({ target: '@ALL', name: 'CALIBRATE', params: ['AA:BB:CC:DD:EE:FF', '5'] }),
+  );
+  assert.throws(() =>
+    buildCommandPayload({
+      target: '@AHC5',
+      name: 'CALIBRATE',
+      params: ['AA:BB:CC:DD:EE:FF', '0.4'],
+    }),
+  );
+});
+
+check('reset and clear commands send no parameters', () => {
+  for (const name of [
+    'CALIBRATE_RESET',
+    'PROBE_DB_CLEAR',
+    'BASELINE_RESET',
+    'RANDOMIZATION_RESET',
+    'DETECT_CLEAR',
+  ]) {
+    assert.equal(buildCommandPayload({ target: '@AHC5', name, params: [] }).line, `@AHC5 ${name}`);
+  }
+});
+
 check('CONFIG_BAND sends the band mode', () => {
   assert.equal(
     buildCommandPayload({ target: '@AHC5', name: 'CONFIG_BAND', params: ['2'] }).line,

@@ -126,9 +126,11 @@ const RESULT_REPLY_REGEX =
 const GENERIC_ACK_REGEX =
   /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<kind>[A-Z][A-Z0-9_]*_ACK):(?<status>[^\s:]*)(?<rest>.*)$/i;
 const ACK_FAILURE_REGEX = /^(INVALID|DENIED|FAIL|FAILED|ERR|ERROR|NOT_FOUND|NOT_RUNNING|BUSY)/i;
+const CALIBRATE_ACK_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*CALIBRATE_ACK:(?<status>[A-Z_]+)/i;
+const CALIBRATE_DONE_REGEX = /^(?<id>[A-Za-z0-9_.:-]+):\s*CALIBRATE_DONE:(?<body>\S+)/i;
 
 const SENTINEL_DETECTION_REGEX =
-  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<type>DEAUTH_AP_TARGETED|DEAUTH_FLOOD|DEAUTH_FORGE|PROBE_FLOOD_BEHAVE|PROBE_FLOOD_AP|PROBE_FLOOD|PMKID_FORGE|PMKID_HARVEST|BEACON_FORGE|BEACON_FLOOD|KARMA_CONFIRMED|KARMA_CAND|EVILTWIN|OWE_ABUSE|ASSOC_SLEEP|SSID_CONFUSION|AUTH_FLOOD|SAE_DOS|EAPOL_BAIT|ATTACKER_HUNT|PWNAGOTCHI|HSHK|JAMMING|FRAG|RECON|BLE_ATTACK|CSA_SPOOF|QUIET_ABUSE):(?<rest>.*)$/i;
+  /^(?<id>[A-Za-z0-9_.:-]+):\s*(?<type>DEAUTH_AP_TARGETED|DEAUTH_FLOOD|DEAUTH_FORGE|PROBE_FLOOD_BEHAVE|PROBE_FLOOD_AP|PROBE_FLOOD|PMKID_FORGE|PMKID_HARVEST|BEACON_FORGE|BEACON_FLOOD|KARMA_CONFIRMED|KARMA_CAND|EVILTWIN|OWE_ABUSE|ASSOC_SLEEP|SSID_CONFUSION|AUTH_FLOOD|SAE_DOS|EAPOL_BAIT|ATTACKER_HUNT|PWNAGOTCHI|HSHK|JAMMING_BASELINE|JAMMING|FRAG|RECON|RADIO_DETECTED|CSA_SPOOF|QUIET_ABUSE):(?<rest>.*)$/i;
 
 const SENTINEL_FIELD_SCHEMAS: Record<string, string[]> = {
   EAPOL_BAIT: ['src', 'dst', 'count', 'rssi', 'confidence'],
@@ -150,7 +152,9 @@ const SENTINEL_FIELD_SCHEMAS: Record<string, string[]> = {
   AUTH_FLOOD: ['bssid', 'count', 'rssi'],
   SAE_DOS: ['bssid', 'count'],
   FRAG: ['src', 'info'],
-  JAMMING: ['channel', 'pdr', 'errors'],
+  JAMMING: ['channel', 'rule', 'db'],
+  JAMMING_BASELINE: ['channel', 'rule', 'fps'],
+  RADIO_DETECTED: ['radio', 'mac', 'rssi'],
   KARMA_CAND: ['bssid', 'ssids'],
   KARMA_CONFIRMED: ['bssid', 'rssi'],
   PWNAGOTCHI: ['bssid', 'rssi'],
@@ -175,6 +179,8 @@ const SENTINEL_STRING_FIELDS = new Set([
   'tag',
   'attackType',
   'identityId',
+  'rule',
+  'radio',
 ]);
 const SENTINEL_NOTICE_TYPES = new Set([
   'RECON',
@@ -677,23 +683,6 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
     const schema = SENTINEL_FIELD_SCHEMAS[type] ?? [];
     const data: Record<string, string | number> = { detectionType: type };
     let remaining = m.groups.rest ?? '';
-    if (type === 'BLE_ATTACK') {
-      const toolEnd = remaining.indexOf(':');
-      data.tool = toolEnd >= 0 ? remaining.slice(0, toolEnd) : remaining;
-      remaining = toolEnd >= 0 ? remaining.slice(toolEnd + 1) : '';
-      const macHead = SENTINEL_MAC_HEAD_REGEX.exec(remaining);
-      if (macHead) {
-        data.mac = macHead[0].toUpperCase();
-        remaining = remaining.slice(macHead[0].length).replace(/^:/, '');
-      }
-      for (const part of remaining.split(':').filter(Boolean)) {
-        const eq = /^([A-Za-z_]+)=(.*)$/.exec(part);
-        const key = eq ? eq[1] : 'rssi';
-        const value = eq ? eq[2] : part;
-        data[key] = NUMERIC_VALUE_REGEX.test(value) ? Number(value) : value;
-      }
-      remaining = '';
-    }
     for (let i = 0; i < schema.length && remaining.length > 0; i += 1) {
       const field = schema[i];
       const isLast = i === schema.length - 1;
@@ -1893,6 +1882,28 @@ export class MeshtasticRewriteParser implements SerialProtocolParser {
           },
         },
       ];
+    }
+    const calibrateAck = CALIBRATE_ACK_REGEX.exec(payload);
+    if (calibrateAck?.groups) {
+      const status = calibrateAck.groups.status.toUpperCase();
+      return [
+        {
+          kind: 'command-ack',
+          nodeId: nodeId ?? calibrateAck.groups.id,
+          ackType: status === 'RESET' ? 'CALIBRATE_RESET_ACK' : 'CALIBRATE_ACK',
+          status: status === 'STARTED' ? 'STARTED' : status === 'RESET' ? 'OK' : 'ERROR',
+          raw,
+        },
+      ];
+    }
+    const calibrateDone = CALIBRATE_DONE_REGEX.exec(payload);
+    if (calibrateDone?.groups) {
+      const id = nodeId ?? calibrateDone.groups.id;
+      const body = calibrateDone.groups.body;
+      if (/^WIFI=/i.test(body)) {
+        return [{ kind: 'command-result', nodeId: id, command: 'CALIBRATE', payload, raw }];
+      }
+      return [{ kind: 'command-ack', nodeId: id, ackType: 'CALIBRATE_ACK', status: 'ERROR', raw }];
     }
     const generic = GENERIC_ACK_REGEX.exec(payload);
     if (generic?.groups) {

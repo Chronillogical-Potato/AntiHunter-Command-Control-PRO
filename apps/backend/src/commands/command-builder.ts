@@ -113,6 +113,12 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['ATTACKER_TRILAT', handleAttackerTrilat],
   ['ATTACKER_TRILAT_STATUS', expectNoParams],
   ['DETECT_COUNTS', expectNoParams],
+  ['CALIBRATE', handleCalibrate],
+  ['CALIBRATE_RESET', expectNoParams],
+  ['PROBE_DB_CLEAR', expectNoParams],
+  ['BASELINE_RESET', expectNoParams],
+  ['RANDOMIZATION_RESET', expectNoParams],
+  ['DETECT_CLEAR', expectNoParams],
 ]);
 
 const CAMPAIGN_NAME_PATTERN = /^[A-Za-z0-9_-]{1,23}$/;
@@ -138,6 +144,7 @@ const SINGLE_NODE_COMMANDS = new Set<string>([
   'ERASE_CANCEL',
   'AUTOERASE_ENABLE',
   'AUTOERASE_DISABLE',
+  'CALIBRATE',
 ]);
 
 export function buildCommandPayload(input: CommandBuildInput): CommandBuildOutput {
@@ -229,6 +236,21 @@ function handleConfigRssi(params: string[]): string[] {
     throw new BadRequestException('RSSI threshold must be between -120 and -1 dBm.');
   }
   return [parsed.toString()];
+}
+
+function handleCalibrate(params: string[]): string[] {
+  if (params.length !== 2) {
+    throw new BadRequestException('CALIBRATE expects a MAC address and a distance in meters.');
+  }
+  const mac = params[0].trim().toUpperCase();
+  if (!MAC_PATTERN.test(mac)) {
+    throw new BadRequestException(`Invalid MAC address: ${mac}`);
+  }
+  const meters = Number(params[1].trim());
+  if (!Number.isFinite(meters) || meters < 0.5 || meters > 100) {
+    throw new BadRequestException('Calibration distance must be between 0.5 and 100 meters.');
+  }
+  return [mac, meters.toString()];
 }
 
 function handleConfigNodeId(params: string[]): string[] {
