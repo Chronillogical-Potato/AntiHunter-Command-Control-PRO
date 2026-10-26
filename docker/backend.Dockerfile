@@ -43,6 +43,8 @@ COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
 # Install production dependencies only for @command-center/backend
 RUN pnpm install --frozen-lockfile --prod --filter @command-center/backend...
 
+ENV npm_config_cache=/app/.npm-cache
+
 # Regenerate the Prisma client against the prod-installed @prisma/client
 RUN cd apps/backend && npx --yes prisma@5.22.0 generate
 
@@ -53,9 +55,15 @@ RUN apt-get update  && apt-get install -y --no-install-recommends udev git  && r
 COPY --from=builder /app/apps/backend ./apps/backend
 COPY --from=builder /app/scripts/db-update-helper.mjs ./scripts/db-update-helper.mjs
 
+RUN pnpm --filter @command-center/backend exec prisma version
+
 # Lightweight entrypoint handles migrations before boot
 COPY docker/backend-entrypoint.sh ./backend-entrypoint.sh
 RUN sed -i 's/\r$//' ./backend-entrypoint.sh && chmod +x ./backend-entrypoint.sh
+
+RUN mkdir -p /app/data/tiles /app/apps/backend/.secrets \
+  && chown -R node:node /app/apps/backend /app/data /app/.npm-cache \
+    /app/node_modules/.pnpm/prisma@* /app/node_modules/.pnpm/@prisma+client@*
 
 EXPOSE 3000
 
