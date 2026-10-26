@@ -103,7 +103,8 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'SUMMARY',
     group: 'Status',
-    description: 'Report a one-line summary: mode, scan state, device count, targets, hits, incidents and campaign.',
+    description:
+      'Report a one-line summary: mode, scan state, device count, targets, hits, incidents and campaign.',
     defaultTarget: '@ALL',
     parameters: [],
     examples: [
