@@ -299,6 +299,7 @@ model InventoryDevice {
   locallyAdministered Boolean   @default(false)
   multicast           Boolean   @default(false)
   bleClass            String?
+  probeClient         Boolean   @default(false)
   lastNodeId          String?
   lastLat             Float?
   lastLon             Float?
@@ -1088,4 +1089,12 @@ model CampaignRun {
 
   @@index([name])
   @@index([nodeId, endedAt])
+}
+
+model KnownMeshRadio {
+  mac       String   @id
+  radio     String
+  name      String?
+  addedBy   String?
+  createdAt DateTime @default(now())
 }

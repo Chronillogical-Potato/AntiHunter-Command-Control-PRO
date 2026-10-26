@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 
 const NODE_PATTERN = /^NODE_[A-Z0-9]+$/;
 const MAC_PATTERN = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
-const ERASE_TOKEN_PATTERN = /^AH_[0-9]{8}_[0-9]{8}_[0-9]{8}$/;
+const ERASE_ANSWER_PATTERN = /^([0-9a-f]{8}|[0-9a-f]{64})$/;
 const TRIANGULATE_IDENTITY_PATTERN = /^T-[A-Za-z0-9_-]+$/;
 const CUSTOM_NODE_ID_PATTERN = /^[A-Z0-9]{2,6}$/;
 
@@ -38,6 +38,9 @@ type CommandHandler = (params: string[]) => string[];
 
 const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['STATUS', expectNoParams],
+  ['SUMMARY', expectNoParams],
+  ['CONFIG_BAND', handleConfigBand],
+  ['DEVICE_DB_CLEAR', expectNoParams],
   ['CONFIG_CHANNELS', handleConfigChannels],
   ['CONFIG_TARGETS', handleConfigTargets],
   ['CONFIG_RSSI', handleConfigRssi],
@@ -65,10 +68,10 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['TRIANGULATE_STOP', expectNoParams],
   ['TRIANGULATE_RESULTS', expectNoParams],
   ['ERASE_REQUEST', expectNoParams],
-  ['ERASE_FORCE', handleEraseForce],
-  ['ERASE_CANCEL', expectNoParams],
+  ['ERASE_FORCE', handleEraseAnswerOnly],
+  ['ERASE_CANCEL', handleEraseAnswerOnly],
   ['AUTOERASE_ENABLE', handleAutoEraseEnable],
-  ['AUTOERASE_DISABLE', expectNoParams],
+  ['AUTOERASE_DISABLE', handleEraseAnswerOnly],
   ['AUTOERASE_STATUS', expectNoParams],
   ['BATTERY_SAVER_START', handleBatterySaverStart],
   ['BATTERY_SAVER_STOP', expectNoParams],
@@ -110,7 +113,22 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['ATTACKER_TRILAT', handleAttackerTrilat],
   ['ATTACKER_TRILAT_STATUS', expectNoParams],
   ['DETECT_COUNTS', expectNoParams],
+  ['CALIBRATE', handleCalibrate],
+  ['CALIBRATE_RESET', expectNoParams],
+  ['PROBE_DB_CLEAR', expectNoParams],
+  ['BASELINE_RESET', expectNoParams],
+  ['RANDOMIZATION_RESET', expectNoParams],
+  ['DETECT_CLEAR', expectNoParams],
+  ['RADIO_KNOWN_ADD', handleRadioKnownAdd],
+  ['RADIO_KNOWN_DEL', handleRadioKnownDel],
+  ['RADIO_KNOWN_CLEAR', expectNoParams],
 ]);
+
+const MESH_RADIO_TYPES = new Map([
+  ['MESHTASTIC', 'Meshtastic'],
+  ['MESHCORE', 'MeshCore'],
+]);
+const MESH_RADIO_NAME_PATTERN = /^[\x20-\x7E]{1,31}$/;
 
 const CAMPAIGN_NAME_PATTERN = /^[A-Za-z0-9_-]{1,23}$/;
 const SCHED_AT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
@@ -128,7 +146,15 @@ const CSI_START_FLAGS = new Set([
 ]);
 const CSI_ONOFF = new Set(['ON', 'OFF']);
 
-const SINGLE_NODE_COMMANDS = new Set<string>(['CONFIG_NODEID', 'FACTORY_RESET']);
+const SINGLE_NODE_COMMANDS = new Set<string>([
+  'CONFIG_NODEID',
+  'FACTORY_RESET',
+  'ERASE_FORCE',
+  'ERASE_CANCEL',
+  'AUTOERASE_ENABLE',
+  'AUTOERASE_DISABLE',
+  'CALIBRATE',
+]);
 
 export function buildCommandPayload(input: CommandBuildInput): CommandBuildOutput {
   const target = normalizeTarget(input.target);
@@ -219,6 +245,53 @@ function handleConfigRssi(params: string[]): string[] {
     throw new BadRequestException('RSSI threshold must be between -120 and -1 dBm.');
   }
   return [parsed.toString()];
+}
+
+function handleCalibrate(params: string[]): string[] {
+  if (params.length !== 2) {
+    throw new BadRequestException('CALIBRATE expects a MAC address and a distance in meters.');
+  }
+  const mac = params[0].trim().toUpperCase();
+  if (!MAC_PATTERN.test(mac)) {
+    throw new BadRequestException(`Invalid MAC address: ${mac}`);
+  }
+  const meters = Number(params[1].trim());
+  if (!Number.isFinite(meters) || meters < 0.5 || meters > 100) {
+    throw new BadRequestException('Calibration distance must be between 0.5 and 100 meters.');
+  }
+  return [mac, meters.toString()];
+}
+
+function handleRadioKnownAdd(params: string[]): string[] {
+  if (params.length < 2 || params.length > 3) {
+    throw new BadRequestException(
+      'RADIO_KNOWN_ADD expects a MAC address, a radio type (Meshtastic or MeshCore), and an optional name.',
+    );
+  }
+  const mac = params[0].trim().toUpperCase();
+  if (!MAC_PATTERN.test(mac)) {
+    throw new BadRequestException(`Invalid MAC address: ${mac}`);
+  }
+  const radio = MESH_RADIO_TYPES.get(params[1].trim().toUpperCase());
+  if (!radio) {
+    throw new BadRequestException('Radio type must be Meshtastic or MeshCore.');
+  }
+  const name = params[2]?.trim() ?? '';
+  if (name && !MESH_RADIO_NAME_PATTERN.test(name)) {
+    throw new BadRequestException('Radio name must be 1-31 printable characters.');
+  }
+  return name ? [mac, radio, name] : [mac, radio];
+}
+
+function handleRadioKnownDel(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('RADIO_KNOWN_DEL expects a MAC address.');
+  }
+  const mac = params[0].trim().toUpperCase();
+  if (!MAC_PATTERN.test(mac)) {
+    throw new BadRequestException(`Invalid MAC address: ${mac}`);
+  }
+  return [mac];
 }
 
 function handleConfigNodeId(params: string[]): string[] {
@@ -404,26 +477,30 @@ function normalizePowerMultiplier(value: string, band: 'WiFi' | 'BLE'): string {
   return parsed.toFixed(1);
 }
 
-function handleEraseForce(params: string[]): string[] {
-  if (params.length !== 1) {
-    throw new BadRequestException('ERASE_FORCE expects a single confirmation token.');
-  }
-  const token = params[0].trim().toUpperCase();
-  if (!ERASE_TOKEN_PATTERN.test(token)) {
+function normalizeEraseAnswer(value: string | undefined): string {
+  const answer = (value ?? '').trim().toLowerCase();
+  if (!ERASE_ANSWER_PATTERN.test(answer)) {
     throw new BadRequestException(
-      'Invalid ERASE token. Expected format AH_XXXXXXXX_XXXXXXXX_XXXXXXXX.',
+      "Erase answer must be the first 8 (or all 64) hex characters of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
     );
   }
-  return [token];
+  return answer;
+}
+
+function handleEraseAnswerOnly(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('Expected a single erase answer from ERASE_REQUEST.');
+  }
+  return [normalizeEraseAnswer(params[0])];
 }
 
 function handleAutoEraseEnable(params: string[]): string[] {
-  if (params.length === 0) {
-    return [];
+  if (params.length === 1) {
+    return [normalizeEraseAnswer(params[0])];
   }
-  if (params.length !== 5) {
+  if (params.length !== 6) {
     throw new BadRequestException(
-      'AUTOERASE_ENABLE expects either no parameters (uses defaults) or all 5 parameters (setupDelay:eraseDelay:vibs:window:cooldown).',
+      'AUTOERASE_ENABLE expects the erase answer alone (uses defaults) or 5 parameters (setupDelay:eraseDelay:vibs:window:cooldown) plus the erase answer.',
     );
   }
 
@@ -458,6 +535,7 @@ function handleAutoEraseEnable(params: string[]): string[] {
     vibrationsRequired.toString(),
     detectionWindow.toString(),
     autoEraseCooldown.toString(),
+    normalizeEraseAnswer(params[5]),
   ];
 }
 
@@ -662,6 +740,19 @@ function handleConfigErasePsk(params: string[]): string[] {
   return [key];
 }
 
+function handleConfigBand(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException(
+      'CONFIG_BAND expects a single band mode: 0 (2.4GHz), 1 (5GHz) or 2 (both).',
+    );
+  }
+  const mode = Number.parseInt(params[0].trim(), 10);
+  if (!Number.isFinite(mode) || mode < 0 || mode > 2) {
+    throw new BadRequestException('Band mode must be 0 (2.4GHz), 1 (5GHz) or 2 (both).');
+  }
+  return [mode.toString()];
+}
+
 function handleConfigDedupTtl(params: string[]): string[] {
   if (params.length !== 1) {
     throw new BadRequestException('CONFIG_DEDUP_TTL expects a single TTL value in seconds.');
@@ -687,18 +778,14 @@ function handleConfigSessionDedup(params: string[]): string[] {
 function handleFactoryReset(params: string[]): string[] {
   if (params.length !== 2) {
     throw new BadRequestException(
-      'FACTORY_RESET expects a tier (FULL, CONFIG, or DATA) and a credential.',
+      'FACTORY_RESET expects a tier (FULL, CONFIG, or DATA) and the erase answer.',
     );
   }
   const tier = params[0].trim().toUpperCase();
   if (!FACTORY_RESET_TIERS.has(tier)) {
     throw new BadRequestException('FACTORY_RESET tier must be FULL, CONFIG, or DATA.');
   }
-  const credential = params[1].trim();
-  if (credential.length < 1) {
-    throw new BadRequestException('FACTORY_RESET requires a credential.');
-  }
-  return [tier, credential];
+  return [tier, normalizeEraseAnswer(params[1])];
 }
 
 function handleCsiMotionStart(params: string[]): string[] {

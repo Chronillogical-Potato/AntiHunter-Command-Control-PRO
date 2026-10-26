@@ -15,6 +15,7 @@ import { CampaignsService } from '../campaigns/campaigns.service';
 import { CommandsService } from '../commands/commands.service';
 import { DronesService } from '../drones/drones.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { KnownRadiosService } from '../known-radios/known-radios.service';
 import { NodesService } from '../nodes/nodes.service';
 import { ProbeInventoryService } from '../probe-inventory/probe-inventory.service';
 import { TakService } from '../tak/tak.service';
@@ -111,6 +112,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
     private readonly targetsService: TargetsService,
     private readonly probeInventoryService: ProbeInventoryService,
     private readonly campaignsService: CampaignsService,
+    private readonly knownRadios: KnownRadiosService,
     configService: ConfigService,
   ) {
     const concurrency = Math.max(1, configService.get<number>('serial.ingestConcurrency', 1));
@@ -348,6 +350,9 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
         break;
       case 'alert':
         {
+          if (this.knownRadios.observe(event)) {
+            break;
+          }
           const timestamp = new Date();
           const { lat, lon } = this.extractCoordinates(event);
           const { temperatureC, temperatureF } = this.extractAlertTemperatures(event);
@@ -798,6 +803,7 @@ export class SerialIngestService implements OnModuleInit, OnModuleDestroy {
           rssi: probeEvent.rssi,
           type: 'WiFi',
           name: probeEvent.ssid,
+          probe: true,
           channel: probeEvent.channel,
           lat: probeEvent.lat,
           lon: probeEvent.lon,

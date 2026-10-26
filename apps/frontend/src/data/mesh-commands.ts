@@ -101,6 +101,18 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     ],
   },
   {
+    name: 'SUMMARY',
+    group: 'Status',
+    description:
+      'Report a one-line summary: mode, scan state, device count, targets, hits, incidents and campaign.',
+    defaultTarget: '@ALL',
+    parameters: [],
+    examples: [
+      { target: '@ALL', params: [], label: 'All nodes' },
+      { target: '@NODE_22', params: [], label: 'Specific node' },
+    ],
+  },
+  {
     name: 'CONFIG_CHANNELS',
     group: 'Configuration',
     description: 'Configure WiFi channels using CSV list or range (1..14).',
@@ -569,6 +581,42 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     parameters: [],
   },
   {
+    name: 'CALIBRATE',
+    group: 'Triangulation',
+    description:
+      'Calibrate this node against a Wi-Fi or Bluetooth device at a measured distance. The node listens for 30 seconds.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'mac',
+        label: 'Reference MAC',
+        type: 'text',
+        placeholder: 'AA:BB:CC:DD:EE:FF',
+        required: true,
+      },
+      {
+        key: 'meters',
+        label: 'Distance (meters)',
+        type: 'number',
+        placeholder: '5',
+        required: true,
+        min: 0.5,
+        max: 100,
+        step: 0.5,
+        suffix: 'm',
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['AA:BB:CC:DD:EE:FF', '5'] }],
+  },
+  {
+    name: 'CALIBRATE_RESET',
+    group: 'Triangulation',
+    description: 'Clear the calibration. Distances go back to the RF environment values.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
     name: 'VIBRATION_STATUS',
     group: 'Security',
     description: 'Query tamper/vibration sensor status.',
@@ -603,15 +651,16 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'ERASE_FORCE',
     group: 'Security',
-    description: 'Force emergency erase (requires admin token).',
+    description: 'Force emergency erase. Send ERASE_REQUEST to the node first.',
     defaultTarget: '@NODE_22',
     parameters: [
       {
-        key: 'token',
-        label: 'Authorization Token',
+        key: 'answer',
+        label: 'Erase Answer',
         type: 'text',
-        placeholder: 'AH_12345678_87654321_00001234',
-        helper: 'Format AH_########_########_########',
+        placeholder: 'd27f2e8c',
+        helper:
+          "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key: printf %s '<token>' | openssl dgst -sha256 -hmac '<key>'",
         required: true,
       },
     ],
@@ -619,9 +668,18 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'ERASE_CANCEL',
     group: 'Security',
-    description: 'Cancel an ongoing erase operation.',
-    defaultTarget: '@ALL',
-    parameters: [],
+    description: 'Cancel an ongoing erase. Send ERASE_REQUEST to the node first.',
+    defaultTarget: '@NODE_22',
+    parameters: [
+      {
+        key: 'answer',
+        label: 'Erase Answer',
+        type: 'text',
+        placeholder: 'd27f2e8c',
+        helper: "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
+        required: true,
+      },
+    ],
   },
   {
     name: 'AUTOERASE_ENABLE',
@@ -684,25 +742,31 @@ export const MESH_COMMANDS: CommandDefinition[] = [
         max: 3600,
         step: 1,
       },
-    ],
-    examples: [
       {
-        target: '@NODE_22',
-        params: [],
-        label: 'Use defaults (120s setup, 30s erase, 3 vibs, 20s window, 300s cooldown)',
+        key: 'answer',
+        label: 'Erase Answer',
+        type: 'text',
+        placeholder: 'd27f2e8c',
+        helper:
+          "Send ERASE_REQUEST first. First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key. Leave all five values empty for defaults.",
+        required: true,
       },
-      { target: '@NODE_22', params: ['60', '30', '3', '20', '300'], label: 'Custom parameters' },
     ],
   },
   {
     name: 'AUTOERASE_DISABLE',
     group: 'Security',
-    description: 'Disable auto-erase functionality.',
+    description: 'Disable auto-erase. Send ERASE_REQUEST to the node first.',
     defaultTarget: '@NODE_22',
-    parameters: [],
-    examples: [
-      { target: '@NODE_22', params: [], label: 'Disable auto-erase' },
-      { target: '@ALL', params: [], label: 'Disable all nodes' },
+    parameters: [
+      {
+        key: 'answer',
+        label: 'Erase Answer',
+        type: 'text',
+        placeholder: 'd27f2e8c',
+        helper: "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
+        required: true,
+      },
     ],
   },
   {
@@ -831,6 +895,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
           { label: 'Recon', value: 'recon' },
           { label: 'Physical', value: 'physical' },
           { label: 'Mesh', value: 'mesh' },
+          { label: 'Mesh Radios', value: 'devices' },
           { label: 'All', value: 'all' },
         ],
       },
@@ -899,6 +964,72 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     name: 'INCIDENTS_CLEAR',
     group: 'Sentinel',
     description: 'Clear the sentinel incident log.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'DETECT_CLEAR',
+    group: 'Sentinel',
+    description: 'Clear all detector state and delete the detector logs on the SD card.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'RADIO_KNOWN_ADD',
+    group: 'Sentinel',
+    description:
+      'Mark a Meshtastic or MeshCore radio as known. The node stops alerting on it. The Nodes page does this for all nodes.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'mac',
+        label: 'Radio MAC',
+        type: 'text',
+        placeholder: 'AA:BB:CC:DD:EE:FF',
+        required: true,
+      },
+      {
+        key: 'radio',
+        label: 'Radio type',
+        type: 'select',
+        required: true,
+        options: [
+          { label: 'Meshtastic', value: 'Meshtastic' },
+          { label: 'MeshCore', value: 'MeshCore' },
+        ],
+      },
+      {
+        key: 'name',
+        label: 'Advertised name',
+        type: 'text',
+        required: false,
+        helper: 'Optional. Matches the radio when its Bluetooth address changes.',
+      },
+    ],
+    examples: [{ target: '@ALL', params: ['AA:BB:CC:DD:EE:FF', 'Meshtastic'] }],
+  },
+  {
+    name: 'RADIO_KNOWN_DEL',
+    group: 'Sentinel',
+    description: 'Remove a radio from the known list.',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'mac',
+        label: 'Radio MAC',
+        type: 'text',
+        placeholder: 'AA:BB:CC:DD:EE:FF',
+        required: true,
+      },
+    ],
+    examples: [{ target: '@ALL', params: ['AA:BB:CC:DD:EE:FF'] }],
+  },
+  {
+    name: 'RADIO_KNOWN_CLEAR',
+    group: 'Sentinel',
+    description: 'Empty the known radio list on the node.',
     defaultTarget: '@NODE_22',
     parameters: [],
     examples: [{ target: '@NODE_22', params: [] }],
@@ -1048,6 +1179,59 @@ export const MESH_COMMANDS: CommandDefinition[] = [
     examples: [{ target: '@ALL', params: ['1'] }],
   },
   {
+    name: 'CONFIG_BAND',
+    group: 'Configuration',
+    description: 'Set the radio band on an ESP32-C5 node (Experimental build only).',
+    defaultTarget: '@ALL',
+    parameters: [
+      {
+        key: 'band',
+        label: 'Band',
+        type: 'select',
+        required: true,
+        options: [
+          { label: '0 - 2.4 GHz', value: '0' },
+          { label: '1 - 5 GHz', value: '1' },
+          { label: '2 - Both', value: '2' },
+        ],
+      },
+    ],
+    examples: [{ target: '@NODE_22', params: ['2'] }],
+  },
+  {
+    name: 'DEVICE_DB_CLEAR',
+    group: 'Configuration',
+    description: 'Clear the discovered-device database (Beta and Experimental headless builds).',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'PROBE_DB_CLEAR',
+    group: 'Configuration',
+    description: 'Delete the probe request database.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'BASELINE_RESET',
+    group: 'Configuration',
+    description: 'Delete the learned baseline from memory and SD. Refused while a scan runs.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
+    name: 'RANDOMIZATION_RESET',
+    group: 'Configuration',
+    description:
+      'Delete the saved randomized-MAC identities from memory and SD. Refused while a scan runs.',
+    defaultTarget: '@NODE_22',
+    parameters: [],
+    examples: [{ target: '@NODE_22', params: [] }],
+  },
+  {
     name: 'MESH_DEDUP_CLEAR',
     group: 'Configuration',
     description: 'Clear the mesh de-duplication cache.',
@@ -1075,7 +1259,7 @@ export const MESH_COMMANDS: CommandDefinition[] = [
   {
     name: 'FACTORY_RESET',
     group: 'Security',
-    description: 'Factory reset a node (requires erase PSK credential).',
+    description: 'Factory reset a node. Send ERASE_REQUEST to the node first.',
     defaultTarget: '@NODE_22',
     parameters: [
       {
@@ -1091,10 +1275,10 @@ export const MESH_COMMANDS: CommandDefinition[] = [
       },
       {
         key: 'credential',
-        label: 'Credential',
+        label: 'Erase Answer',
         type: 'text',
-        placeholder: 'HMAC credential',
-        helper: 'Authorization derived from the erase PSK.',
+        placeholder: 'd27f2e8c',
+        helper: "First 8 hex of HMAC-SHA256 of the node's ERASE_TOKEN, keyed with its erase key.",
         required: true,
       },
     ],

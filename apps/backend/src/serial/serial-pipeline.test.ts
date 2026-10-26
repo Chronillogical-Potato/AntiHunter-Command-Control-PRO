@@ -57,7 +57,7 @@ function sanitizeLine(value: string): string {
   }
 
   const HOP_KEYWORD_RE =
-    /^(?:STATUS|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|CSI_|CAMPAIGN_|SCHED_|BASELINE_WATCH|BATTERY_SAVER|BLE_ATTACK|CSA_SPOOF|QUIET_ABUSE|VIBSCAN_|ATTACKER_TRILAT|DETECT_|QUORUM_|HUNT_COOLDOWN|MESH_TX_CANCEL|SD_REPAIR|TRI_ACK|Time:)/i;
+    /^(?:STATUS|SUMMARY|Target|DEVICE|DRONE|PROBE_HIT|PROBE_ACK|ATTACK|ANOMALY|VIBRATION|VIBRATION_STATUS|VIBRATION_ON_ACK|VIBRATION_OFF_ACK|SETUP_MODE|SETUP_COMPLETE|TAMPER_DETECTED|TAMPER_CANCELLED|ERASE_|AUTOERASE_|BASELINE_STATUS|BASELINE_ACK|BATTERY_SAVER_STATUS|BATTERY_SAVER_START_ACK|BATTERY_SAVER_STOP_ACK|HEARTBEAT|STARTUP|GPS|TRIANGULATE|TARGET_DATA|T_D:|T_C:|T_F:|IDENTITY|RANDOMIZATION|RANDOMIZATION_DONE|SCAN_DONE|DEAUTH_DONE|DRONE_DONE|BASELINE_DONE|LIST_SCAN_DONE|PROBE_DONE|PCAP_|SCAN_ACK|DEVICE_SCAN_ACK|DRONE_ACK|DEAUTH_ACK|CONFIG_ACK|STOP_ACK|REBOOT_ACK|HB_ACK|TRI_START|WIPE_TOKEN|ERASE_TOKEN|RTC_SYNC|TIME_SYNC|CODES:|EVILTWIN|OWE_ABUSE|PMKID_|EAPOL_BAIT|HSHK|KARMA_|PWNAGOTCHI|PROBE_FLOOD|SAE_DOS|DEAUTH_FLOOD|DEAUTH_FORGE|DEAUTH_AP_TARGETED|BEACON_|ASSOC_SLEEP|AUTH_FLOOD|SSID_CONFUSION|FRAG|ATTACKER_HUNT|RECON|JAMMING|SENTINEL|GROUP_ACK|DETECT_CFG|INCIDENTS|DEDUP_CLEAR_ACK|FACTORY_RESET|MESH_SPOOF_SELF|MESH_FLOOD|MESH_CMD_INJECT|DEVICE_DISAPPEARED|RID_|TOF_|BLOOM|IDHASH|CHAN_ASSIGN|CSI_|CAMPAIGN_|SCHED_|BASELINE_WATCH|BASELINE_RESET|PROBE_DB_CLEAR|CALIBRATE_|BATTERY_SAVER|RADIO_DETECTED|RADIO_KNOWN_|CSA_SPOOF|QUIET_ABUSE|VIBSCAN_|ATTACKER_TRILAT|DETECT_|QUORUM_|HUNT_COOLDOWN|MESH_TX_CANCEL|SD_REPAIR|TRI_ACK|Time:)/i;
   const hopMatch = /^([A-Za-z0-9_-]{1,6}):\s+([A-Za-z0-9_.:-]+:\s+)(.+)$/i.exec(cleaned);
   if (hopMatch) {
     const secondToken = hopMatch[2].replace(/[:\s]+$/, '');
@@ -245,6 +245,66 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     expectFields: { kind: 'command-ack', fields: { ackType: 'BLE_CLASSIFY_ACK', status: 'OK' } },
   },
   {
+    name: 'CONFIG_ACK BAND',
+    input: 'AHC5: CONFIG_ACK:BAND:2',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'BAND_ACK', status: 'OK' } },
+  },
+  {
+    name: 'DEVICE_DB_CLEAR_ACK',
+    input: 'AH5: DEVICE_DB_CLEAR_ACK:OK',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'DEVICE_DB_CLEAR_ACK', status: 'OK' } },
+  },
+  {
+    name: 'CALIBRATE_ACK started',
+    input: 'AH5: CALIBRATE_ACK:STARTED',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'CALIBRATE_ACK', status: 'STARTED' } },
+  },
+  {
+    name: 'CALIBRATE_ACK busy',
+    input: 'AH5: CALIBRATE_ACK:BUSY',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'CALIBRATE_ACK', status: 'ERROR' } },
+  },
+  {
+    name: 'CALIBRATE_ACK reset',
+    input: 'AH5: CALIBRATE_ACK:RESET',
+    expectKinds: ['command-ack'],
+    expectFields: {
+      kind: 'command-ack',
+      fields: { ackType: 'CALIBRATE_RESET_ACK', status: 'OK' },
+    },
+  },
+  {
+    name: 'CALIBRATE_DONE result',
+    input: 'AH5: CALIBRATE_DONE:WIFI=-41.2:BLE=NONE',
+    expectKinds: ['command-result'],
+    expectFields: { kind: 'command-result', fields: { command: 'CALIBRATE' } },
+  },
+  {
+    name: 'CALIBRATE_DONE failed',
+    input: 'AH5: CALIBRATE_DONE:FAILED',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'CALIBRATE_ACK', status: 'ERROR' } },
+  },
+  {
+    name: 'BASELINE_RESET_ACK busy',
+    input: 'AH5: BASELINE_RESET_ACK:BUSY',
+    expectKinds: ['command-ack'],
+    expectFields: {
+      kind: 'command-ack',
+      fields: { ackType: 'BASELINE_RESET_ACK', status: 'ERROR' },
+    },
+  },
+  {
+    name: 'SUMMARY',
+    input: 'AH5: SUMMARY: Mode:WiFi+BLE Scan:IDLE Dev:922 Tgt:0 Hits:0 Inc:0 Up:00:03:42',
+    expectKinds: ['node-telemetry', 'command-result'],
+    expectFields: { kind: 'command-result', fields: { command: 'SUMMARY' } },
+  },
+  {
     name: 'CONFIG_ACK failure',
     input: 'AH5: CONFIG_ACK:RSSI:INVALID_RANGE',
     expectKinds: ['command-ack'],
@@ -316,17 +376,37 @@ const FIRMWARE_MESSAGES: TestCase[] = [
     expectData: { reset: 'SW' },
   },
   {
-    name: 'BLE_ATTACK rssi variant',
-    input: 'AH5: BLE_ATTACK:Flipper:AA:BB:CC:DD:EE:01:-55',
+    name: 'RADIO_DETECTED',
+    input: 'AH5: RADIO_DETECTED:Meshtastic:AA:BB:CC:DD:EE:01:-55',
     expectKinds: ['alert'],
     expectCategory: 'sentinel',
-    expectData: { tool: 'Flipper', mac: 'AA:BB:CC:DD:EE:01', rssi: -55 },
+    expectData: { radio: 'Meshtastic', mac: 'AA:BB:CC:DD:EE:01', rssi: -55 },
   },
   {
-    name: 'BLE_ATTACK counter variant',
-    input: 'AH5: BLE_ATTACK:iOS_Pair_Spam:AA:BB:CC:DD:EE:02:types=3:addrs=9',
+    name: 'RADIO_DETECTED with name',
+    input: 'AH5: RADIO_DETECTED:MeshCore:AA:BB:CC:DD:EE:02:-61:MeshCore-Base 1',
     expectKinds: ['alert'],
-    expectData: { tool: 'iOS_Pair_Spam', types: 3, addrs: 9 },
+    expectCategory: 'sentinel',
+    expectData: { radio: 'MeshCore', mac: 'AA:BB:CC:DD:EE:02', rssi: -61, name: 'MeshCore-Base 1' },
+  },
+  {
+    name: 'RADIO_KNOWN_ACK ok',
+    input: 'AH5: RADIO_KNOWN_ACK:OK:3',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'RADIO_KNOWN_ACK', status: 'OK' } },
+  },
+  {
+    name: 'RADIO_KNOWN_ACK full',
+    input: 'AH5: RADIO_KNOWN_ACK:FAILED:FULL',
+    expectKinds: ['command-ack'],
+    expectFields: { kind: 'command-ack', fields: { ackType: 'RADIO_KNOWN_ACK', status: 'ERROR' } },
+  },
+  {
+    name: 'JAMMING_BASELINE silence',
+    input: 'AH5: JAMMING_BASELINE:6:silence:42',
+    expectKinds: ['alert'],
+    expectCategory: 'sentinel',
+    expectData: { detectionType: 'JAMMING_BASELINE', channel: 6, rule: 'silence', fps: 42 },
   },
   {
     name: 'CSA_SPOOF',
@@ -992,9 +1072,10 @@ const FIRMWARE_MESSAGES: TestCase[] = [
   },
   {
     name: 'JAMMING',
-    input: 'AH5: JAMMING:6:88:120',
+    input: 'AH5: JAMMING:6:noise_rise:11',
     expectKinds: ['alert'],
     expectCategory: 'sentinel',
+    expectData: { detectionType: 'JAMMING', channel: 6, rule: 'noise_rise', db: 11 },
   },
   {
     name: 'ATTACKER_HUNT',
@@ -1249,6 +1330,66 @@ for (const tc of FIRMWARE_MESSAGES) {
     runTest(`HOP+M27: ${tc.name}`, wrapMeshtastic27(wrapHop(tc.input)), tc);
   }
 }
+
+function expectDevices(label: string, lines: string[], want: Record<string, unknown>[]): void {
+  const got: Record<string, unknown>[] = [];
+  for (const line of lines) {
+    for (const r of parser.parseLine(sanitizeLine(line))) {
+      if (r.kind === 'device-seen') {
+        const { mac, rssi, type, channel, name, nodeId } = r;
+        got.push({ nodeId, mac, rssi, type, channel, name });
+      }
+    }
+  }
+  if (JSON.stringify(got) === JSON.stringify(want)) {
+    passed++;
+  } else {
+    failed++;
+    failures.push(`FAIL [${label}]: got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
+  }
+}
+
+function dev(
+  mac: string,
+  rssi: number,
+  type: string,
+  channel?: number,
+  name?: string,
+): Record<string, unknown> {
+  return { nodeId: 'AH5', mac, rssi, type, channel, name };
+}
+
+const OLD_PACKET = [
+  'AH5: DEVICE:AA:BB:CC:DD:EE:01 W -80 C6 N:Home Net',
+  'DEVICE:11:22:33:44:55:02 B -70',
+  'DEVICE:11:22:33:44:55:03 W -65 N:Guest WiFi 5G',
+  'DEVICE:11:22:33:44:55:04 W -60 C11',
+];
+const COMPACT_PACKET = [
+  OLD_PACKET[0],
+  '112233445502 B -70',
+  '112233445503 W -65 N:Guest WiFi 5G',
+  '112233445504 W -60 C11',
+];
+const PACKET_WANT = [
+  dev('AA:BB:CC:DD:EE:01', -80, 'WiFi', 6, 'Home Net'),
+  dev('11:22:33:44:55:02', -70, 'BLE'),
+  dev('11:22:33:44:55:03', -65, 'WiFi', undefined, 'Guest WiFi 5G'),
+  dev('11:22:33:44:55:04', -60, 'WiFi', 11),
+];
+
+parser.reset();
+expectDevices('DEVICE old-format continuation rows', OLD_PACKET, PACKET_WANT);
+parser.reset();
+expectDevices('DEVICE compact continuation rows', COMPACT_PACKET, PACKET_WANT);
+parser.reset();
+expectDevices('DEVICE compact row without fresh first row is ignored', ['aabbccddeeff W -80'], []);
+parser.reset();
+expectDevices(
+  'DEVICE compact lowercase hex normalizes to uppercase colon form',
+  [OLD_PACKET[0], 'aabbccddee02 w -71'],
+  [PACKET_WANT[0], dev('AA:BB:CC:DD:EE:02', -71, 'WiFi')],
+);
 
 console.log(`\n  ${passed} passed, ${failed} failed\n`);
 

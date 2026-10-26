@@ -56,9 +56,9 @@ expect(
   { family: 'Drone', confidence: 'high', watch: true },
 );
 expect(
-  'Wi-Fi vendor only',
+  'Wi-Fi vendor rule agrees with the Flock signature',
   { mac: 'B4:1E:52:00:00:07', type: 'WiFi', vendor: 'Flock Safety' },
-  { family: 'Camera', confidence: 'medium', source: 'vendor', label: 'Flock Safety' },
+  { family: 'Camera', confidence: 'high', source: 'vendor', label: 'Flock Safety' },
 );
 expect(
   'chipset vendor is low',
@@ -74,6 +74,72 @@ expect(
   'randomized Wi-Fi AP broadcasting an SSID is not a phone',
   { mac: 'FE:9F:C2:A7:09:37', type: 'WiFi', name: 'McFly', locallyAdministered: true },
   { family: null, source: null },
+);
+expect(
+  'randomized client probing for an SSID stays a phone',
+  {
+    mac: '02:0F:B3:11:22:33',
+    type: 'WiFi',
+    name: 'MyNetwork',
+    locallyAdministered: true,
+    probeClient: true,
+  },
+  { family: 'Phone', source: 'address' },
+);
+expect(
+  'probed SSID is not read as the device name',
+  { mac: 'DA:00:00:00:00:0C', type: 'WiFi', name: 'Tesla Model Y', probeClient: true },
+  { family: null, source: null },
+);
+expect(
+  'Fieldwatch ISP OUI on an access point',
+  { mac: '00:0F:B3:11:22:33', type: 'WiFi', name: 'MyNetwork' },
+  { family: 'Router', source: 'signature', label: 'Actiontec', watch: false },
+);
+expect(
+  'locally administered BSSID matches its universal OUI',
+  { mac: '02:0F:B3:11:22:33', type: 'WiFi', name: 'MyNetwork', locallyAdministered: true },
+  { family: 'Router', source: 'signature', label: 'Actiontec' },
+);
+expect(
+  'randomized client without SSID is not matched by universal OUI',
+  { mac: '02:0F:B3:11:22:33', type: 'WiFi', locallyAdministered: true },
+  { family: 'Phone', source: 'address' },
+);
+expect(
+  'Fieldwatch law-enforcement OUI is a watched public-safety device',
+  { mac: '00:14:3E:00:00:01', type: 'WiFi', name: 'Unit 12' },
+  { family: 'Public Safety', source: 'signature', label: 'AirLink', watch: true },
+);
+expect(
+  'Fieldwatch name glob flags a hacking tool',
+  { mac: 'C0:00:00:00:00:01', type: 'BLE', name: 'Flipper Kooki' },
+  { family: 'Hacking Tool', source: 'signature', label: 'Flipper Zero', watch: true },
+);
+expect(
+  'vendor category table classifies an unlisted vendor',
+  { mac: '00:11:22:33:44:55', type: 'WiFi', vendor: 'Leica Camera AG' },
+  { family: 'Camera', source: 'vendor', confidence: 'medium' },
+);
+expect(
+  'hand vendor rule maps an ISP gateway maker to Router',
+  { mac: '00:11:22:33:44:56', type: 'WiFi', vendor: 'Arris Group, Inc.' },
+  { family: 'Router', source: 'vendor' },
+);
+expect(
+  'existing vendor rule keeps precedence over the catalog',
+  { mac: '00:11:22:33:44:57', type: 'WiFi', vendor: 'Cradlepoint, Inc' },
+  { family: 'Vehicle', source: 'vendor' },
+);
+expect(
+  'vendor tables are skipped for randomized MACs',
+  {
+    mac: 'DA:11:22:33:44:58',
+    type: 'WiFi',
+    vendor: 'Arris Group, Inc.',
+    locallyAdministered: true,
+  },
+  { family: 'Phone', source: 'address' },
 );
 expect(
   'watch name wins over phone name',

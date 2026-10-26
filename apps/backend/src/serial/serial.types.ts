@@ -43,6 +43,7 @@ export interface SerialTargetDetected {
   name?: string;
   vendor?: string;
   bleClass?: string;
+  probe?: boolean;
   channel?: number;
   lat?: number;
   lon?: number;

@@ -19,6 +19,9 @@ export const FAMILY_HUE: Record<DeviceFamily, number> = {
   Computer: -1,
   Input: -1,
   Beacon: -1,
+  Router: -1,
+  'Public Safety': 220,
+  'Hacking Tool': 120,
 };
 
 export type ClassFilter = 'all' | 'watch' | 'none' | DeviceFamily;
@@ -26,6 +29,7 @@ export type ClassFilter = 'all' | 'watch' | 'none' | DeviceFamily;
 const SOURCE_LABEL: Record<string, string> = {
   advert: 'Advert',
   name: 'Name',
+  signature: 'Signature',
   vendor: 'Vendor',
   address: 'Address',
 };
@@ -146,7 +150,7 @@ export function ClassFilterBar({ items, value, onChange }: ClassFilterBarProps) 
             className={`dclass-chip dclass-chip--watch${value === 'watch' ? ' is-active' : ''}`}
             aria-pressed={value === 'watch'}
             onClick={() => toggle('watch')}
-            title="Trackers, cameras, radios, drones"
+            title="Trackers, cameras, radios, drones, public safety, hacking tools"
           >
             <MdVisibility aria-hidden="true" />
             Watch <span className="dclass-chip__count">{watch}</span>
