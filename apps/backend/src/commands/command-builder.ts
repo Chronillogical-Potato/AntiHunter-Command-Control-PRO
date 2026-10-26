@@ -119,7 +119,16 @@ const COMMAND_HANDLERS = new Map<string, CommandHandler>([
   ['BASELINE_RESET', expectNoParams],
   ['RANDOMIZATION_RESET', expectNoParams],
   ['DETECT_CLEAR', expectNoParams],
+  ['RADIO_KNOWN_ADD', handleRadioKnownAdd],
+  ['RADIO_KNOWN_DEL', handleRadioKnownDel],
+  ['RADIO_KNOWN_CLEAR', expectNoParams],
 ]);
+
+const MESH_RADIO_TYPES = new Map([
+  ['MESHTASTIC', 'Meshtastic'],
+  ['MESHCORE', 'MeshCore'],
+]);
+const MESH_RADIO_NAME_PATTERN = /^[\x20-\x7E]{1,31}$/;
 
 const CAMPAIGN_NAME_PATTERN = /^[A-Za-z0-9_-]{1,23}$/;
 const SCHED_AT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
@@ -251,6 +260,38 @@ function handleCalibrate(params: string[]): string[] {
     throw new BadRequestException('Calibration distance must be between 0.5 and 100 meters.');
   }
   return [mac, meters.toString()];
+}
+
+function handleRadioKnownAdd(params: string[]): string[] {
+  if (params.length < 2 || params.length > 3) {
+    throw new BadRequestException(
+      'RADIO_KNOWN_ADD expects a MAC address, a radio type (Meshtastic or MeshCore), and an optional name.',
+    );
+  }
+  const mac = params[0].trim().toUpperCase();
+  if (!MAC_PATTERN.test(mac)) {
+    throw new BadRequestException(`Invalid MAC address: ${mac}`);
+  }
+  const radio = MESH_RADIO_TYPES.get(params[1].trim().toUpperCase());
+  if (!radio) {
+    throw new BadRequestException('Radio type must be Meshtastic or MeshCore.');
+  }
+  const name = params[2]?.trim() ?? '';
+  if (name && !MESH_RADIO_NAME_PATTERN.test(name)) {
+    throw new BadRequestException('Radio name must be 1-31 printable characters.');
+  }
+  return name ? [mac, radio, name] : [mac, radio];
+}
+
+function handleRadioKnownDel(params: string[]): string[] {
+  if (params.length !== 1) {
+    throw new BadRequestException('RADIO_KNOWN_DEL expects a MAC address.');
+  }
+  const mac = params[0].trim().toUpperCase();
+  if (!MAC_PATTERN.test(mac)) {
+    throw new BadRequestException(`Invalid MAC address: ${mac}`);
+  }
+  return [mac];
 }
 
 function handleConfigNodeId(params: string[]): string[] {

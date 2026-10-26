@@ -22,7 +22,7 @@ RUN pnpm --filter @command-center/backend prisma:generate \
   && pnpm --filter @command-center/backend build \
   && pnpm --filter @command-center/backend exec tsc -p tsconfig.seed.json --noEmit false
 
-FROM node:20.19.6-trixie-slim AS runtime
+FROM node:20.20.2-trixie-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production

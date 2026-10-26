@@ -160,9 +160,54 @@ check('reset and clear commands send no parameters', () => {
     'BASELINE_RESET',
     'RANDOMIZATION_RESET',
     'DETECT_CLEAR',
+    'RADIO_KNOWN_CLEAR',
   ]) {
     assert.equal(buildCommandPayload({ target: '@AHC5', name, params: [] }).line, `@AHC5 ${name}`);
   }
+});
+
+check('RADIO_KNOWN_ADD normalizes MAC and radio type, keeps the name', () => {
+  assert.equal(
+    buildCommandPayload({
+      target: '@ALL',
+      name: 'RADIO_KNOWN_ADD',
+      params: ['aa:bb:cc:dd:ee:ff', 'meshtastic', 'Base 1'],
+    }).line,
+    '@ALL RADIO_KNOWN_ADD:AA:BB:CC:DD:EE:FF:Meshtastic:Base 1',
+  );
+  assert.equal(
+    buildCommandPayload({
+      target: '@ALL',
+      name: 'RADIO_KNOWN_ADD',
+      params: ['AA:BB:CC:DD:EE:FF', 'MeshCore'],
+    }).line,
+    '@ALL RADIO_KNOWN_ADD:AA:BB:CC:DD:EE:FF:MeshCore',
+  );
+});
+
+check('RADIO_KNOWN_ADD rejects an unknown radio type and a bad MAC', () => {
+  assert.throws(() =>
+    buildCommandPayload({
+      target: '@ALL',
+      name: 'RADIO_KNOWN_ADD',
+      params: ['AA:BB:CC:DD:EE:FF', 'LoRaWAN'],
+    }),
+  );
+  assert.throws(() =>
+    buildCommandPayload({
+      target: '@ALL',
+      name: 'RADIO_KNOWN_ADD',
+      params: ['T-00A3', 'MeshCore'],
+    }),
+  );
+});
+
+check('RADIO_KNOWN_DEL sends the MAC', () => {
+  assert.equal(
+    buildCommandPayload({ target: '@ALL', name: 'RADIO_KNOWN_DEL', params: ['aa:bb:cc:dd:ee:ff'] })
+      .line,
+    '@ALL RADIO_KNOWN_DEL:AA:BB:CC:DD:EE:FF',
+  );
 });
 
 check('CONFIG_BAND sends the band mode', () => {

@@ -11,7 +11,7 @@ import { SerialCommandAck, SerialCommandResult } from '../serial/serial.types';
 import { TriangulationSessionService } from '../triangulation/triangulation-session.service';
 import { SendCommandDto } from './dto/send-command.dto';
 
-const ACK_TO_COMMAND: Record<string, string> = {
+const ACK_TO_COMMAND: Record<string, string | string[]> = {
   SCAN_ACK: 'SCAN_START',
   DEVICE_SCAN_ACK: 'DEVICE_SCAN_START',
   DRONE_ACK: 'DRONE_START',
@@ -65,6 +65,7 @@ const ACK_TO_COMMAND: Record<string, string> = {
   BASELINE_RESET_ACK: 'BASELINE_RESET',
   RANDOMIZATION_RESET_ACK: 'RANDOMIZATION_RESET',
   DETECT_CLEAR_ACK: 'DETECT_CLEAR',
+  RADIO_KNOWN_ACK: ['RADIO_KNOWN_ADD', 'RADIO_KNOWN_DEL', 'RADIO_KNOWN_CLEAR'],
 };
 
 export interface CommandState {
@@ -531,14 +532,15 @@ export class CommandsService {
     };
   }
 
-  private mapAckTypeToCommand(ackType: string): string | undefined {
+  private mapAckTypeToCommand(ackType: string): string | string[] | undefined {
     return ACK_TO_COMMAND[ackType];
   }
 
   private async findLatestMatchingCommand(
-    name: string,
+    names: string | string[],
     nodeId?: string,
   ): Promise<CommandLog | null> {
+    const name = Array.isArray(names) ? { in: names } : names;
     const targets: string[] = [];
     if (nodeId) {
       targets.push(`@${nodeId}`);

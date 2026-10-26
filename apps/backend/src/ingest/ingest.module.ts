@@ -5,6 +5,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
 import { CommandsModule } from '../commands/commands.module';
 import { DronesModule } from '../drones/drones.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { KnownRadiosModule } from '../known-radios/known-radios.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { ProbeInventoryModule } from '../probe-inventory/probe-inventory.module';
 import { SerialIngestService } from '../serial/serial-ingest.service';
@@ -31,6 +32,7 @@ import { WsModule } from '../ws/ws.module';
     TriangulationModule,
     ProbeInventoryModule,
     CampaignsModule,
+    KnownRadiosModule,
   ],
   providers: [SerialIngestService, TargetTrackingService],
 })

@@ -7,14 +7,18 @@ export interface SentinelGroup {
 export const SENTINEL_GROUPS: SentinelGroup[] = [
   { key: 'dos', label: 'DoS', description: 'Evil-twin, SAE flood, assoc-sleep' },
   { key: 'rogue', label: 'Rogue AP', description: 'Evil-twin, OWE abuse, Karma' },
-  { key: 'recon', label: 'Recon', description: 'PMKID, probe flood, handshake capture' },
+  {
+    key: 'recon',
+    label: 'Recon',
+    description: 'PMKID, probe flood, handshake capture, Pwnagotchi',
+  },
   {
     key: 'physical',
     label: 'Physical',
     description: 'FragAttack, TSF anomaly, Wi-Fi interference, interference baseline',
   },
   { key: 'mesh', label: 'Mesh Guard', description: 'Mesh spoof / flood / command injection' },
-  { key: 'devices', label: 'Devices', description: 'Pwnagotchi, Meshtastic / MeshCore radios' },
+  { key: 'devices', label: 'Mesh Radios', description: 'Meshtastic / MeshCore radios' },
 ];
 
 export const SENTINEL_MODES = [

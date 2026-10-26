@@ -1090,3 +1090,11 @@ model CampaignRun {
   @@index([name])
   @@index([nodeId, endedAt])
 }
+
+model KnownMeshRadio {
+  mac       String   @id
+  radio     String
+  name      String?
+  addedBy   String?
+  createdAt DateTime @default(now())
+}

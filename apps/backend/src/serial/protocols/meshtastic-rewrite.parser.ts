@@ -154,7 +154,7 @@ const SENTINEL_FIELD_SCHEMAS: Record<string, string[]> = {
   FRAG: ['src', 'info'],
   JAMMING: ['channel', 'rule', 'db'],
   JAMMING_BASELINE: ['channel', 'rule', 'fps'],
-  RADIO_DETECTED: ['radio', 'mac', 'rssi'],
+  RADIO_DETECTED: ['radio', 'mac', 'rssi', 'name'],
   KARMA_CAND: ['bssid', 'ssids'],
   KARMA_CONFIRMED: ['bssid', 'rssi'],
   PWNAGOTCHI: ['bssid', 'rssi'],

@@ -26,6 +26,7 @@ import { GeofencesModule } from './geofences/geofences.module';
 import { HealthModule } from './health/health.module';
 import { IngestModule } from './ingest/ingest.module';
 import { InventoryModule } from './inventory/inventory.module';
+import { KnownRadiosModule } from './known-radios/known-radios.module';
 import { MailModule } from './mail/mail.module';
 import { MqttModule } from './mqtt/mqtt.module';
 import { NodesModule } from './nodes/nodes.module';
@@ -95,6 +96,7 @@ import { WsModule } from './ws/ws.module';
     ChatModule,
     WsModule,
     IngestModule,
+    KnownRadiosModule,
     AlarmsModule,
     SitesModule,
     TakModule,
